@@ -1,0 +1,218 @@
+[accessibility]
+ui_scale = 1.20
+
+[backdrop]
+blur_intensity = 0.5
+enabled = true
+tint_intensity = 0.3
+
+[bar.default]
+background_opacity = 0.85
+border = "outline"
+border_width = 1.0
+capsule = false
+center = [ "workspaces" ]
+compositor_blur = true
+concave_edge_corners = false
+end = [ "media", "spacer_1", "tray", "group:status", "battery", "notifications", "session" ]
+margin_edge = 8
+margin_ends = 12
+padding = 10
+position = "top"
+radius = 16
+radius_bottom_left = 14
+radius_bottom_right = 14
+radius_top_left = 14
+radius_top_right = 14
+scale = 1.10
+shadow = true
+start = [ "group:launcher_clock" ]
+thickness = 36
+widget_spacing = 6
+
+    [[bar.default.capsule_group]]
+    border = ""
+    fill = "on_secondary"
+    id = "launcher_clock"
+    members = [ "launcher", "clock" ]
+    opacity = 1.0
+    padding = 6.0
+
+    [[bar.default.capsule_group]]
+    border = ""
+    fill = "on_secondary"
+    id = "hardware"
+    members = [ "temp", "sysmon_3" ]
+    opacity = 1.0
+    padding = 6.0
+
+    [[bar.default.capsule_group]]
+    border = ""
+    fill = "on_secondary"
+    id = "status"
+    members = [ "network", "volume" ]
+    opacity = 1.0
+    padding = 6.0
+
+[shell]
+clipboard_image_action_command = "swash --stdin --name \"swash-$(date +'%Y-%m-%d_%H:%M:%S').png\""
+corner_radius_scale = 1.1
+font_family = "JetBrainsMono Nerd Font"
+launch_apps_as_systemd_services = true
+polkit_agent = true
+popup_borders = true
+popup_shadows = true
+settings_show_advanced = true
+
+    [shell.greeter_sync]
+    auto_sync = false
+
+    [shell.panel]
+    borders = true
+    control_center_placement = "floating"
+    control_center_position = "top_left"
+    floating_offset = 10
+    open_near_click_control_center = true
+    session_placement = "floating"
+    session_position = "center"
+    shadow = true
+    transparency_mode = "glass"
+
+    [shell.screenshot]
+    copy_to_clipboard = false
+    pipe_command = "swash --stdin --name \"swash-$(date +'%Y-%m-%d_%H:%M:%S').png\""
+    pipe_to_command = true
+    save_to_file = false
+
+    [[shell.session.actions]]
+    action = "lock"
+    countdown_seconds = 0.0
+    enabled = true
+    shortcut = "1"
+    variant = "default"
+
+    [[shell.session.actions]]
+    action = "logout"
+    countdown_seconds = 0.0
+    enabled = true
+    shortcut = "2"
+    variant = "default"
+
+    [[shell.session.actions]]
+    action = "lock_and_suspend"
+    countdown_seconds = 3.0
+    enabled = true
+    shortcut = "3"
+    variant = "default"
+
+    [[shell.session.actions]]
+    action = "reboot"
+    countdown_seconds = 3.0
+    enabled = true
+    shortcut = "4"
+    variant = "default"
+
+    [[shell.session.actions]]
+    action = "shutdown"
+    countdown_seconds = 3.0
+    enabled = true
+    shortcut = "5"
+    variant = "destructive"
+
+[system.monitor]
+gpu_poll_seconds = 30
+
+[wallpaper]
+directory = "~/Ảnh/Wallpaper"
+edge_smoothness = 0.65
+enabled = false
+transition = [ "disc" ]
+transition_duration = 1100
+
+[theme]
+mode = "dark"
+source = "wallpaper"
+wallpaper_scheme = "m3-content"
+
+    [theme.templates]
+    builtin_ids = [ "btop", "gtk3", "gtk4", "kcolorscheme", "kitty", "qt", "alacritty", "hyprland" ]
+
+[widget.clock]
+color = "secondary"
+format = "{:%H:%M • %a %d/%m}"
+
+[widget.launcher]
+color = "secondary"
+
+[widget.media]
+hide_when_no_media = true
+title_scroll = "on_hover"
+
+[widget.network]
+color = "secondary"
+
+[widget.notifications]
+color = "secondary"
+
+[widget.session]
+color = "error"
+
+[widget.hotspot]
+glyph = "antenna-bars-5"
+interactive = true
+tooltip = "Mobile Hotspot (Trái: Bật/Tắt | Phải: Menu)"
+type = "custom_button"
+
+    [widget.hotspot.actions]
+    left = "exec ~/.local/bin/hotspot toggle"
+    right = "exec ~/.local/bin/hotspot-menu"
+
+[widget.showdesktop]
+glyph = "device-desktop"
+interactive = true
+tooltip = "Show Desktop (an het cua so)"
+type = "custom_button"
+
+    [widget.showdesktop.actions]
+    left = "exec ~/.local/bin/toggle-desktop"
+
+[widget.spacer_1]
+type = "spacer"
+
+[widget.temp]
+glyph = "temperature"
+show_value = true
+stat = "cpu_temp"
+type = "sysmon"
+
+[widget.sysmon_3]
+glyph = "device-desktop-analytics"
+show_value = true
+stat = "ram_used"
+type = "sysmon"
+
+[widget.tray]
+capsule = true
+capsule_fill = "on_secondary"
+
+[widget.volume]
+color = "secondary"
+
+[widget.workspaces]
+active_pill_size = 2.8
+capsule = true
+capsule_fill = "on_primary"
+inactive_pill_size = 1.0
+pill_scale = 0.85
+show_labels = true
+
+[control_center]
+width = 760
+
+# Laptop power belongs on the bar; hardware details remain in Control Center.
+[widget.battery]
+type = "battery"
+color = "secondary"
+
+[hooks]
+colors_changed = ["python3 /home/admin/.config/hypr/scripts/generate-theme.py --mark-ready"]

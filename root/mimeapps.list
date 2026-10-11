@@ -1,0 +1,31 @@
+[Added Associations]
+x-scheme-handler/http=brave-origin.desktop;
+x-scheme-handler/https=brave-origin.desktop;
+x-scheme-handler/chrome=brave-origin.desktop;
+text/html=brave-origin.desktop;
+application/x-extension-htm=brave-origin.desktop;
+application/x-extension-html=brave-origin.desktop;
+application/x-extension-shtml=brave-origin.desktop;
+application/xhtml+xml=brave-origin.desktop;
+application/x-extension-xhtml=brave-origin.desktop;
+application/x-extension-xht=brave-origin.desktop;
+x-scheme-handler/antigravity=antigravity.desktop;
+inode/directory=nemo.desktop;
+
+[Default Applications]
+inode/directory=org.gnome.Nautilus.desktop
+text/plain=org.gnome.TextEditor.desktop;
+x-scheme-handler/http=brave-origin.desktop
+x-scheme-handler/https=brave-origin.desktop
+x-scheme-handler/chrome=brave-origin.desktop
+text/html=brave-origin.desktop
+application/x-extension-htm=brave-origin.desktop
+application/x-extension-html=brave-origin.desktop
+application/x-extension-shtml=brave-origin.desktop
+application/xhtml+xml=brave-origin.desktop
+application/x-extension-xhtml=brave-origin.desktop
+application/x-extension-xht=brave-origin.desktop
+x-scheme-handler/antigravity=antigravity.desktop
+x-scheme-handler/t3code=com.t3tools.T3Code.desktop
+x-scheme-handler/codex=chatgpt.desktop
+x-scheme-handler/discord=vesktop.desktop

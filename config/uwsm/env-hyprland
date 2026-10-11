@@ -1,0 +1,2 @@
+# Use only the Intel GPU for the Hyprland session.
+export AQ_DRM_DEVICES="$HOME/.config/hypr/gpu/intel"

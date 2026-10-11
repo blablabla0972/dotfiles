@@ -1,0 +1,4 @@
+! option = symbols
+  caps:nav = +custom_caps_nav(caps_nav)
+
+! include %S/evdev

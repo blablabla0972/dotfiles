@@ -1,0 +1,22 @@
+# Backup / generated files
+*.bak
+*.bak-*
+*.backup-*
+*.pyc
+__pycache__/
+wallpaper_thumb.jpg
+
+# Cache / log sinh ra bởi app (không phải config)
+*.log
+fcitx5/conf/cached_layouts
+fish/fish_variables
+
+# Machine-specific / private (không nên commit)
+current_wallpaper
+gpu/
+
+# Editor junk
+*.swp
+*~
+.DS_Store
+Thumbs.db

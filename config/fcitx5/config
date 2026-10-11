@@ -1,0 +1,9 @@
+[Hotkey]
+# Enumerate when press trigger key repeatedly
+EnumerateWithTriggerKeys=True
+# Skip first input method when enumerating
+EnumerateSkipFirst=False
+
+[Hotkey/TriggerKeys]
+0=Control+Shift_L
+1=Control+Shift_R
