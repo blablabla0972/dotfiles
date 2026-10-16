@@ -1,6 +1,7 @@
 # Backup / generated files
 *.bak
 *.bak-*
+*.bak.*
 *.backup-*
 *.pyc
 __pycache__/
@@ -20,3 +21,6 @@ gpu/
 *~
 .DS_Store
 Thumbs.db
+
+# Git worktree
+.worktrees/
