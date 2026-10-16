@@ -41,7 +41,7 @@ cd ~/Projects/dotfiles
 
 ```bash
 cd ~/Projects/dotfiles
-rsync -a --delete --exclude={'*.bak','*.bak-*','*.backup-*','__pycache__','*.pyc','current_wallpaper','gpu','backup','backup_baseline','wallpaper_thumb.jpg'} \
+rsync -a --delete --exclude={'*.bak','*.bak-*','*.bak.*','*.backup-*','__pycache__','*.pyc','current_wallpaper','gpu','backup','backup_baseline','wallpaper_thumb.jpg'} \
   ~/.config/hypr/ config/hypr/
 git add -A && git commit -m "update: mô tả thay đổi"
 ```
@@ -67,3 +67,30 @@ cũng cần đổi sang `$HOME` hoặc user mới nếu máy khác tên user kh�
 | Rofi | App launcher (`SUPER+SPACE`) |
 | hyprlock | Màn hình khóa |
 | fcitx5 + Bamboo | Nhập tiếng Việt |
+
+## Workflow rice với worktree (từ 2026-10-16)
+
+5 mục rice đã cài bằng `./install.sh` — **live là symlink vào repo** (nhánh `main`):
+`~/.config/{hypr,noctalia,quickshell,matugen,rofi}` → `config/*`.
+Sửa trong `config/` của repo = sửa luôn trên máy (5 mục này không cần rsync nữa).
+
+### Thử thay đổi cách ly bằng worktree
+
+```bash
+cd ~/Projects/dotfiles
+git worktree add .worktrees/<tên> -b <tên>
+# sửa config trong .worktrees/<tên>/config/...
+./wt-prep.sh .worktrees/<tên>     # copy file máy-specific bị gitignore (gpu, current_wallpaper)
+cd .worktrees/<tên> && ./install.sh hypr noctalia quickshell matugen rofi   # trỏ live vào worktree để xem trước
+
+# ưng → merge vào main rồi trỏ live về main (đã gồm thay đổi):
+cd ~/Projects/dotfiles && git merge <tên> && ./install.sh hypr noctalia quickshell matugen rofi
+# không ưng → trỏ live về main như cũ:
+cd ~/Projects/dotfiles && ./install.sh hypr noctalia quickshell matugen rofi
+```
+
+### Reload + rollback
+- Hyprland: `hyprctl reload` + `hyprctl configerrors`
+- Noctalia: `noctalia msg config-reload` (đổi palette: `noctalia msg color-palette-reload`)
+- Rollback: `git reset --hard <commit>` + reload; backup mỗi lần cài symlink: `~/.config/backups/dotfiles-<timestamp>/`
+- Quy tắc cho agent (opencode/codex): xem `AGENTS.md` trong repo.
