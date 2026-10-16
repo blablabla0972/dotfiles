@@ -44,11 +44,11 @@ link() {
     if [ -e "$dst" ] || [ -L "$dst" ]; then
         run mkdir -p "$BACKUP_DIR"
         backup "$dst → $BACKUP_DIR/"
-        run mv "$dst" "$BACKUP_DIR/$(basename "$dst")"
+        run mv -T "$dst" "$BACKUP_DIR/$(basename "$dst")"
     fi
 
     run mkdir -p "$(dirname "$dst")"
-    run ln -s "$src" "$dst"
+    run ln -sT "$src" "$dst"
     ok "linked: $dst → $src"
 }
 
