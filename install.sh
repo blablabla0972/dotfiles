@@ -83,6 +83,25 @@ for src in "$ROOT_SRC"/*; do
     link "$src" "$TARGET/$name"
 done
 
+# 3) File state → ~/.local/state/<tên-app>/<file>  (mục chọn theo tên app, vd: "noctalia")
+STATE_SRC="$REPO/state"
+STATE_TARGET="$HOME/.local/state"
+if [ -d "$STATE_SRC" ]; then
+    for app_src in "$STATE_SRC"/*/; do
+        [ -d "$app_src" ] || continue
+        app="$(basename "$app_src")"
+        if [ "${#ONLY[@]}" -gt 0 ]; then
+            skip=1
+            for o in "${ONLY[@]}"; do [ "$o" = "$app" ] && skip=0 && break; done
+            [ "$skip" -eq 1 ] && continue
+        fi
+        for src in "$app_src"*; do
+            [ -e "$src" ] || continue
+            link "$src" "$STATE_TARGET/$app/$(basename "$src")"
+        done
+    done
+fi
+
 echo
 ok "Xong. Backup (nếu có) nằm trong: $BACKUP_DIR"
 echo

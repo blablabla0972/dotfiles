@@ -21,10 +21,11 @@ dotfiles/
 │   ├── systemd/     # User units (swww-daemon)
 │   ├── uwsm/ menus/ xkb/ xed/ xsettingsd/ cachyos/
 │   └── micro/       # Editor (settings + colorschemes)
-└── root/            # symlink → ~/.config/<tên-file>
-    ├── *-flags.conf # Chromium/Electron flags
-    ├── kdeglobals dolphinrc mimeapps.list
-    └── locale.conf user-dirs.dirs user-dirs.locale
+├── root/            # symlink → ~/.config/<tên-file>
+│   ├── *-flags.conf # Chromium/Electron flags
+│   ├── kdeglobals dolphinrc mimeapps.list
+│   └── locale.conf user-dirs.dirs user-dirs.locale
+└── state/           # symlink → ~/.local/state/<tên-app>/ (vd: noctalia/settings.toml)
 ```
 
 ## Cài đặt trên máy mới
@@ -73,6 +74,7 @@ cũng cần đổi sang `$HOME` hoặc user mới nếu máy khác tên user kh�
 5 mục rice đã cài bằng `./install.sh` — **live là symlink vào repo** (nhánh `main`):
 `~/.config/{hypr,noctalia,quickshell,matugen,rofi}` → `config/*`.
 Sửa trong `config/` của repo = sửa luôn trên máy (5 mục này không cần rsync nữa).
+Thêm `state/noctalia/settings.toml`: Noctalia ghi settings **xuyên symlink** thẳng vào repo — đổi theme/setting là thấy diff ngay trong git.
 
 ### Thử thay đổi cách ly bằng worktree
 
