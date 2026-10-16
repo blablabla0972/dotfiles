@@ -34,7 +34,7 @@ widget_spacing = 6
     border = ""
     fill = "on_secondary"
     id = "launcher_clock"
-    members = [ "launcher", "clock" ]
+        members = [ "launcher", "clock" ]
     opacity = 1.0
     padding = 6.0
 
@@ -70,13 +70,13 @@ settings_show_advanced = true
     [shell.panel]
     borders = true
     control_center_placement = "floating"
-    control_center_position = "top_left"
+    control_center_position = "top_center"
     floating_offset = 10
     open_near_click_control_center = true
     session_placement = "floating"
     session_position = "center"
     shadow = true
-    transparency_mode = "glass"
+    transparency_mode = "solid"
 
     [shell.screenshot]
     copy_to_clipboard = false
@@ -132,6 +132,7 @@ transition_duration = 1100
 [theme]
 mode = "dark"
 source = "wallpaper"
+matugen_palette = "matugen"
 wallpaper_scheme = "m3-content"
 
     [theme.templates]
@@ -207,7 +208,28 @@ pill_scale = 0.85
 show_labels = true
 
 [control_center]
-width = 760
+width = 1180
+sidebar = "compact"
+sidebar_section = "compact"
+show_shortcut_labels = true
+
+    [[control_center.shortcuts]]
+    type = "wifi"
+
+    [[control_center.shortcuts]]
+    type = "bluetooth"
+
+    [[control_center.shortcuts]]
+    type = "nightlight"
+
+    [[control_center.shortcuts]]
+    type = "caffeine"
+
+    [[control_center.shortcuts]]
+    type = "audio"
+
+    [[control_center.shortcuts]]
+    type = "mic_mute"
 
 # Laptop power belongs on the bar; hardware details remain in Control Center.
 [widget.battery]
@@ -215,4 +237,7 @@ type = "battery"
 color = "secondary"
 
 [hooks]
-colors_changed = ["python3 /home/admin/.config/hypr/scripts/generate-theme.py --mark-ready"]
+wallpaper_changed = ["python3 /home/admin/.config/hypr/scripts/generate-theme.py --wallpaper-changed"]
+
+[plugins]
+enabled = []
