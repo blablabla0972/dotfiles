@@ -29,7 +29,7 @@ window {
     border-color:                @outline-variant;
     border-radius:               16px;
     cursor:                      "default";
-    background-color:            @surface;
+    background-color:            @surface-glass;
 }
 
 mainbox {

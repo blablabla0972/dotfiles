@@ -1,4 +1,5 @@
 * {
+    surface-glass: #0f1512dd;
     primary: #8ad6b6;
     primary-fixed: #a6f2d2;
     primary-fixed-dim: #8ad6b6;

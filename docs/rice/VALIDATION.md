@@ -1,7 +1,7 @@
 # Validation — 2026-10-17
 
 - 10 stdlib transaction tests pass: mode switching, queued events, deduplication across modes, native-template failure rollback, GTK settings preservation, missing files, exited shell handling and concurrent user-mode preservation during wallpaper rollback. Test XDG directories are isolated.
-- 12 real Matugen palettes and 96 native Noctalia template renders pass; generated Lua/TOML/GTK CSS parse. Solid semantic surfaces and the bar at 92% opacity meet at least 6.43:1 foreground contrast in these fixtures.
+- 12 real Matugen palettes and 96 native Noctalia template renders pass; generated Lua/TOML/GTK CSS parse. Solid semantic surfaces and the bar at 82% opacity and launcher at 221/255 opacity meet at least 6.43:1 foreground contrast in these fixtures.
 - Rofi native parser passes all 12 cases. Installed Rofi 2.0.0-dirty crashes only in display_cleanup after its validation CLI; the check skips that cleanup with GDB while preserving the parser exit status. An invalid-syntax negative control was rejected. The normal launcher was also opened and captured successfully.
 - Live Hyprland reload/configerrors and Noctalia validation pass at 1920×1080, scale 1.
 - Live dark→light→dark hook synchronization verified across palette files, GTK preferences and native templates. Final/default mode is dark.
@@ -27,3 +27,7 @@ Independent final review found two important issues: rollback could undo a newer
 ## Performance sample
 
 Two-second idle samples, not a benchmark: Hyprland CPU 3.5%→2.5%, Noctalia 1.5%→2.5%; RSS 207.2→152.0 MiB and 191.4→184.6 MiB. No sustained regression observed during repeated native previews and fullscreen transitions.
+
+## Glass correction
+
+User follow-up identified insufficient glass: the bar was 92% opaque and the launcher surface was fully opaque. Bar opacity is now 82%; the launcher uses a Matugen-derived #RRGGBBDD surface (86.7%) with existing compositor blur. All 12 palette/parser cases pass at the actual configured opacity (minimum contrast 6.43:1); native launcher preview succeeds. Dark mode and the original lock layout are retained.

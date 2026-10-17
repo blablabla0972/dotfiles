@@ -1,4 +1,5 @@
 * {
+    surface-glass: {{colors.surface.default.hex}}dd;
     primary: {{colors.primary.default.hex}};
     primary-fixed: {{colors.primary_fixed.default.hex}};
     primary-fixed-dim: {{colors.primary_fixed_dim.default.hex}};

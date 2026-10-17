@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -50,6 +51,7 @@ def validate_rofi(path, env):
 
 
 def check(desktop=True):
+    bar_alpha = tomllib.loads((ROOT / 'config/noctalia/config.toml').read_text())['bar']['default']['background_opacity']
     pairs = [('mOnSurface', 'mSurface'), ('mOnSurfaceVariant', 'mSurfaceVariant'),
              ('mOnPrimary', 'mPrimary'), ('mOnSecondary', 'mSecondary'),
              ('mOnError', 'mError'), ('mOnHover', 'mHover')]
@@ -90,12 +92,16 @@ def check(desktop=True):
                 terminal = colors['terminal']
                 ratios += [contrast(terminal['foreground'], terminal['background']),
                            contrast(terminal['selectionFg'], terminal['selectionBg'])]
-                # Even the worst wallpaper under the 92%-opaque bar must remain readable.
+                # Check the actual bar and launcher opacity against white/black wallpaper.
                 base = colors['mSurface'].lstrip('#')
-                for wallpaper_channel in (0, 255):
-                    mixed = '#' + ''.join(f'{round(int(base[i:i + 2], 16) * .92 + wallpaper_channel * .08):02x}'
-                                          for i in (0, 2, 4))
-                    ratios.append(contrast(colors['mOnSurface'], mixed))
+                glass = re.search(r'surface-glass:\s*#[0-9a-fA-F]{6}([0-9a-fA-F]{2});',
+                                  (config / 'rofi/colors.rasi').read_text())
+                assert glass, 'Missing translucent launcher surface'
+                for alpha in (bar_alpha, int(glass.group(1), 16) / 255):
+                    for wallpaper_channel in (0, 255):
+                        mixed = '#' + ''.join(f'{round(int(base[i:i + 2], 16) * alpha + wallpaper_channel * (1-alpha)):02x}'
+                                              for i in (0, 2, 4))
+                        ratios.append(contrast(colors['mOnSurface'], mixed))
                 assert min(ratios) >= 4.5, (name, mode, min(ratios))
                 native_command = ['noctalia', 'theme', str(image), '--theme-json', str(palette_path),
                                   '--both', '--default-mode', mode]

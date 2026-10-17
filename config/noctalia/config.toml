@@ -7,7 +7,7 @@ enabled = true
 tint_intensity = 0.3
 
 [bar.default]
-background_opacity = 0.92
+background_opacity = 0.82
 border = "outline"
 border_width = 1.0
 capsule = false
