@@ -4,6 +4,8 @@ Live config của máy này là **symlink** vào repo này:
 `~/.config/{hypr,noctalia,quickshell,matugen,rofi}` → `config/*` (nhánh `main`).
 Thêm `~/.local/state/noctalia/settings.toml` → `state/noctalia/settings.toml` (Noctalia ghi settings xuyên symlink vào repo).
 
+Mọi mục còn lại trong `config/` và `root/` (alacritty, kitty, btop, fish, gtk-*, qt*ct, systemd, kdeglobals...) là **snapshot**: sửa repo KHÔNG đổi máy — muốn áp lên máy thì `./install.sh <mục>` (có backup). Đồng bộ máy → repo: copy `~/.config/<mục>` vào `config/<mục>` (như commit `sync: live state`), bỏ qua file runtime đã gitignore (`*.log`, `*.bak*`, `cached_layouts`, `fish_variables`, `thumbnail.png`, `micro/syntax/`, `gpu/`, `current_wallpaper`). Tổng quan + cài máy mới: `README.md`.
+
 ## Nguyên tắc
 - Đổi rice: làm trong **worktree** `.worktrees/<tên>` (nhánh riêng). Không sửa thẳng `main` trừ khi user yêu cầu.
 - Trước khi preview từ worktree: `./wt-prep.sh .worktrees/<tên>` (copy file máy-specific bị gitignore: `gpu/`, `current_wallpaper`, `wallpaper_thumb.jpg`).
