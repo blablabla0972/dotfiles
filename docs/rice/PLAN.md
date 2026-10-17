@@ -7,7 +7,7 @@ Goal: a floating grouped bar and a coherent, restrained desktop that follows eve
 - Hyprland: gaps 5/10, radius 14, border 2, opaque application surfaces, palette-driven borders, subtle shadows/blur, short animations without overshoot.
 - Default launcher: Noctalia on SUPER+SPACE, using native shell.panel.transparency_mode = glass. Rofi remains a secondary launcher: wallpaper panel 30%, results 70%, width min(70%,900px), height at most 75%, semantic colors and opacity 221/255 with blur.
 - Lock: retain the original borderless stacked hours/minutes, dim wallpaper and password pill; preserve original neutral text and Matugen check/error accents. User explicitly rejected the clock card during live preview. Authentication is unchanged.
-- Kitty/Alacritty: font 12, padding 14, opacity .96, no cursor trail. Preserve native theme includes. GTK/Qt use existing native templates.
+- Kitty/Alacritty: font 12, padding 14, opacity .82 with compositor blur, no cursor trail. Preserve native theme includes. GTK/Qt use existing native templates.
 - Wallpaper source and Matugen palette remain unchanged; default mode remains dark.
 
 ## Tasks

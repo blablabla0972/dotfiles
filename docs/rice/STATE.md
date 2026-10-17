@@ -23,3 +23,5 @@ Final state: live configuration points to /home/admin/Projects/dotfiles on main;
 Glass follow-up: bar 82% opacity, launcher 86.7% opacity plus blur; colors remain Matugen-derived. Twelve palette cases and live launcher preview verified; dark mode and original lock preserved.
 
 Default-launcher correction: SUPER+SPACE invokes Noctalia, not Rofi. Set Noctalia shell.panel.transparency_mode to its supported glass mode; this shared option also styles its other popups. Preserve dark mode, Matugen palette and original lock.
+
+Terminal glass: Kitty and Alacritty background opacity .82; Kitty dynamic_background_opacity enabled for future live adjustments. Existing Kitty processes need a new terminal process to adopt opacity.

@@ -35,3 +35,5 @@ User follow-up identified insufficient glass: the bar was 92% opaque and the lau
 ## Default Noctalia launcher glass
 
 User screenshot showed the native Noctalia launcher, while the earlier glass change affected only the secondary Rofi launcher. The actual SUPER+SPACE bind invokes noctalia panel-toggle launcher. Corrected shell.panel.transparency_mode from solid to the supported glass enum; canonical config export confirms glass, native panel-open launcher creates the noctalia-panel surface, and a live screenshot confirms background translucency and compositor blur. This shared material also applies to other Noctalia popups. Dark mode and original Hyprlock layout remain unchanged.
+
+Terminal glass: parsed Kitty config with its native loader and Alacritty TOML with tomllib; both report opacity .82. A fresh Kitty preview visibly showed wallpaper blur with opaque text (private screenshot terminal-glass.png); preview closed without restarting the user terminal.
