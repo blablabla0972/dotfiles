@@ -11,6 +11,8 @@ wallpaper_thumb.jpg
 *.log
 fcitx5/conf/cached_layouts
 fish/fish_variables
+gtk-4.0/thumbnail.png
+micro/syntax/
 
 # Machine-specific / private (không nên commit)
 current_wallpaper

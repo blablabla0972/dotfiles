@@ -29,3 +29,4 @@ x-scheme-handler/antigravity=antigravity.desktop
 x-scheme-handler/t3code=com.t3tools.T3Code.desktop
 x-scheme-handler/codex=chatgpt.desktop
 x-scheme-handler/discord=vesktop.desktop
+x-scheme-handler/mailto=brave-origin.desktop

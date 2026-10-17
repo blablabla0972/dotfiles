@@ -9,3 +9,6 @@ source /usr/share/cachyos-fish-config/cachyos-config.fish
 
 # Added by Antigravity CLI installer
 set -gx PATH "/home/admin/.local/bin" $PATH
+
+# Starship prompt
+starship init fish | source
