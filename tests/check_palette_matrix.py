@@ -4,7 +4,6 @@ import argparse
 import importlib.util
 import json
 import os
-import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -35,21 +34,6 @@ def contrast(foreground, background):
     return (values[1] + .05) / (values[0] + .05)
 
 
-def validate_rofi(path, env):
-    args = ['rofi', '-no-config', '-rasi-validate', str(path)]
-    result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=15)
-    if result.returncode == -11:
-        # Shipped 2.0.0-dirty crashes in display_cleanup after this display-free CLI.
-        # Skip only cleanup, preserving the parser's real exit status; no binary changes.
-        run(['gdb', '-batch', '--return-child-result', '-iex', 'set debuginfod enabled off',
-             '-ex', 'break display_cleanup', '-ex', 'run', '-ex', 'return', '-ex', 'continue',
-             '--args', *args], env)
-        return 'native-parser/gdb-cleanup-workaround'
-    if result.returncode:
-        raise RuntimeError(result.stderr or f'Rofi validation exited {result.returncode}')
-    return 'native-parser'
-
-
 def check(desktop=True):
     bar_alpha = tomllib.loads((ROOT / 'config/noctalia/config.toml').read_text())['bar']['default']['background_opacity']
     pairs = [('mOnSurface', 'mSurface'), ('mOnSurfaceVariant', 'mSurfaceVariant'),
@@ -66,12 +50,11 @@ def check(desktop=True):
                    XDG_STATE_HOME=str(scratch / 'state'), XDG_RUNTIME_DIR=str(scratch / 'runtime'))
         for name in ('HYPRLAND_INSTANCE_SIGNATURE', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'):
             env.pop(name, None)
-        for app in ('hypr', 'rofi', 'noctalia/palettes', 'kitty', 'alacritty',
+        for app in ('hypr', 'noctalia/palettes', 'kitty', 'alacritty',
                     'gtk-3.0', 'gtk-4.0', 'qt6ct', 'btop'):
             (config / app).mkdir(parents=True, exist_ok=True)
         templates = []
         for name, source, output in [('hypr', 'hyprland-colors.conf', 'hypr/colors.conf'),
-                                      ('rofi', 'rofi-colors.rasi', 'rofi/colors.rasi'),
                                       ('noctalia', 'noctalia-palette.json', 'noctalia/palettes/matugen.json')]:
             templates.append(f'[templates.{name}]\ninput_path = {json.dumps(str(ROOT / "config/matugen/templates" / source))}\noutput_path = {json.dumps(str(config / output))}\n')
         matugen_config = scratch / 'matugen.toml'
@@ -92,12 +75,9 @@ def check(desktop=True):
                 terminal = colors['terminal']
                 ratios += [contrast(terminal['foreground'], terminal['background']),
                            contrast(terminal['selectionFg'], terminal['selectionBg'])]
-                # Check the actual bar and launcher opacity against white/black wallpaper.
+                # Check the actual bar opacity against white/black wallpaper.
                 base = colors['mSurface'].lstrip('#')
-                glass = re.search(r'surface-glass:\s*#[0-9a-fA-F]{6}([0-9a-fA-F]{2});',
-                                  (config / 'rofi/colors.rasi').read_text())
-                assert glass, 'Missing translucent launcher surface'
-                for alpha in (bar_alpha, int(glass.group(1), 16) / 255):
+                for alpha in (bar_alpha,):
                     for wallpaper_channel in (0, 255):
                         mixed = '#' + ''.join(f'{round(int(base[i:i + 2], 16) * alpha + wallpaper_channel * (1-alpha)):02x}'
                                               for i in (0, 2, 4))
@@ -134,19 +114,14 @@ def check(desktop=True):
                        'hl = {config=function(v) assert(v.general.col.active_border == c.primary) end}; '
                        'c.apply_theme()')
                 run(['lua', '-e', lua], dict(env, RICE_TEST_ROOT=str(ROOT), RICE_TEST_PRIMARY=colors['mPrimary']))
-                rofi = scratch / 'launcher.rasi'
-                rofi.write_text((ROOT / 'config/rofi/config.rasi').read_text().replace(
-                    '@import "colors.rasi"', f'@import "{config / "rofi/colors.rasi"}"'))
-                parser_backend = validate_rofi(rofi, dict(os.environ, XDG_CONFIG_HOME=str(config))) if desktop else None
                 report.append({'fixture': name, 'mode': mode, 'minimum_contrast': round(min(ratios), 2),
-                               'native_templates_rendered': len(expected), 'rofi_parser_checked': desktop,
-                               'rofi_parser_backend': parser_backend})
+                               'native_templates_rendered': len(expected)})
     return report
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--no-desktop', action='store_true', help='Render and check colors without the Rofi display-dependent parser')
+    parser.add_argument('--no-desktop', action='store_true', help='Compatibility flag; validation runs without a display')
     results = check(desktop=not parser.parse_args().no_desktop)
     if os.environ.get('RICE_MATRIX_REPORT'):
         Path(os.environ['RICE_MATRIX_REPORT']).write_text(json.dumps(results, indent=2) + '\n')

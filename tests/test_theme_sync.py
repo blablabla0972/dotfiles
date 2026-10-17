@@ -28,7 +28,7 @@ class ThemeSyncTest(unittest.TestCase):
         self.runtime.mkdir()
         self.wallpaper = root / 'wallpaper.png'
         self.wallpaper.write_bytes(b'image fixture')
-        self.outputs = [self.config / p for p in ('rofi/colors.rasi', 'hypr/colors.conf',
+        self.outputs = [self.config / p for p in ('hypr/colors.conf',
                         'noctalia/palettes/matugen.json', 'kitty/themes/noctalia.conf')]
         for p in self.outputs:
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -131,9 +131,6 @@ class ThemeSyncTest(unittest.TestCase):
     def test_wallpaper_rollback_preserves_a_newer_user_mode(self):
         self.mode = 'dark'
         self.settings.write_text('mode = "dark"\n')
-        thumb = self.config / 'rofi/wallpaper_thumb.jpg'
-        thumb.write_bytes(b'existing thumbnail')
-        os.utime(thumb, (theme.time.time() + 10,) * 2)
         original = self.command
         def command(argv):
             if argv[0] == 'swww': return ''

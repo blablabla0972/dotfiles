@@ -267,7 +267,7 @@ def quiesce_shell():
 def theme_snapshot_paths(config_dir, state_dir):
     share = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
     names = ['hypr/current_wallpaper', 'hypr/colors.conf', 'hypr/noctalia.lua', 'hypr/hyprland.lua',
-             'rofi/colors.rasi', 'rofi/wallpaper_thumb.jpg', 'kitty/kitty.conf', 'kitty/themes/noctalia.conf',
+             'kitty/kitty.conf', 'kitty/themes/noctalia.conf',
              'gtk-3.0/gtk.css', 'gtk-3.0/noctalia.css', 'gtk-4.0/gtk.css', 'gtk-4.0/noctalia.css',
              'gtk-3.0/settings.ini', 'gtk-4.0/settings.ini', 'qt5ct/qt5ct.conf', 'qt6ct/qt6ct.conf',
              'qt5ct/colors/noctalia.conf', 'qt6ct/colors/noctalia.conf', 'kdeglobals',
@@ -288,8 +288,6 @@ def apply(wallpaper, config_dir, state_dir, runtime):
     settings_target = settings.resolve()
     snapshot = Snapshot([settings_target if p == settings else p
                          for p in theme_snapshot_paths(config_dir, state_dir)], state_dir)
-    thumb = config_dir / 'rofi/wallpaper_thumb.jpg'
-    staged_thumb = snapshot.directory / 'thumbnail.jpg'
     changed_backend = False
     changed_noctalia = False
     request = runtime / 'noctalia-matugen-request.json'
@@ -305,8 +303,6 @@ def apply(wallpaper, config_dir, state_dir, runtime):
             'palette': hashlib.sha256((config_dir / 'noctalia/palettes/matugen.json').read_bytes()).hexdigest(),
             'expires': time.time() + 45,
         }).encode())
-        if old_wallpaper != wallpaper or not thumb.exists() or wallpaper.stat().st_mtime > thumb.stat().st_mtime:
-            command(['magick', str(wallpaper), '-thumbnail', '1000x1000>', '-quality', '85', str(staged_thumb)])
         changed_backend = True
         duration_sec = 0.8
         command(['swww', 'img', str(wallpaper), '--transition-type', 'grow', '--transition-pos', 'center',
@@ -327,7 +323,6 @@ def apply(wallpaper, config_dir, state_dir, runtime):
         command(['hyprctl', 'reload', 'config-only'])
         errors = command(['hyprctl', 'configerrors'])
         if errors: raise RuntimeError(errors)
-        if staged_thumb.exists(): atomic_write(thumb, staged_thumb.read_bytes())
         atomic_link(link, str(wallpaper))
         print('WALLPAPER_AND_THEME_OK', wallpaper, '\nBACKUP', snapshot.directory)
     except Exception:
@@ -415,13 +410,10 @@ def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
             check_selection()
             sync_toolkit_settings(config_dir, mode)
             if not mode_changed and old_wallpaper != wallpaper:
-                staged_thumb = snapshot.directory / 'thumbnail.jpg'
-                command(['magick', str(wallpaper), '-thumbnail', '1000x1000>', '-quality', '85', str(staged_thumb)])
                 if not config.get('wallpaper', {}).get('enabled', True):
                     changed_backend = True
                     command(['swww', 'img', str(wallpaper), '--transition-type', 'fade', '--transition-duration', '0.3'])
                 check_selection()
-                atomic_write(config_dir / 'rofi/wallpaper_thumb.jpg', staged_thumb.read_bytes())
                 atomic_link(link, str(wallpaper))
             if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE'):
                 command(['hyprctl', 'reload', 'config-only'])
@@ -473,7 +465,7 @@ def main():
             else:
                 palette_path = config_dir / 'noctalia/palettes/matugen.json'
                 snap = Snapshot([
-                    config_dir / 'rofi/colors.rasi', config_dir / 'hypr/colors.conf', palette_path,
+                    config_dir / 'hypr/colors.conf', palette_path,
                     state_dir / 'noctalia/settings.toml',
                 ], state_dir)
                 palette_changed = False

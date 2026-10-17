@@ -3,7 +3,7 @@
 # Dotfiles installer — tạo symlink từ repo về ~/.config
 # Cách dùng:
 #   ./install.sh           # cài hết
-#   ./install.sh hypr rofi # chỉ cài vài mục
+#   ./install.sh hypr noctalia # chỉ cài vài mục
 #   ./install.sh --dry-run # xem sẽ làm gì, chưa làm thật
 # =============================================================================
 set -euo pipefail

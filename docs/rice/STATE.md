@@ -25,3 +25,5 @@ Glass follow-up: bar 82% opacity, launcher 86.7% opacity plus blur; colors remai
 Default-launcher correction: SUPER+SPACE invokes Noctalia, not Rofi. Set Noctalia shell.panel.transparency_mode to its supported glass mode; this shared option also styles its other popups. Preserve dark mode, Matugen palette and original lock.
 
 Terminal glass: Kitty and Alacritty background opacity .82; Kitty dynamic_background_opacity enabled for future live adjustments. Existing Kitty processes need a new terminal process to adopt opacity.
+
+Rofi removed on user request: package uninstalled; launcher configs, Matugen target, thumbnail generation and layer rule removed. Noctalia remains the SUPER+SPACE launcher.

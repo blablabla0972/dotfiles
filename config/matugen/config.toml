@@ -7,10 +7,6 @@ set = false
 input_path = '~/.config/matugen/templates/hyprland-colors.conf'
 output_path = '~/.config/hypr/colors.conf'
 
-[templates.rofi]
-input_path = '~/.config/matugen/templates/rofi-colors.rasi'
-output_path = '~/.config/rofi/colors.rasi'
-
 [templates.noctalia]
 input_path = '~/.config/matugen/templates/noctalia-palette.json'
 output_path = '~/.config/noctalia/palettes/matugen.json'

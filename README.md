@@ -10,7 +10,6 @@ dotfiles/
 │   ├── hypr/        # Hyprland (backend Lua), hyprlock, scripts
 │   ├── noctalia/    # Bar/shell Noctalia (thay waybar + dunst + swww UI)
 │   ├── matugen/     # Sinh màu từ wallpaper
-│   ├── rofi/        # Launcher
 │   ├── quickshell/  # 3D Wallpaper Carousel
 │   ├── btop/        # System monitor
 │   ├── fish/        # Shell fish
@@ -35,7 +34,7 @@ git clone git@github.com:<user>/dotfiles.git ~/Projects/dotfiles
 cd ~/Projects/dotfiles
 ./install.sh --dry-run   # xem trước
 ./install.sh             # cài hết (backup file cũ vào ~/.config/backups/dotfiles-<timestamp>/)
-./install.sh hypr rofi   # chỉ cài vài mục
+./install.sh hypr noctalia   # chỉ cài vài mục
 ```
 
 ## Đồng bộ sau khi sửa cấu hình
@@ -64,16 +63,15 @@ cũng cần đổi sang `$HOME` hoặc user mới nếu máy khác tên user kh�
 | Hyprland 0.56.2 | Compositor, config backend **Lua** (`hyprland.lua` load 12 module trong `config/`) |
 | Noctalia | Bar + notification + control center (thay waybar/dunst/swaync) |
 | swww | Wallpaper daemon (chạy qua systemd user unit) |
-| matugen | Sinh màu từ wallpaper → `hypr/colors.conf`, `rofi/colors.rasi` |
-| Rofi | Launcher phụ (`rofi -show drun`); `SUPER+SPACE` mở launcher Noctalia |
+| matugen | Sinh màu từ wallpaper → `hypr/colors.conf` |
 | hyprlock | Màn hình khóa |
 | fcitx5 + Bamboo | Nhập tiếng Việt |
 
 ## Workflow rice với worktree (từ 2026-10-16)
 
-5 mục rice đã cài bằng `./install.sh` — **live là symlink vào repo** (nhánh `main`):
-`~/.config/{hypr,noctalia,quickshell,matugen,rofi}` → `config/*`.
-Sửa trong `config/` của repo = sửa luôn trên máy (5 mục này không cần rsync nữa).
+4 mục rice đã cài bằng `./install.sh` — **live là symlink vào repo** (nhánh `main`):
+`~/.config/{hypr,noctalia,quickshell,matugen}` → `config/*`.
+Sửa trong `config/` của repo = sửa luôn trên máy (4 mục này không cần rsync nữa).
 Thêm `state/noctalia/settings.toml`: Noctalia ghi settings **xuyên symlink** thẳng vào repo — đổi theme/setting là thấy diff ngay trong git.
 
 ### Thử thay đổi cách ly bằng worktree
@@ -83,12 +81,12 @@ cd ~/Projects/dotfiles
 git worktree add .worktrees/<tên> -b <tên>
 # sửa config trong .worktrees/<tên>/config/...
 ./wt-prep.sh .worktrees/<tên>     # copy file máy-specific bị gitignore (gpu, current_wallpaper)
-cd .worktrees/<tên> && ./install.sh hypr noctalia quickshell matugen rofi   # trỏ live vào worktree để xem trước
+cd .worktrees/<tên> && ./install.sh hypr noctalia quickshell matugen   # trỏ live vào worktree để xem trước
 
 # ưng → merge vào main rồi trỏ live về main (đã gồm thay đổi):
-cd ~/Projects/dotfiles && git merge <tên> && ./install.sh hypr noctalia quickshell matugen rofi
+cd ~/Projects/dotfiles && git merge <tên> && ./install.sh hypr noctalia quickshell matugen
 # không ưng → trỏ live về main như cũ:
-cd ~/Projects/dotfiles && ./install.sh hypr noctalia quickshell matugen rofi
+cd ~/Projects/dotfiles && ./install.sh hypr noctalia quickshell matugen
 ```
 
 ### Reload + rollback
@@ -99,7 +97,7 @@ cd ~/Projects/dotfiles && ./install.sh hypr noctalia quickshell matugen rofi
 
 ## Adaptive rice
 
-Bar nổi chia nhóm, font Adwaita Sans, cửa sổ bo góc nhẹ và launcher Noctalia với hiệu ứng kính; Rofi hai panel là launcher phụ. Màu lấy từ wallpaper qua Matugen. Mặc định **dark**, giữ bố cục màn hình khóa ban đầu với đồng hồ giờ/phút không có khung.
+Bar nổi chia nhóm, font Adwaita Sans, cửa sổ bo góc nhẹ và launcher Noctalia với hiệu ứng kính. Màu lấy từ wallpaper qua Matugen. Mặc định **dark**, giữ bố cục màn hình khóa ban đầu với đồng hồ giờ/phút không có khung.
 
 ```bash
 # Đổi wallpaper và đồng bộ toàn bộ giao diện
@@ -114,7 +112,7 @@ noctalia msg theme-mode-set light
 Hook `wallpaper_changed` giữ các cách chọn wallpaper hiện có hoạt động; `theme_mode_changed` đồng bộ màu khi chuyển sáng/tối. Bề mặt và chữ dùng các vai trò màu tương ứng, không ghim màu accent. Các cấu hình ứng dụng trong đợt rice này được cài bằng symlink để màu sinh ra được lưu đúng vào dotfiles.
 
 ```bash
-./install.sh hypr noctalia matugen rofi kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals
+./install.sh hypr noctalia matugen kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals
 hyprctl reload
 noctalia msg config-reload
 
