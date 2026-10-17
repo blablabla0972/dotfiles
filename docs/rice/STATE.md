@@ -9,7 +9,7 @@ Worktree: /home/admin/Projects/dotfiles/.worktrees/adaptive-polish
 - Task 2: complete — serialized mode hook, toolkit preferences, mode-aware deduplication and rollback regression fixes.
 - Task 3: complete — floating grouped bar, adaptive borders/surfaces, launcher and terminals.
 - Task 4: complete — see VALIDATION.md for tests, live checks and measurement limits.
-- Task 5: ready — commit reviewed result, merge main, reinstall changed components, push and verify remote.
+- Task 5: complete — implementation bddc83ad27ac60d93cf9e8c295b15de03bf744f2 merged into main, installed from main and pushed to origin/main; remote hash verified. Delivery notes are committed afterward.
 
 User corrections: remain in dark mode and retain the original lock hours/minutes layout without the clock card. No more lock or light-mode previews.
 
@@ -17,3 +17,5 @@ Ruling: use rice-adaptive-polish because existing branch rice prevents rice/adap
 Ruling: restore the user's original neutral lock text; Matugen still controls its existing check/error accents.
 Environment: full access now allows live validation and GitHub. Earlier socket/DNS/tool-approval restrictions were resolved.
 Review: two important findings reproduced and fixed; 10 transaction tests pass.
+
+Final state: live configuration points to /home/admin/Projects/dotfiles on main; original wallpaper and workspace restored, mode dark, original lock layout retained. GitHub: blablabla0972/dotfiles.
