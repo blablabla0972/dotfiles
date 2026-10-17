@@ -8,6 +8,7 @@ Thêm `~/.local/state/noctalia/settings.toml` → `state/noctalia/settings.toml`
 Mọi mục còn lại trong `config/` và `root/` (fish, systemd, fcitx5...) là **snapshot**: sửa repo KHÔNG đổi máy — muốn áp lên máy thì `./install.sh <mục>` (có backup). Đồng bộ máy → repo: copy `~/.config/<mục>` vào `config/<mục>` (như commit `sync: live state`), bỏ qua file runtime đã gitignore (`*.log`, `*.bak*`, `cached_layouts`, `fish_variables`, `thumbnail.png`, `micro/syntax/`, `gpu/`, `current_wallpaper`). Tổng quan + cài máy mới: `README.md`.
 
 ## Nguyên tắc
+- Launcher mặc định (`SUPER+SPACE`) là Noctalia: chỉnh `[shell.panel].transparency_mode` trong config Noctalia để đổi glass. Rofi chỉ là launcher phụ; xem bind thực tế trước khi sửa giao diện launcher.
 - Giữ chế độ tối theo Matugen và bố cục lock giờ/phút ban đầu, không có khung quanh đồng hồ (lựa chọn của user sau preview 2026-10-17).
 - Đổi rice: làm trong **worktree** `.worktrees/<tên>` (nhánh riêng). Không sửa thẳng `main` trừ khi user yêu cầu.
 - Trước khi preview từ worktree: `./wt-prep.sh .worktrees/<tên>` (copy file máy-specific bị gitignore: `gpu/`, `current_wallpaper`, `wallpaper_thumb.jpg`).

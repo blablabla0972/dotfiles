@@ -65,7 +65,7 @@ cũng cần đổi sang `$HOME` hoặc user mới nếu máy khác tên user kh�
 | Noctalia | Bar + notification + control center (thay waybar/dunst/swaync) |
 | swww | Wallpaper daemon (chạy qua systemd user unit) |
 | matugen | Sinh màu từ wallpaper → `hypr/colors.conf`, `rofi/colors.rasi` |
-| Rofi | App launcher (`SUPER+SPACE`) |
+| Rofi | Launcher phụ (`rofi -show drun`); `SUPER+SPACE` mở launcher Noctalia |
 | hyprlock | Màn hình khóa |
 | fcitx5 + Bamboo | Nhập tiếng Việt |
 
@@ -99,7 +99,7 @@ cd ~/Projects/dotfiles && ./install.sh hypr noctalia quickshell matugen rofi
 
 ## Adaptive rice
 
-Bar nổi chia nhóm, font Adwaita Sans, cửa sổ bo góc nhẹ và launcher hai panel; màu lấy từ wallpaper qua Matugen. Mặc định **dark**, giữ bố cục màn hình khóa ban đầu với đồng hồ giờ/phút không có khung.
+Bar nổi chia nhóm, font Adwaita Sans, cửa sổ bo góc nhẹ và launcher Noctalia với hiệu ứng kính; Rofi hai panel là launcher phụ. Màu lấy từ wallpaper qua Matugen. Mặc định **dark**, giữ bố cục màn hình khóa ban đầu với đồng hồ giờ/phút không có khung.
 
 ```bash
 # Đổi wallpaper và đồng bộ toàn bộ giao diện

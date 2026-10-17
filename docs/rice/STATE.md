@@ -21,3 +21,5 @@ Review: two important findings reproduced and fixed; 10 transaction tests pass.
 Final state: live configuration points to /home/admin/Projects/dotfiles on main; original wallpaper and workspace restored, mode dark, original lock layout retained. GitHub: blablabla0972/dotfiles.
 
 Glass follow-up: bar 82% opacity, launcher 86.7% opacity plus blur; colors remain Matugen-derived. Twelve palette cases and live launcher preview verified; dark mode and original lock preserved.
+
+Default-launcher correction: SUPER+SPACE invokes Noctalia, not Rofi. Set Noctalia shell.panel.transparency_mode to its supported glass mode; this shared option also styles its other popups. Preserve dark mode, Matugen palette and original lock.

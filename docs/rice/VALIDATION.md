@@ -31,3 +31,7 @@ Two-second idle samples, not a benchmark: Hyprland CPU 3.5%→2.5%, Noctalia 1.5
 ## Glass correction
 
 User follow-up identified insufficient glass: the bar was 92% opaque and the launcher surface was fully opaque. Bar opacity is now 82%; the launcher uses a Matugen-derived #RRGGBBDD surface (86.7%) with existing compositor blur. All 12 palette/parser cases pass at the actual configured opacity (minimum contrast 6.43:1); native launcher preview succeeds. Dark mode and the original lock layout are retained.
+
+## Default Noctalia launcher glass
+
+User screenshot showed the native Noctalia launcher, while the earlier glass change affected only the secondary Rofi launcher. The actual SUPER+SPACE bind invokes noctalia panel-toggle launcher. Corrected shell.panel.transparency_mode from solid to the supported glass enum; canonical config export confirms glass, native panel-open launcher creates the noctalia-panel surface, and a live screenshot confirms background translucency and compositor blur. This shared material also applies to other Noctalia popups. Dark mode and original Hyprlock layout remain unchanged.

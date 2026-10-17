@@ -76,7 +76,7 @@ settings_show_advanced = true
     session_placement = "floating"
     session_position = "center"
     shadow = true
-    transparency_mode = "solid"
+    transparency_mode = "glass"
 
     [shell.screenshot]
     copy_to_clipboard = false
