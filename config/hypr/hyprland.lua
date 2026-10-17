@@ -22,3 +22,4 @@ require("config.workspaces")
 
 -- For Noctalia Color templates
 require("noctalia").apply_theme()
+require("config.colors").apply_theme()

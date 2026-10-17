@@ -7,7 +7,7 @@ enabled = true
 tint_intensity = 0.3
 
 [bar.default]
-background_opacity = 0.85
+background_opacity = 0.92
 border = "outline"
 border_width = 1.0
 capsule = false
@@ -15,24 +15,24 @@ center = [ "workspaces" ]
 compositor_blur = true
 concave_edge_corners = false
 end = [ "media", "spacer_1", "tray", "group:status", "battery", "notifications", "session" ]
-margin_edge = 8
-margin_ends = 12
+margin_edge = 10
+margin_ends = 14
 padding = 10
 position = "top"
 radius = 16
-radius_bottom_left = 14
-radius_bottom_right = 14
-radius_top_left = 14
-radius_top_right = 14
+radius_bottom_left = 16
+radius_bottom_right = 16
+radius_top_left = 16
+radius_top_right = 16
 scale = 1.10
 shadow = true
 start = [ "group:launcher_clock" ]
 thickness = 36
-widget_spacing = 6
+widget_spacing = 8
 
     [[bar.default.capsule_group]]
     border = ""
-    fill = "on_secondary"
+    fill = "surface_variant"
     id = "launcher_clock"
         members = [ "launcher", "clock" ]
     opacity = 1.0
@@ -40,7 +40,7 @@ widget_spacing = 6
 
     [[bar.default.capsule_group]]
     border = ""
-    fill = "on_secondary"
+    fill = "surface_variant"
     id = "hardware"
     members = [ "temp", "sysmon_3" ]
     opacity = 1.0
@@ -48,7 +48,7 @@ widget_spacing = 6
 
     [[bar.default.capsule_group]]
     border = ""
-    fill = "on_secondary"
+    fill = "surface_variant"
     id = "status"
     members = [ "network", "volume" ]
     opacity = 1.0
@@ -57,7 +57,7 @@ widget_spacing = 6
 [shell]
 clipboard_image_action_command = "swash --stdin --name \"swash-$(date +'%Y-%m-%d_%H:%M:%S').png\""
 corner_radius_scale = 1.1
-font_family = "JetBrainsMono Nerd Font"
+font_family = "Adwaita Sans"
 launch_apps_as_systemd_services = true
 polkit_agent = true
 popup_borders = true
@@ -140,7 +140,7 @@ wallpaper_scheme = "m3-content"
 
 [widget.clock]
 color = "secondary"
-format = "{:%H:%M • %a %d/%m}"
+format = "{:%H:%M · %a %d/%m}"
 
 [widget.launcher]
 color = "secondary"
@@ -156,7 +156,7 @@ color = "secondary"
 color = "secondary"
 
 [widget.session]
-color = "error"
+color = "secondary"
 
 [widget.hotspot]
 glyph = "antenna-bars-5"
@@ -194,15 +194,15 @@ type = "sysmon"
 
 [widget.tray]
 capsule = true
-capsule_fill = "on_secondary"
+capsule_fill = "surface_variant"
 
 [widget.volume]
 color = "secondary"
 
 [widget.workspaces]
-active_pill_size = 2.8
+active_pill_size = 2.4
 capsule = true
-capsule_fill = "on_primary"
+capsule_fill = "surface_variant"
 inactive_pill_size = 1.0
 pill_scale = 0.85
 show_labels = true
@@ -237,7 +237,8 @@ type = "battery"
 color = "secondary"
 
 [hooks]
-wallpaper_changed = ["python3 /home/admin/.config/hypr/scripts/generate-theme.py --wallpaper-changed"]
+wallpaper_changed = ["python3 $HOME/.config/hypr/scripts/generate-theme.py --wallpaper-changed"]
+theme_mode_changed = ["python3 $HOME/.config/hypr/scripts/generate-theme.py --theme-mode-changed"]
 
 [plugins]
 enabled = []

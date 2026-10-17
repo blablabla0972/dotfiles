@@ -94,5 +94,33 @@ cd ~/Projects/dotfiles && ./install.sh hypr noctalia quickshell matugen rofi
 ### Reload + rollback
 - Hyprland: `hyprctl reload` + `hyprctl configerrors`
 - Noctalia: `noctalia msg config-reload` (đổi palette: `noctalia msg color-palette-reload`)
-- Rollback: `git reset --hard <commit>` + reload; backup mỗi lần cài symlink: `~/.config/backups/dotfiles-<timestamp>/`
+- Rollback: `git revert <commit-rice>` rồi cài lại các mục đã đổi và reload; backup mỗi lần cài symlink: `~/.config/backups/dotfiles-<timestamp>/`.
 - Quy tắc cho agent (opencode/codex): xem `AGENTS.md` trong repo.
+
+## Adaptive rice
+
+Bar nổi chia nhóm, font Adwaita Sans, cửa sổ bo góc nhẹ và launcher hai panel; màu lấy từ wallpaper qua Matugen. Mặc định **dark**, giữ bố cục màn hình khóa ban đầu với đồng hồ giờ/phút không có khung.
+
+```bash
+# Đổi wallpaper và đồng bộ toàn bộ giao diện
+python3 ~/.config/hypr/scripts/generate-theme.py --apply-wallpaper /path/to/wallpaper.jpg
+
+# Hook tự cập nhật Matugen, GTK/Qt và các template ứng dụng
+noctalia msg theme-mode-set dark
+# Chế độ sáng cũng được hỗ trợ khi cần
+noctalia msg theme-mode-set light
+```
+
+Hook `wallpaper_changed` giữ các cách chọn wallpaper hiện có hoạt động; `theme_mode_changed` đồng bộ màu khi chuyển sáng/tối. Bề mặt và chữ dùng các vai trò màu tương ứng, không ghim màu accent. Các cấu hình ứng dụng trong đợt rice này được cài bằng symlink để màu sinh ra được lưu đúng vào dotfiles.
+
+```bash
+./install.sh hypr noctalia matugen rofi kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals
+hyprctl reload
+noctalia msg config-reload
+
+# Ma trận dựng template trong thư mục tạm; không thay đổi desktop
+python3 -m unittest discover -s tests -q
+python3 tests/check_palette_matrix.py
+```
+
+Kế hoạch, quyết định thiết kế và kết quả nghiệm thu nằm trong `docs/rice/`. Ảnh preview và backup máy được giữ cục bộ, không đưa lên GitHub. Mỗi lần áp wallpaper đều có snapshot ở `~/.local/state/desktop-wallpaper/backups/`.

@@ -7,9 +7,9 @@ configuration {
     display-window: "Windows";
     display-run: "Run";
     drun-display-format: "{icon} {name}";
-    font: "JetBrainsMono Nerd Font 10";
+    font: "Adwaita Sans 11";
     show-icons: true;
-    icon-theme: "Papirus-Dark";
+    icon-theme: "Papirus";
 }
 
 window {
@@ -18,17 +18,18 @@ window {
     location:                    center;
     anchor:                      center;
     fullscreen:                  false;
-    width:                       1000px;
+    width:                       calc(70% min 900px);
+    height:                      calc(75% min 680px);
     x-offset:                    0px;
     y-offset:                    0px;
 
     /* properties for all widgets */
     enabled:                     true;
-    border:                      2px solid;
-    border-color:                @secondary-container;
-    border-radius:               15px;
+    border:                      1px solid;
+    border-color:                @outline-variant;
+    border-radius:               16px;
     cursor:                      "default";
-    background-color:            @on-primary-fixed;
+    background-color:            @surface;
 }
 
 mainbox {
@@ -40,7 +41,9 @@ mainbox {
 }
 
 imagebox {
-    border-radius:               15px 0px 0px 15px;
+    border-radius:               16px 0px 0px 16px;
+    width:                       calc(21% min 270px);
+    expand:                      false;
     padding:                     20px;
     background-color:            transparent;
     background-image:            url("~/.config/rofi/wallpaper_thumb.jpg", height);
@@ -49,6 +52,7 @@ imagebox {
 }
 
 listbox {
+    expand:                      true;
     spacing:                     20px;
     padding:                     20px;
     background-color:            transparent;
@@ -65,12 +69,13 @@ inputbar {
     spacing:                     10px;
     padding:                     15px;
     border-radius:               10px;
-    background-color:            @on-primary;
+    background-color:            @surface-container-high;
     text-color:                  @on-surface;
     children:                    [ "textbox-prompt-colon", "entry" ];
 }
 
 textbox-prompt-colon {
+    font:                        "JetBrainsMono Nerd Font 11";
     enabled:                     true;
     expand:                      false;
     str:                         "  ";
@@ -89,22 +94,23 @@ entry {
 
 mode-switcher {
     enabled:                     true;
-    spacing:                     20px;
+    orientation:                 vertical;
+    spacing:                     8px;
     background-color:            transparent;
-    text-color:                  @primary-fixed;
+    text-color:                  @on-surface;
 }
 
 button {
     padding:                     15px;
     border-radius:               10px;
-    background-color:            @on-primary;
+    background-color:            @surface-container-high;
     text-color:                  inherit;
     cursor:                      pointer;
 }
 
 button selected {
     background-color:            @primary;
-    text-color:                  @on-secondary;
+    text-color:                  @on-primary;
 }
 
 listview {
@@ -119,7 +125,7 @@ listview {
     fixed-height:                true;
     fixed-columns:               true;
     
-    spacing:                     10px;
+    spacing:                     8px;
     background-color:            transparent;
     text-color:                  @on-surface;
     cursor:                      "default";
@@ -128,7 +134,7 @@ listview {
 element {
     enabled:                     true;
     spacing:                     15px;
-    padding:                     8px;
+    padding:                     10px;
     border-radius:               10px;
     background-color:            transparent;
     text-color:                  @on-surface;
@@ -142,27 +148,27 @@ element normal.normal {
 
 element normal.urgent {
     background-color:            @error;
-    text-color:                  @on-surface;
+    text-color:                  @on-error;
 }
 
 element normal.active {
-    background-color:            @primary;
-    text-color:                  @on-surface;
+    background-color:            @primary-container;
+    text-color:                  @on-primary-container;
 }
 
 element selected.normal {
     background-color:            @primary;
-    text-color:                  @on-secondary;
+    text-color:                  @on-primary;
 }
 
 element selected.urgent {
     background-color:            @error;
-    text-color:                  @on-secondary;
+    text-color:                  @on-error;
 }
 
 element selected.active {
-    background-color:            @error;
-    text-color:                  @on-secondary;
+    background-color:            @primary;
+    text-color:                  @on-primary;
 }
 
 element-icon {
@@ -187,7 +193,7 @@ message {
 textbox {
     padding:                     15px;
     border-radius:               10px;
-    background-color:            @on-primary;
+    background-color:            @surface-container-high;
     text-color:                  @on-surface;
     vertical-align:              0.5;
     horizontal-align:            0.0;
@@ -196,6 +202,6 @@ textbox {
 error-message {
     padding:                     15px;
     border-radius:               20px;
-    background-color:            @on-primary;
+    background-color:            @surface-container-high;
     text-color:                  @on-surface;
 }

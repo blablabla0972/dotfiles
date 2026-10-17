@@ -1,12 +1,14 @@
 # AGENTS — dotfiles/rice (máy admin, CachyOS + Hyprland Lua backend)
 
 Live config của máy này là **symlink** vào repo này:
-`~/.config/{hypr,noctalia,quickshell,matugen,rofi}` → `config/*` (nhánh `main`).
+`~/.config/{hypr,noctalia,quickshell,matugen,rofi,kitty,alacritty,gtk-3.0,gtk-4.0,qt5ct,qt6ct,btop}` → `config/*` (nhánh `main`).
+`~/.config/kdeglobals` → `root/kdeglobals`.
 Thêm `~/.local/state/noctalia/settings.toml` → `state/noctalia/settings.toml` (Noctalia ghi settings xuyên symlink vào repo).
 
-Mọi mục còn lại trong `config/` và `root/` (alacritty, kitty, btop, fish, gtk-*, qt*ct, systemd, kdeglobals...) là **snapshot**: sửa repo KHÔNG đổi máy — muốn áp lên máy thì `./install.sh <mục>` (có backup). Đồng bộ máy → repo: copy `~/.config/<mục>` vào `config/<mục>` (như commit `sync: live state`), bỏ qua file runtime đã gitignore (`*.log`, `*.bak*`, `cached_layouts`, `fish_variables`, `thumbnail.png`, `micro/syntax/`, `gpu/`, `current_wallpaper`). Tổng quan + cài máy mới: `README.md`.
+Mọi mục còn lại trong `config/` và `root/` (fish, systemd, fcitx5...) là **snapshot**: sửa repo KHÔNG đổi máy — muốn áp lên máy thì `./install.sh <mục>` (có backup). Đồng bộ máy → repo: copy `~/.config/<mục>` vào `config/<mục>` (như commit `sync: live state`), bỏ qua file runtime đã gitignore (`*.log`, `*.bak*`, `cached_layouts`, `fish_variables`, `thumbnail.png`, `micro/syntax/`, `gpu/`, `current_wallpaper`). Tổng quan + cài máy mới: `README.md`.
 
 ## Nguyên tắc
+- Giữ chế độ tối theo Matugen và bố cục lock giờ/phút ban đầu, không có khung quanh đồng hồ (lựa chọn của user sau preview 2026-10-17).
 - Đổi rice: làm trong **worktree** `.worktrees/<tên>` (nhánh riêng). Không sửa thẳng `main` trừ khi user yêu cầu.
 - Trước khi preview từ worktree: `./wt-prep.sh .worktrees/<tên>` (copy file máy-specific bị gitignore: `gpu/`, `current_wallpaper`, `wallpaper_thumb.jpg`).
 - Preview trên máy: `cd .worktrees/<tên> && ./install.sh <mục>` rồi reload. Quay về: `cd ~/Projects/dotfiles && ./install.sh <mục>`.

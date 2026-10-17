@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Generate Matugen's Noctalia palette and synchronize desktop theme outputs."""
 import argparse
+import configparser
 import fcntl
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -61,7 +63,7 @@ class Snapshot:
         (self.directory / 'manifest.json').write_text(json.dumps(self.entries, indent=2))
         self.appearance = {}
         if shutil.which('gsettings'):
-            for key in ['gtk-theme', 'color-scheme']:
+            for key in ['gtk-theme', 'color-scheme', 'icon-theme']:
                 self.appearance[key] = command(['gsettings', 'get', 'org.gnome.desktop.interface', key])
         (self.directory / 'appearance.json').write_text(json.dumps(self.appearance))
 
@@ -173,6 +175,30 @@ def reload_matugen_palette(config, changed):
         command(['noctalia', 'msg', 'color-palette-reload'])
 
 
+def sync_toolkit_settings(config_dir, mode):
+    """Remove stale dark-only preferences while keeping other application settings."""
+    icons = 'Papirus-Dark' if mode == 'dark' else 'Papirus'
+    for app in ('gtk-3.0', 'gtk-4.0', 'qt5ct', 'qt6ct'):
+        path = config_dir / app / ('settings.ini' if app.startswith('gtk') else f'{app}.conf')
+        if not path.parent.is_dir() or (app.startswith('qt') and not path.is_file()):
+            continue
+        ini = configparser.ConfigParser(interpolation=None)
+        ini.optionxform = str
+        ini.read(path)
+        section = 'Settings' if app.startswith('gtk') else 'Appearance'
+        if not ini.has_section(section): ini.add_section(section)
+        if app.startswith('gtk'):
+            ini[section]['gtk-theme-name'] = 'adw-gtk3-dark' if mode == 'dark' else 'adw-gtk3'
+            ini[section]['gtk-application-prefer-dark-theme'] = str(int(mode == 'dark'))
+        if (Path('/usr/share/icons') / icons).is_dir():
+            ini[section]['gtk-icon-theme-name' if app.startswith('gtk') else 'icon_theme'] = icons
+        output = io.StringIO()
+        ini.write(output, space_around_delimiters=False)
+        atomic_write(path, (output.getvalue().rstrip() + '\n').encode())
+    if shutil.which('gsettings') and (Path('/usr/share/icons') / icons).is_dir():
+        command(['gsettings', 'set', 'org.gnome.desktop.interface', 'icon-theme', icons])
+
+
 def stage_native(theme_command, config, config_dir, data_dir, directory):
     base = Path('/usr/share/noctalia/assets/templates')
     catalog = tomllib.loads((base / 'builtin.toml').read_text())['templates']
@@ -202,14 +228,15 @@ def stage_native(theme_command, config, config_dir, data_dir, directory):
     return {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in expected.items()}
 
 
-def wait_for_templates(wallpaper, expected):
+def wait_for_templates(wallpaper, expected, mode=None):
     # Wait for Noctalia's native templates to match the Matugen-backed palette.
     deadline = time.monotonic() + 30
     while True:
         try:
-            if command(['noctalia', 'msg', 'wallpaper-get']) == str(wallpaper) and all(
+            if (command(['noctalia', 'msg', 'wallpaper-get']) == str(wallpaper)
+                    and (mode is None or command(['noctalia', 'msg', 'theme-mode-get']) == mode) and all(
                     hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest
-                    for name, digest in expected.items()):
+                    for name, digest in expected.items())):
                 return
         except (OSError, subprocess.SubprocessError):
             pass
@@ -221,7 +248,10 @@ def wait_for_templates(wallpaper, expected):
 def quiesce_shell():
     """Emergency rollback only: drain native writers before restoring their files."""
     try: pids = command(['pgrep', '-u', str(os.getuid()), '-x', 'noctalia']).split()
-    except subprocess.CalledProcessError: pids = []
+    except RuntimeError as error:
+        if isinstance(error.__cause__, subprocess.CalledProcessError) and error.__cause__.returncode == 1:
+            return False
+        raise
     if not pids: return False
     if json.loads(command(['noctalia', 'msg', 'status'])).get('locked', True):
         raise RuntimeError('Will not stop Noctalia while it is locking the session')
@@ -239,6 +269,7 @@ def theme_snapshot_paths(config_dir, state_dir):
     names = ['hypr/current_wallpaper', 'hypr/colors.conf', 'hypr/noctalia.lua', 'hypr/hyprland.lua',
              'rofi/colors.rasi', 'rofi/wallpaper_thumb.jpg', 'kitty/kitty.conf', 'kitty/themes/noctalia.conf',
              'gtk-3.0/gtk.css', 'gtk-3.0/noctalia.css', 'gtk-4.0/gtk.css', 'gtk-4.0/noctalia.css',
+             'gtk-3.0/settings.ini', 'gtk-4.0/settings.ini', 'qt5ct/qt5ct.conf', 'qt6ct/qt6ct.conf',
              'qt5ct/colors/noctalia.conf', 'qt6ct/colors/noctalia.conf', 'kdeglobals',
              'btop/btop.conf', 'btop/themes/noctalia.theme', 'alacritty/alacritty.toml', 'alacritty/themes/noctalia.toml',
              'noctalia/palettes/matugen.json']
@@ -252,19 +283,25 @@ def apply(wallpaper, config_dir, state_dir, runtime):
     share = Path(os.environ.get('XDG_DATA_HOME', str(Path(os.path.expanduser('~')) / '.local/share')))
     link = config_dir / 'hypr/current_wallpaper'
     old_wallpaper = link.resolve() if link.exists() else None
-    snapshot = Snapshot(theme_snapshot_paths(config_dir, state_dir), state_dir)
+    settings = state_dir / 'noctalia/settings.toml'
+    # Capture managed settings contents while preserving the outer dotfiles symlink.
+    settings_target = settings.resolve()
+    snapshot = Snapshot([settings_target if p == settings else p
+                         for p in theme_snapshot_paths(config_dir, state_dir)], state_dir)
     thumb = config_dir / 'rofi/wallpaper_thumb.jpg'
     staged_thumb = snapshot.directory / 'thumbnail.jpg'
     changed_backend = False
     changed_noctalia = False
     request = runtime / 'noctalia-matugen-request.json'
+    mode = None
     try:
-        _, config, theme_command, palette_changed, _ = palette_for(wallpaper, config_dir)
+        _, config, theme_command, palette_changed, mode = palette_for(wallpaper, config_dir)
         changed_noctalia = palette_changed
         reload_matugen_palette(config, palette_changed)
         expected = stage_native(theme_command, config, config_dir, share, snapshot.directory)
         atomic_write(request, json.dumps({
             'wallpaper': str(wallpaper),
+            'mode': mode,
             'palette': hashlib.sha256((config_dir / 'noctalia/palettes/matugen.json').read_bytes()).hexdigest(),
             'expires': time.time() + 45,
         }).encode())
@@ -285,7 +322,8 @@ def apply(wallpaper, config_dir, state_dir, runtime):
         changed_noctalia = True
         command(['noctalia', 'msg', 'wallpaper-set', str(wallpaper)])
         command(['noctalia', 'msg', 'templates-apply'])
-        wait_for_templates(wallpaper, expected)
+        wait_for_templates(wallpaper, expected, mode)
+        sync_toolkit_settings(config_dir, mode)
         command(['hyprctl', 'reload', 'config-only'])
         errors = command(['hyprctl', 'configerrors'])
         if errors: raise RuntimeError(errors)
@@ -293,6 +331,14 @@ def apply(wallpaper, config_dir, state_dir, runtime):
         atomic_link(link, str(wallpaper))
         print('WALLPAPER_AND_THEME_OK', wallpaper, '\nBACKUP', snapshot.directory)
     except Exception:
+        try:
+            preserve_selection = (command(['noctalia', 'msg', 'theme-mode-get']) != mode
+                                  or command(['noctalia', 'msg', 'wallpaper-get']) != str(wallpaper))
+        except Exception:
+            preserve_selection = True  # Unknown native state must not erase newer user intent.
+        if preserve_selection:
+            snapshot.entries.pop(str(settings_target), None)
+            snapshot.appearance.clear()
         stopped = quiesce_shell() if changed_noctalia else False
         try:
             try:
@@ -314,8 +360,8 @@ def apply(wallpaper, config_dir, state_dir, runtime):
         if request.exists(): request.unlink()
 
 
-def wallpaper_changed(config_dir, state_dir, runtime):
-    raw_path = os.environ.get('NOCTALIA_WALLPAPER_PATH') or command(['noctalia', 'msg', 'wallpaper-get'])
+def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
+    raw_path = (None if mode_changed else os.environ.get('NOCTALIA_WALLPAPER_PATH')) or command(['noctalia', 'msg', 'wallpaper-get'])
     wallpaper = Path(raw_path).expanduser().resolve(strict=True)
     if not wallpaper.is_file() or '\n' in str(wallpaper) or '\r' in str(wallpaper):
         raise ValueError('Noctalia supplied an invalid wallpaper path')
@@ -324,7 +370,8 @@ def wallpaper_changed(config_dir, state_dir, runtime):
     palette_path = config_dir / 'noctalia/palettes/matugen.json'
     try:
         data = json.loads(request.read_text())
-        if (data.get('wallpaper') == str(wallpaper) and data.get('expires', 0) > time.time()
+        if (not mode_changed and data.get('wallpaper') == str(wallpaper) and data.get('expires', 0) > time.time()
+                and data.get('mode') == command(['noctalia', 'msg', 'theme-mode-get'])
                 and data.get('palette') == hashlib.sha256(palette_path.read_bytes()).hexdigest()):
             return
     except (OSError, ValueError):
@@ -345,12 +392,15 @@ def wallpaper_changed(config_dir, state_dir, runtime):
         palette_changed = False
         changed_native = False
         changed_backend = False
+        mode = None
 
         def check_selection():
             if Path(command(['noctalia', 'msg', 'wallpaper-get'])).expanduser().resolve(strict=True) != wallpaper:
                 raise RuntimeError('Wallpaper event superseded by a newer selection')
+            if mode is not None and command(['noctalia', 'msg', 'theme-mode-get']) != mode:
+                raise RuntimeError('Theme event superseded by a newer mode')
         try:
-            _, config, theme_command, palette_changed, _ = palette_for(wallpaper, config_dir)
+            _, config, theme_command, palette_changed, mode = palette_for(wallpaper, config_dir)
             check_selection()
             changed_native = palette_changed
             reload_matugen_palette(config, palette_changed)
@@ -360,9 +410,11 @@ def wallpaper_changed(config_dir, state_dir, runtime):
             )
             changed_native = True
             command(['noctalia', 'msg', 'templates-apply'])
-            wait_for_templates(wallpaper, expected)
             check_selection()
-            if old_wallpaper != wallpaper:
+            wait_for_templates(wallpaper, expected, mode)
+            check_selection()
+            sync_toolkit_settings(config_dir, mode)
+            if not mode_changed and old_wallpaper != wallpaper:
                 staged_thumb = snapshot.directory / 'thumbnail.jpg'
                 command(['magick', str(wallpaper), '-thumbnail', '1000x1000>', '-quality', '85', str(staged_thumb)])
                 if not config.get('wallpaper', {}).get('enabled', True):
@@ -393,8 +445,11 @@ def wallpaper_changed(config_dir, state_dir, runtime):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--apply-wallpaper', action='store_true')
-    parser.add_argument('--wallpaper-changed', action='store_true')
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument('--apply-wallpaper', action='store_true')
+    action.add_argument('--wallpaper-changed', action='store_true')
+    action.add_argument('--theme-mode-changed', action='store_true',
+                        help='Synchronize palette outputs for the current wallpaper and theme mode')
     parser.add_argument('wallpaper', nargs='?')
     args = parser.parse_args()
     home = Path(os.path.expanduser('~'))
@@ -403,8 +458,8 @@ def main():
     runtime = Path(os.environ.get('XDG_RUNTIME_DIR', str(state_dir / 'desktop-wallpaper/runtime')))
     try:
         runtime.mkdir(parents=True, exist_ok=True)
-        if args.wallpaper_changed:
-            wallpaper_changed(config_dir, state_dir, runtime)
+        if args.wallpaper_changed or args.theme_mode_changed:
+            wallpaper_changed(config_dir, state_dir, runtime, mode_changed=args.theme_mode_changed)
             return 0
         wallpaper = Path(args.wallpaper) if args.wallpaper else config_dir / 'hypr/current_wallpaper'
         wallpaper = wallpaper.expanduser().resolve(strict=True)

@@ -1,0 +1,29 @@
+# Validation — 2026-10-17
+
+- 10 stdlib transaction tests pass: mode switching, queued events, deduplication across modes, native-template failure rollback, GTK settings preservation, missing files, exited shell handling and concurrent user-mode preservation during wallpaper rollback. Test XDG directories are isolated.
+- 12 real Matugen palettes and 96 native Noctalia template renders pass; generated Lua/TOML/GTK CSS parse. Solid semantic surfaces and the bar at 92% opacity meet at least 6.43:1 foreground contrast in these fixtures.
+- Rofi native parser passes all 12 cases. Installed Rofi 2.0.0-dirty crashes only in display_cleanup after its validation CLI; the check skips that cleanup with GDB while preserving the parser exit status. An invalid-syntax negative control was rejected. The normal launcher was also opened and captured successfully.
+- Live Hyprland reload/configerrors and Noctalia validation pass at 1920×1080, scale 1.
+- Live dark→light→dark hook synchronization verified across palette files, GTK preferences and native templates. Final/default mode is dark.
+- Live wrapper wallpaper application and native wallpaper hook restoration verified with an identical image copy; original image and selection restored. Other hues are tested by the isolated rendering matrix.
+- A real invalid-image transaction returns failure and preserves wallpaper, mode and output hashes.
+- Kitty/Alacritty, launcher, dashboard, GTK Nautilus and Qt6ct previewed; a dedicated Kitty window enters/exits fullscreen correctly. Vietnamese glyphs render in both terminals. Native notification surface verified.
+- Hyprlock card preview was rejected by the user. Final lock file restores the original layout exactly, except removal of the already-invalid general:grace option; authentication configuration is untouched. No further live lock/light-mode previews after the user correction.
+- Screenshots, test logs and snapshots stay outside Git.
+
+| Fixture | Dark minimum contrast | Light minimum contrast |
+|---|---:|---:|
+| cool | 7.7:1 | 6.43:1 |
+| warm | 7.72:1 | 6.45:1 |
+| green | 7.69:1 | 6.46:1 |
+| muted | 7.7:1 | 6.45:1 |
+| bright | 7.7:1 | 6.46:1 |
+| busy | 7.69:1 | 6.45:1 |
+
+## Review
+
+Independent final review found two important issues: rollback could undo a newer user mode on ordinary settings files, and tests lacked temporary XDG_DATA_HOME. Both were reproduced/fixed; the concurrent-mode regression test passes, managed settings snapshots resolve the target without replacing the outer symlink, and test data stays temporary.
+
+## Performance sample
+
+Two-second idle samples, not a benchmark: Hyprland CPU 3.5%→2.5%, Noctalia 1.5%→2.5%; RSS 207.2→152.0 MiB and 191.4→184.6 MiB. No sustained regression observed during repeated native previews and fullscreen transitions.

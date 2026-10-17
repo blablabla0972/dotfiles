@@ -11,7 +11,7 @@ hl.config({
         disable_splash_rendering = true,
         force_default_wallpaper = 0,
         col = {
-            splash = CACHYLGREEN,
+            splash = require("config.colors").primary,
         },
         middle_click_paste = false,
         enable_swallow = true,
