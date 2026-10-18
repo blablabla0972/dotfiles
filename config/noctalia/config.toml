@@ -202,7 +202,7 @@ color = "secondary"
 [widget.workspaces]
 active_pill_size = 2.8
 capsule = false
-empty_color = "surface_variant"
+empty_color = "secondary"
 focused_color = "primary"
 label_source = "id"
 occupied_color = "secondary"
