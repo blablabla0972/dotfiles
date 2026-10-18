@@ -202,9 +202,15 @@ color = "secondary"
 [widget.workspaces]
 active_pill_size = 2.8
 capsule = false
+empty_color = "surface_variant"
+focused_color = "primary"
+label_source = "id"
+occupied_color = "secondary"
 inactive_pill_size = 1.2
 pill_scale = 0.9
 show_labels = true
+style = "regular"
+urgent_color = "error"
 
 [control_center]
 width = 1180
