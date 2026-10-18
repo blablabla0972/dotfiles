@@ -200,11 +200,10 @@ capsule_fill = "surface_variant"
 color = "secondary"
 
 [widget.workspaces]
-active_pill_size = 2.4
-capsule = true
-capsule_fill = "surface_variant"
-inactive_pill_size = 1.0
-pill_scale = 0.85
+active_pill_size = 2.8
+capsule = false
+inactive_pill_size = 1.2
+pill_scale = 0.9
 show_labels = true
 
 [control_center]
