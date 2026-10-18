@@ -18,3 +18,14 @@ Mọi mục còn lại trong `config/` và `root/` (fish, systemd, fcitx5...) l�
 - KHÔNG sửa tay file generated: `config/hypr/colors.conf`, `config/hypr/noctalia.lua`, `config/noctalia/palettes/matugen.json` (do `config/hypr/scripts/generate-theme.py` sinh).
 - `state/noctalia/settings.toml` do Noctalia tự ghi (settings UI / `noctalia msg`) — diff trong git là bình thường, commit khi muốn chốt. Nếu symlink mất: `./install.sh noctalia`. Bản patch C++ dashboard: `~/noctalia-dashboard-redesign` (git riêng).
 - Backup mỗi lần cài: `~/.config/backups/dotfiles-*`. Snapshot trước khi chuyển symlink (2026-10-16): `~/.local/state/rice-transition/`.
+
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool** (when available): `codegraph_explore` answers most code questions in one call — the relevant symbols' verbatim source plus the call paths between them, including dynamic-dispatch hops grep can't follow. Name a file or symbol in the query to read its current line-numbered source. If it's listed but deferred, load it by name via tool search.
+- **Shell** (always works): `codegraph explore "<symbol names or question>"` prints the same output.
+
+If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
+<!-- CODEGRAPH_END -->

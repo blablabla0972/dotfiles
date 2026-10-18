@@ -26,3 +26,6 @@ Thumbs.db
 
 # Git worktree
 .worktrees/
+
+# CodeGraph (local index, không commit)
+.codegraph/
