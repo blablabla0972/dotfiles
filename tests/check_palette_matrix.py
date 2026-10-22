@@ -111,9 +111,16 @@ def check(desktop=True):
                 lua = ('package.path = os.getenv("RICE_TEST_ROOT") .. "/config/hypr/?.lua;" .. package.path; '
                        'local c = require("config.colors"); '
                        'assert(c.primary == "rgba(" .. os.getenv("RICE_TEST_PRIMARY"):sub(2) .. "ff)"); '
-                       'hl = {config=function(v) assert(v.general.col.active_border == c.primary) end}; '
-                       'c.apply_theme()')
-                run(['lua', '-e', lua], dict(env, RICE_TEST_ROOT=str(ROOT), RICE_TEST_PRIMARY=colors['mPrimary']))
+                       'assert(c.apply_theme == nil); '
+                       'local calls = 0; '
+                       'hl = {config=function(v) calls = calls + 1; '
+                       'assert(v.general.col.active_border == "rgb(" .. os.getenv("RICE_TEST_PRIMARY"):sub(2) .. ")", '
+                       'tostring(v.general.col.active_border) .. " != " .. os.getenv("RICE_TEST_PRIMARY")) end}; '
+                       'dofile(os.getenv("RICE_TEST_NOCTALIA")).apply_theme(); '
+                       'assert(calls == 1)')
+                run(['lua', '-e', lua], dict(env, RICE_TEST_ROOT=str(ROOT),
+                                              RICE_TEST_PRIMARY=native[mode]['primary'],
+                                              RICE_TEST_NOCTALIA=staged[str(config / 'hypr/noctalia.lua')]))
                 report.append({'fixture': name, 'mode': mode, 'minimum_contrast': round(min(ratios), 2),
                                'native_templates_rendered': len(expected)})
     return report

@@ -60,7 +60,7 @@ cũng cần đổi sang `$HOME` hoặc user mới nếu máy khác tên user kh�
 
 | Thành phần | Vai trò |
 |---|---|
-| Hyprland 0.56.2 | Compositor, config backend **Lua** (`hyprland.lua` load 12 module trong `config/`) |
+| Hyprland 0.56.2 | Compositor, config backend **Lua** (`hyprland.lua` load 11 module trong `config/`) |
 | Noctalia | Bar + notification + control center (thay waybar/dunst/swaync) |
 | swww | Wallpaper daemon (chạy qua systemd user unit) |
 | matugen | Sinh màu từ wallpaper → `hypr/colors.conf` |
