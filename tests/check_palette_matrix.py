@@ -35,6 +35,9 @@ def contrast(foreground, background):
 
 
 def check(desktop=True):
+    hyprland = (ROOT / 'config/hypr/hyprland.lua').read_text()
+    assert hyprland.count('require("noctalia").apply_theme()') == 1
+    assert 'require("config.colors").apply_theme()' not in hyprland
     bar_alpha = tomllib.loads((ROOT / 'config/noctalia/config.toml').read_text())['bar']['default']['background_opacity']
     pairs = [('mOnSurface', 'mSurface'), ('mOnSurfaceVariant', 'mSurfaceVariant'),
              ('mOnPrimary', 'mPrimary'), ('mOnSecondary', 'mSecondary'),
@@ -112,14 +115,34 @@ def check(desktop=True):
                        'local c = require("config.colors"); '
                        'assert(c.primary == "rgba(" .. os.getenv("RICE_TEST_PRIMARY"):sub(2) .. "ff)"); '
                        'assert(c.apply_theme == nil); '
+                       'local function same(actual, name) local expected = "rgb(" .. os.getenv(name):sub(2) .. ")"; '
+                       'assert(actual == expected, tostring(actual) .. " != " .. expected) end; '
                        'local calls = 0; '
                        'hl = {config=function(v) calls = calls + 1; '
-                       'assert(v.general.col.active_border == "rgb(" .. os.getenv("RICE_TEST_PRIMARY"):sub(2) .. ")", '
-                       'tostring(v.general.col.active_border) .. " != " .. os.getenv("RICE_TEST_PRIMARY")) end}; '
+                       'same(v.general.col.active_border, "RICE_TEST_PRIMARY"); '
+                       'same(v.general.col.inactive_border, "RICE_TEST_SURFACE"); '
+                       'same(v.group.col.border_active, "RICE_TEST_SECONDARY"); '
+                       'same(v.group.col.border_inactive, "RICE_TEST_SURFACE"); '
+                       'same(v.group.col.border_locked_active, "RICE_TEST_ERROR"); '
+                       'same(v.group.col.border_locked_inactive, "RICE_TEST_SURFACE"); '
+                       'same(v.group.groupbar.col.active, "RICE_TEST_SECONDARY"); '
+                       'same(v.group.groupbar.col.inactive, "RICE_TEST_SURFACE"); '
+                       'same(v.group.groupbar.col.locked_active, "RICE_TEST_ERROR"); '
+                       'same(v.group.groupbar.col.locked_inactive, "RICE_TEST_SURFACE"); '
+                       'same(v.group.groupbar.text_color, "RICE_TEST_ON_SECONDARY"); '
+                       'same(v.group.groupbar.text_color_inactive, "RICE_TEST_ON_SURFACE"); '
+                       'same(v.group.groupbar.text_color_locked_active, "RICE_TEST_ON_ERROR"); '
+                       'same(v.group.groupbar.text_color_locked_inactive, "RICE_TEST_ON_SURFACE") end}; '
                        'dofile(os.getenv("RICE_TEST_NOCTALIA")).apply_theme(); '
                        'assert(calls == 1)')
                 run(['lua', '-e', lua], dict(env, RICE_TEST_ROOT=str(ROOT),
                                               RICE_TEST_PRIMARY=native[mode]['primary'],
+                                              RICE_TEST_SURFACE=native[mode]['surface'],
+                                              RICE_TEST_SECONDARY=native[mode]['secondary'],
+                                              RICE_TEST_ERROR=native[mode]['error'],
+                                              RICE_TEST_ON_SECONDARY=native[mode]['on_secondary'],
+                                              RICE_TEST_ON_SURFACE=native[mode]['on_surface'],
+                                              RICE_TEST_ON_ERROR=native[mode]['on_error'],
                                               RICE_TEST_NOCTALIA=staged[str(config / 'hypr/noctalia.lua')]))
                 report.append({'fixture': name, 'mode': mode, 'minimum_contrast': round(min(ratios), 2),
                                'native_templates_rendered': len(expected)})

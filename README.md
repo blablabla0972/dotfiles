@@ -53,8 +53,9 @@ Các symlink sau là machine-specific, không hoạt động ở máy khác — 
 - `config/hypr/current_wallpaper` → một ảnh trong `~/Ảnh/Wallpaper`
 - `config/hypr/gpu/{intel,nvidia}` → `/dev/dri/by-path/...` (theo PCI của máy)
 
-Các đường dẫn `/home/admin/...` trong config (fish PATH, systemd service, noctalia hook)
-cũng cần đổi sang `$HOME` hoặc user mới nếu máy khác tên user khác.
+Một số đường dẫn trong config vẫn gắn với máy này, như executable trong user service
+và wallpaper đang chọn trong `state/noctalia/settings.toml`; khi chuyển máy, cập nhật
+chúng theo `$HOME` và các đường dẫn tương ứng.
 
 ## Hệ sinh thái đang dùng
 
