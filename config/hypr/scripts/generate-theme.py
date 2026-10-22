@@ -293,6 +293,13 @@ def apply(wallpaper, config_dir, state_dir, runtime):
     request = runtime / 'noctalia-matugen-request.json'
     mode = None
     try:
+        # Start the wallpaper transition while palette and theme files are prepared.
+        duration_sec = 0.8
+        changed_backend = True
+        command(['swww', 'img', str(wallpaper), '--transition-type', 'grow', '--transition-pos', 'center',
+                 '--transition-fps', '144', '--transition-duration', str(duration_sec), '--transition-bezier', '.54,0,.34,.99'])
+        deadline = time.monotonic() + duration_sec + 0.05
+
         _, config, theme_command, palette_changed, mode = palette_for(wallpaper, config_dir)
         changed_noctalia = palette_changed
         reload_matugen_palette(config, palette_changed)
@@ -303,13 +310,8 @@ def apply(wallpaper, config_dir, state_dir, runtime):
             'palette': hashlib.sha256((config_dir / 'noctalia/palettes/matugen.json').read_bytes()).hexdigest(),
             'expires': time.time() + 45,
         }).encode())
-        changed_backend = True
-        duration_sec = 0.8
-        command(['swww', 'img', str(wallpaper), '--transition-type', 'grow', '--transition-pos', 'center',
-                 '--transition-fps', '144', '--transition-duration', str(duration_sec), '--transition-bezier', '.54,0,.34,.99'])
-        
-        # Calculate monotonic deadline to wait for the transition to finish
-        deadline = time.monotonic() + duration_sec + 0.05
+
+        # Wait only for whatever remains of the transition after theme preparation.
         now = time.monotonic()
         if now < deadline:
             time.sleep(deadline - now)

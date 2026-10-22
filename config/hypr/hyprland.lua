@@ -20,6 +20,5 @@ require("config.monitors")
 require("config.windowrules")
 require("config.workspaces")
 
--- For Noctalia Color templates
-require("noctalia").apply_theme()
+-- Apply Matugen-driven color scheme
 require("config.colors").apply_theme()

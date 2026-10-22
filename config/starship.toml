@@ -1,0 +1,123 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+# Layout 2 dòng, kế thừa màu sắc động (ANSI colors) từ terminal
+format = """
+[╭─](bright-black)\
+$os\
+$directory\
+$git_branch\
+$git_status\
+$nodejs\
+$bun\
+$rust\
+$golang\
+$python\
+$docker_context\
+$fill\
+$cmd_duration\
+$time\
+$line_break\
+[╰─](bright-black)\
+$character"""
+
+# Giữ trống một dòng giữa các lệnh để thoáng mắt
+add_newline = true
+
+[fill]
+symbol = " "
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+vimcmd_symbol = "[❮](bold cyan)"
+
+[os]
+disabled = false
+style = "bold blue"
+format = "[$symbol]($style) "
+
+[os.symbols]
+Arch = "󰣇 "
+CachyOS = "󰣇 "
+Ubuntu = "󰕈 "
+Debian = "󰣚 "
+Fedora = "󰣛 "
+Linux = "󰌽 "
+Macos = "󰀵 "
+Windows = "󰍲 "
+
+[directory]
+style = "bold cyan"
+format = "[$path]($style)[$read_only]($read_only_style) "
+truncation_length = 3
+truncation_symbol = "…/"
+read_only = " 󰌾"
+read_only_style = "bold red"
+
+[directory.substitutions]
+"Documents" = "󰈙 Documents"
+"Downloads" = " Downloads"
+"Music" = "󰝚 Music"
+"Pictures" = " Pictures"
+"Projects" = "󰲋 Projects"
+"Videos" = " Videos"
+
+[git_branch]
+symbol = ""
+style = "bold magenta"
+format = "[$symbol $branch]($style) "
+
+[git_status]
+style = "bold yellow"
+format = "[$all_status$ahead_behind]($style) "
+conflicted = " 🏳"
+ahead = " ⇡${count}"
+behind = " ⇣${count}"
+diverged = " ⇕⇡${ahead_count}⇣${behind_count}"
+untracked = " "
+stashed = " 󰏖"
+modified = " "
+staged = " 󰄬"
+renamed = " 󰁕"
+deleted = " 󰅖"
+
+[nodejs]
+symbol = "󰌆"
+style = "green"
+format = "[$symbol $version]($style) "
+
+[bun]
+symbol = "󰠳"
+style = "red"
+format = "[$symbol $version]($style) "
+
+[rust]
+symbol = "󱘗"
+style = "red"
+format = "[$symbol $version]($style) "
+
+[golang]
+symbol = "󰟓"
+style = "blue"
+format = "[$symbol $version]($style) "
+
+[python]
+symbol = "󰌠"
+style = "yellow"
+format = "[$symbol $version]($style) "
+
+[docker_context]
+symbol = "󰡨"
+style = "blue"
+format = "[$symbol $context]($style) "
+
+[cmd_duration]
+min_time = 2_000
+style = "bold yellow"
+format = "[took $duration]($style) "
+
+[time]
+disabled = false
+time_format = "%R"
+style = "bright-black"
+format = "[ $time]($style)"
