@@ -102,17 +102,11 @@ PanelWindow {
         }
     }
 
-    // Bấm ra ngoài vùng trống để đóng với lớp phủ mờ nhẹ
+    // Bấm ra ngoài vùng trống để đóng
     MouseArea {
         anchors.fill: parent
         z: -1
         onClicked: root.closeShell()
-
-        Rectangle {
-            anchors.fill: parent
-            color: "#66000000"
-            opacity: contentContainer.opacity
-        }
     }
 
     // Khung chứa nội dung chính với hiệu ứng hiển thị mượt mà trên Render Thread
@@ -309,53 +303,7 @@ PanelWindow {
             }
         }
 
-        // Thanh chỉ dẫn phím tắt
-        Rectangle {
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 36
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: hintRow.width + 36
-            height: 40
-            radius: 20
-            color: "#ee1b211e"
-            border.color: "#338ad6b6"
-            border.width: 1
 
-            Row {
-                id: hintRow
-                anchors.centerIn: parent
-                spacing: 16
-
-                Text {
-                    text: "<b>← / →</b> hoặc <b>H / L</b> : Duyệt ảnh"
-                    color: "#dee4df"
-                    font.pixelSize: 13
-                    font.family: "Adwaita Sans"
-                }
-                Text {
-                    text: "•"
-                    color: "#5a645e"
-                    font.pixelSize: 13
-                }
-                Text {
-                    text: "<b>Enter</b> : Áp dụng"
-                    color: "#8ad6b6"
-                    font.pixelSize: 13
-                    font.family: "Adwaita Sans"
-                }
-                Text {
-                    text: "•"
-                    color: "#5a645e"
-                    font.pixelSize: 13
-                }
-                Text {
-                    text: "<b>Esc</b> : Thoát"
-                    color: "#ffb4ab"
-                    font.pixelSize: 13
-                    font.family: "Adwaita Sans"
-                }
-            }
-        }
     }
 
     // Hoạt ảnh xuất hiện (Entrance)
