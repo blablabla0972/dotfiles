@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -34,17 +35,69 @@ def contrast(foreground, background):
     return (values[1] + .05) / (values[0] + .05)
 
 
+def composite(foreground, background, alpha):
+    return '#' + ''.join(f'{round(int(foreground[i:i + 2], 16) * alpha + int(background[i:i + 2], 16) * (1 - alpha)):02x}'
+                         for i in (1, 3, 5))
+
+
+def bar_contrast_samples(palette, config):
+    """Measure visible text against its capsule, including group overrides."""
+    bar = config['bar']['default']
+    groups = {group['id']: group for group in bar.get('capsule_group', [])}
+    samples = []
+    def token(role):
+        return palette['m' + ''.join(part.title() for part in role.split('_'))]
+    for location in ('start', 'center', 'end'):
+        for item in bar.get(location, []):
+            group = groups[item[6:]] if item.startswith('group:') else None
+            for name in group['members'] if group else [item]:
+                widget = config.get('widget', {}).get(name, {})
+                if widget.get('type') == 'spacer' or name == 'tray':
+                    continue
+                fill = (group.get('fill', bar.get('capsule_fill', 'surface_variant')) if group
+                        else widget.get('capsule_fill', bar.get('capsule_fill', 'surface_variant')))
+                alpha = (group.get('opacity', bar.get('capsule_opacity', 1)) if group
+                         else widget.get('capsule_opacity', bar.get('capsule_opacity', 1)))
+                foreground = (group.get('foreground') if group else None) or widget.get('capsule_foreground') or bar.get('capsule_foreground', 'on_surface')
+                roles = {widget.get('color', foreground)}
+                if 'icon_color' in widget:
+                    roles.add(widget['icon_color'])
+                if name == 'workspaces' and widget.get('style') == 'minimal':
+                    roles.update(widget.get(key, 'on_surface_variant') for key in ('empty_color', 'occupied_color'))
+                for backdrop in ('#000000', '#ffffff'):
+                    background = composite(palette['mSurface'], backdrop, bar.get('background_opacity', 1))
+                    if group or widget.get('capsule', bar.get('capsule', False)):
+                        background = composite(token(fill), background, alpha)
+                    for role in sorted(roles):
+                        samples.append((name, role, token(role), background))
+                    if name == 'workspaces' and widget.get('style', 'regular') != 'minimal':
+                        # Regular workspace colors are PILL FILLS, not text colors.
+                        # Noctalia picks on_<role> for accents, on_surface otherwise;
+                        # empty pills multiply their fill alpha by 0.55.
+                        defaults = {'focused_color': 'primary', 'occupied_color': 'secondary',
+                                    'empty_color': 'surface_variant', 'urgent_color': 'error'}
+                        for state, default in defaults.items():
+                            fill_role = widget.get(state, default)
+                            text_role = 'on_' + fill_role if fill_role in ('primary', 'secondary', 'tertiary', 'error') else 'on_surface'
+                            pill = composite(token(fill_role), background, .55 if state == 'empty_color' else 1)
+                            samples.append((name + '.' + state, text_role, token(text_role), pill))
+    return samples
+
+
 def check(desktop=True):
     hyprland = (ROOT / 'config/hypr/hyprland.lua').read_text()
     assert hyprland.count('require("noctalia").apply_theme()') == 1
     assert 'require("config.colors").apply_theme()' not in hyprland
-    bar_alpha = tomllib.loads((ROOT / 'config/noctalia/config.toml').read_text())['bar']['default']['background_opacity']
+    shell_config = tomllib.loads((ROOT / 'config/noctalia/config.toml').read_text())
+    kitty_opacity = float(re.search(r'^background_opacity\s+([\d.]+)',
+                         (ROOT / 'config/kitty/kitty.conf').read_text(), re.M)[1])
     pairs = [('mOnSurface', 'mSurface'), ('mOnSurfaceVariant', 'mSurfaceVariant'),
              ('mOnPrimary', 'mPrimary'), ('mOnSecondary', 'mSecondary'),
              ('mOnError', 'mError'), ('mOnHover', 'mHover')]
     fixtures = [('cool', '#14263e', '#77a6ca'), ('warm', '#382019', '#c29a6a'),
                 ('green', '#142c22', '#83ad81'), ('muted', '#292a2c', '#a0a1a3'),
-                ('bright', '#f6efdc', '#c9dfea'), ('busy', '#26203a', '#d79b79')]
+                ('bright', '#f6efdc', '#c9dfea'), ('dark', '#000000', '#101010'),
+                ('busy', '#26203a', '#d79b79')]
     report = []
     with tempfile.TemporaryDirectory(prefix='adaptive-palette-') as directory:
         scratch = Path(directory)
@@ -53,7 +106,7 @@ def check(desktop=True):
                    XDG_STATE_HOME=str(scratch / 'state'), XDG_RUNTIME_DIR=str(scratch / 'runtime'))
         for name in ('HYPRLAND_INSTANCE_SIGNATURE', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'):
             env.pop(name, None)
-        for app in ('hypr', 'noctalia/palettes', 'kitty', 'alacritty',
+        for app in ('hypr', 'noctalia/palettes', 'kitty', 'alacritty', 'micro/colorschemes',
                     'gtk-3.0', 'gtk-4.0', 'qt6ct', 'btop'):
             (config / app).mkdir(parents=True, exist_ok=True)
         templates = []
@@ -61,7 +114,15 @@ def check(desktop=True):
                                       ('noctalia', 'noctalia-palette.json', 'noctalia/palettes/matugen.json')]:
             templates.append(f'[templates.{name}]\ninput_path = {json.dumps(str(ROOT / "config/matugen/templates" / source))}\noutput_path = {json.dumps(str(config / output))}\n')
         matugen_config = scratch / 'matugen.toml'
-        matugen_config.write_text('[config.wallpaper]\ncommand = "true"\narguments = []\nset = false\n' + '\n'.join(templates))
+        custom = tomllib.loads((ROOT / 'config/matugen/config.toml').read_text()).get('config', {}).get('custom_colors', {})
+        custom_config = '[config.custom_colors]\n' + ''.join(
+            f'{name} = {{ color = {json.dumps(value["color"])}, blend = {str(value["blend"]).lower()} }}\n'
+            for name, value in custom.items())
+        micro_template = ROOT / 'config/matugen/templates/micro.micro'
+        if micro_template.exists():
+            templates.append(f'[templates.micro]\ninput_path = {json.dumps(str(micro_template))}\n'
+                             f'output_path = {json.dumps(str(config / "micro/colorschemes/adaptive.micro"))}\n')
+        matugen_config.write_text('[config.wallpaper]\ncommand = "true"\narguments = []\nset = false\n' + custom_config + '\n'.join(templates))
         catalog = {'theme': {'templates': {'builtin_ids': ['hyprland', 'kitty', 'gtk3', 'gtk4',
                                                          'qt', 'kcolorscheme', 'alacritty', 'btop']}}}
         for name, low, high in fixtures:
@@ -78,13 +139,22 @@ def check(desktop=True):
                 terminal = colors['terminal']
                 ratios += [contrast(terminal['foreground'], terminal['background']),
                            contrast(terminal['selectionFg'], terminal['selectionBg'])]
-                # Check the actual bar opacity against white/black wallpaper.
-                base = colors['mSurface'].lstrip('#')
-                for alpha in (bar_alpha,):
-                    for wallpaper_channel in (0, 255):
-                        mixed = '#' + ''.join(f'{round(int(base[i:i + 2], 16) * alpha + wallpaper_channel * (1-alpha)):02x}'
-                                              for i in (0, 2, 4))
-                        ratios.append(contrast(colors['mOnSurface'], mixed))
+                for widget, role, foreground, background in bar_contrast_samples(colors, shell_config):
+                    ratio = contrast(foreground, background)
+                    assert ratio >= 4.5, (name, mode, widget, role, foreground, background, ratio)
+                    ratios.append(ratio)
+                for backdrop in ('#000000', '#ffffff'):
+                    terminal_background = composite(terminal['background'], backdrop, kitty_opacity)
+                    ratios.append(contrast(terminal['foreground'], terminal_background))
+                    for color in ('red', 'green', 'yellow', 'blue', 'magenta', 'cyan'):
+                        ratios.append(contrast(terminal['normal'][color], terminal_background))
+                if custom:
+                    assert len({terminal['normal'][key] for key in ('red', 'green', 'yellow', 'blue', 'magenta', 'cyan')}) == 6
+                if micro_template.exists():
+                    micro = (config / 'micro/colorschemes/adaptive.micro').read_text()
+                    assert f'color-link default "{colors["mOnSurface"]},{colors["mSurface"]}"' in micro
+                    assert all(re.fullmatch(r'color-link [\w.-]+ "#[0-9a-fA-F]{6}(?:,#[0-9a-fA-F]{6})?"', line)
+                               for line in micro.splitlines() if line and not line.startswith('#'))
                 assert min(ratios) >= 4.5, (name, mode, min(ratios))
                 native_command = ['noctalia', 'theme', str(image), '--theme-json', str(palette_path),
                                   '--both', '--default-mode', mode]

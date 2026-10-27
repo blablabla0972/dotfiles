@@ -28,7 +28,7 @@ class ThemeSyncTest(unittest.TestCase):
         self.runtime.mkdir()
         self.wallpaper = root / 'wallpaper.png'
         self.wallpaper.write_bytes(b'image fixture')
-        self.outputs = [self.config / p for p in ('hypr/colors.conf',
+        self.outputs = [self.config / p for p in ('hypr/colors.conf', 'micro/colorschemes/adaptive.micro',
                         'noctalia/palettes/matugen.json', 'kitty/themes/noctalia.conf')]
         for p in self.outputs:
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -127,6 +127,13 @@ class ThemeSyncTest(unittest.TestCase):
         self.assertEqual(self.run_mode_event(), 1)
         self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
         self.assertEqual(self.settings.read_text(), 'mode = "light"\n')
+
+    def test_failed_event_removes_a_new_micro_colorscheme(self):
+        micro = self.config / 'micro/colorschemes/adaptive.micro'
+        micro.unlink()
+        self.fail_templates = True
+        self.assertEqual(self.run_mode_event(), 1)
+        self.assertFalse(micro.exists())
 
     def test_wallpaper_rollback_preserves_a_newer_user_mode(self):
         self.mode = 'dark'

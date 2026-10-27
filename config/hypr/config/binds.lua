@@ -205,3 +205,13 @@ hl.bind(mainMod .. " + CONTROL + mouse_down", hl.dsp.focus({ workspace = "m+1" }
 -- Special workspace (scratchpad)
 hl.bind(mainMod .. " + SHIFT + S", hl.dsp.window.move({ workspace = "special" }))
 hl.bind(mainMod .. " + S",         hl.dsp.workspace.toggle_special())
+
+---------------------------
+---- CAPS NAV (X11 fix) ----
+---------------------------
+-- `caps:nav` maps CapsLock to ISO_Level3_Shift, but Xwayland never binds the
+-- LevelThree vmod, so X11 apps (Code::Blocks) get a plain letter + Mod5 instead
+-- of an arrow. Send a real arrow key from the compositor so it works everywhere.
+for key, arrow in pairs({ h = "left", j = "down", k = "up", l = "right" }) do
+    hl.bind("MOD5 + " .. key, hl.dsp.send_shortcut({ mods = "", key = arrow }), { repeating = true })
+end

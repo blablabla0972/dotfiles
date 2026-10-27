@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import Qt.labs.folderlistmodel
 
@@ -22,6 +23,47 @@ PanelWindow {
 
     property bool closing: false
     property string pendingWallpaper: ""
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    property string themeMode: "dark"
+    property var paletteData: ({})
+    readonly property var palette: paletteData[themeMode] || ({})
+
+    function loadPalette() {
+        try {
+            var next = JSON.parse(paletteFile.text());
+            for (var mode of ["dark", "light"])
+                for (var role of ["mPrimary", "mOutline", "mSurfaceVariant"])
+                    if (!next[mode] || !/^#[0-9a-fA-F]{6}$/.test(next[mode][role]))
+                        return;
+            paletteData = next;
+        } catch (error) {
+            // Keep the last complete palette during atomic updates.
+        }
+    }
+
+    FileView {
+        id: paletteFile
+        path: root.configHome + "/noctalia/palettes/matugen.json"
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.loadPalette()
+        onFileChanged: {
+            reload();
+            if (!modeQuery.running) modeQuery.running = true;
+        }
+    }
+
+    Process {
+        id: modeQuery
+        command: ["noctalia", "msg", "theme-mode-get"]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var mode = text.trim();
+                if (mode === "dark" || mode === "light") root.themeMode = mode;
+            }
+        }
+    }
     readonly property real rowWidth: Math.min(width, 1920)
     readonly property real rowLeft: (width - rowWidth) / 2
     readonly property real selectedWidth: rowWidth * 0.40
@@ -225,8 +267,8 @@ PanelWindow {
                     anchors.fill: parent
                     ShapePath {
                         strokeWidth: cardItem.selected ? 3 : 2
-                        strokeColor: cardItem.selected ? "#72d9b3" : "#557267"
-                        fillColor: cardItem.selected ? "transparent" : "#4208120d"
+                        strokeColor: cardItem.selected ? (root.palette.mPrimary || "transparent") : (root.palette.mOutline || "transparent")
+                        fillColor: cardItem.selected || !root.palette.mSurfaceVariant ? "transparent" : Qt.alpha(root.palette.mSurfaceVariant, 0.26)
                         joinStyle: ShapePath.MiterJoin
                         startX: cardItem.slant + 1.5; startY: 1.5
                         PathLine { x: cardItem.width - 1.5; y: 1.5 }

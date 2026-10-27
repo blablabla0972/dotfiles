@@ -10,3 +10,15 @@ output_path = '~/.config/hypr/colors.conf'
 [templates.noctalia]
 input_path = '~/.config/matugen/templates/noctalia-palette.json'
 output_path = '~/.config/noctalia/palettes/matugen.json'
+
+[config.custom_colors]
+ansi_red = { color = "#ff0000", blend = true }
+ansi_green = { color = "#00ff00", blend = true }
+ansi_yellow = { color = "#ffff00", blend = true }
+ansi_blue = { color = "#0000ff", blend = true }
+ansi_magenta = { color = "#ff00ff", blend = true }
+ansi_cyan = { color = "#00ffff", blend = true }
+
+[templates.micro]
+input_path = "~/.config/matugen/templates/micro.micro"
+output_path = "~/.config/micro/colorschemes/adaptive.micro"

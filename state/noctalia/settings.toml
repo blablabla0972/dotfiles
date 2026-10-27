@@ -1,4 +1,39 @@
-config_version = 14
+config_version = 15
+
+[desktop_widgets]
+enabled = false
+schema_version = 2
+widget_order = [ "media_main" ]
+
+    [desktop_widgets.grid]
+    cell_size = 16
+    major_interval = 4
+    visible = true
+
+    [desktop_widgets.widget.media_main]
+    box_height = 170.0
+    box_width = 420.0
+    cx = 260.0
+    cy = 820.0
+    output = "eDP-1"
+    placement_height = 1080.0
+    placement_width = 1920.0
+    rotation = 0.0
+    type = "media_player"
+
+        [desktop_widgets.widget.media_main.settings]
+        album_art_background = true
+        album_art_blur = 32
+        audio_visualizer = true
+        background = true
+        background_color = "surface"
+        background_opacity = 0.92000000000000004
+        background_padding = 14.0
+        background_radius = 22.0
+        color = "on_surface"
+        hide_when_no_media = true
+        layout = "horizontal"
+        shadow = true
 
 [location]
 address = "Hoa Lư, Ninh Bình, Việt Nam"

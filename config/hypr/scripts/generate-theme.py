@@ -272,7 +272,7 @@ def theme_snapshot_paths(config_dir, state_dir):
              'gtk-3.0/settings.ini', 'gtk-4.0/settings.ini', 'qt5ct/qt5ct.conf', 'qt6ct/qt6ct.conf',
              'qt5ct/colors/noctalia.conf', 'qt6ct/colors/noctalia.conf', 'kdeglobals',
              'btop/btop.conf', 'btop/themes/noctalia.theme', 'alacritty/alacritty.toml', 'alacritty/themes/noctalia.toml',
-             'noctalia/palettes/matugen.json']
+             'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro']
     return (
         [config_dir / p for p in names]
         + [state_dir / 'noctalia/settings.toml', share / 'color-schemes/noctalia.colors']

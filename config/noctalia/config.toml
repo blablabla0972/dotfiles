@@ -2,62 +2,76 @@
 ui_scale = 1.20
 
 [backdrop]
-blur_intensity = 0.5
+blur_intensity = 0.65
 enabled = true
-tint_intensity = 0.3
+tint_intensity = 0.34
 
 [bar.default]
-background_opacity = 0.82
-border = "outline"
-border_width = 1.0
-capsule = false
+ background_opacity = 0.0
+ border = "outline"
+ border_width = 0.0
+capsule = true
+capsule_fill = "surface_variant"
+capsule_opacity = 0.92
+capsule_padding = 11.0
+capsule_thickness = 0.86
 center = [ "workspaces" ]
-compositor_blur = true
+ compositor_blur = false
 concave_edge_corners = false
-end = [ "media", "spacer_1", "tray", "group:status", "notifications", "session" ]
-margin_edge = 10
-margin_ends = 14
-padding = 10
+ contact_shadow = false
+end = [ "media", "tray", "group:status", "group:session_controls" ]
+margin_edge = 12
+margin_ends = 12
+margin_opposite_edge = 2
+padding = 8
 position = "top"
-radius = 16
-radius_bottom_left = 16
-radius_bottom_right = 16
-radius_top_left = 16
-radius_top_right = 16
-scale = 1.10
-shadow = true
-start = [ "group:launcher_clock" ]
-thickness = 36
-widget_spacing = 8
+radius = 19
+radius_bottom_left = 19
+radius_bottom_right = 19
+radius_top_left = 19
+radius_top_right = 19
+scale = 1.00
+ shadow = false
+start = [ "launcher", "group:time" ]
+thickness = 38
+widget_spacing = 10
+capsule_border = "outline"
+capsule_border_width = 1.0
 
     [[bar.default.capsule_group]]
-    border = ""
+    border = "outline"
     fill = "surface_variant"
-    id = "launcher_clock"
-        members = [ "launcher", "clock" ]
-    opacity = 1.0
-    padding = 6.0
+    id = "time"
+        members = [ "clock", "calendar_date" ]
+    opacity = 0.92
+    padding = 11.0
+    widget_spacing = 12
 
     [[bar.default.capsule_group]]
-    border = ""
+    border = "outline"
     fill = "surface_variant"
     id = "hardware"
     members = [ "temp", "sysmon_3" ]
-    opacity = 1.0
-    padding = 6.0
+    opacity = 0.92
+    padding = 11.0
+    widget_spacing = 12
 
     [[bar.default.capsule_group]]
-    border = ""
+    border = "outline"
     fill = "surface_variant"
     id = "status"
     members = [ "network", "volume", "battery" ]
-    opacity = 1.0
-    padding = 6.0
+    opacity = 0.92
+    padding = 11.0
+    widget_spacing = 12
 
 [shell]
+button_borders = true
+card_borders = true
 clipboard_image_action_command = "swash --stdin --name \"swash-$(date +'%Y-%m-%d_%H:%M:%S').png\""
-corner_radius_scale = 1.1
+corner_radius_scale = 1.00
 font_family = "Adwaita Sans"
+input_borders = true
 launch_apps_as_systemd_services = true
 polkit_agent = true
 popup_borders = true
@@ -67,16 +81,36 @@ settings_show_advanced = true
     [shell.greeter_sync]
     auto_sync = false
 
+    [shell.launcher]
+    layout = "simple"
+    search_position = "top"
+    categories = true
+    category_icons_only = true
+    show_settings_button = true
+    show_session_button = true
+    track_usage = true
+    sort_by_usage = true
+    compact = true
+
     [shell.panel]
     borders = true
+    border_color = "outline"
+    border_width = 1.0
     control_center_placement = "floating"
     control_center_position = "top_center"
-    floating_offset = 10
+    floating_offset = 14
+    list_item_background = true
     open_near_click_control_center = true
     session_placement = "floating"
     session_position = "center"
+    wallpaper_placement = "floating"
+    wallpaper_position = "center"
     shadow = true
     transparency_mode = "glass"
+
+    [shell.shadow]
+    alpha = 0.30
+    direction = "down"
 
     [shell.screenshot]
     copy_to_clipboard = false
@@ -122,6 +156,67 @@ settings_show_advanced = true
 [system.monitor]
 gpu_poll_seconds = 30
 
+[dock]
+enabled = true
+position = "bottom"
+active_monitor_only = true
+icon_size = 40
+main_axis_padding = 12
+cross_axis_padding = 7
+item_spacing = 6
+background_opacity = 0.92
+border = "outline"
+border_width = 1.0
+radius = 24
+concave_edge_corners = false
+margin_ends = 12
+margin_edge = 12
+shadow = true
+show_running = true
+auto_hide = true
+smart_auto_hide = false
+layer = "overlay"
+reserve_space = false
+active_scale = 1.0
+inactive_scale = 0.88
+magnification = true
+magnification_scale = 1.12
+active_opacity = 1.0
+inactive_opacity = 0.78
+show_dots = true
+show_instance_count = false
+launcher_position = "start"
+
+[desktop_widgets]
+enabled = false
+schema_version = 2
+widget_order = [ "media_main" ]
+
+    [desktop_widgets.widget.media_main]
+    type = "media_player"
+    output = "eDP-1"
+    cx = 260.0
+    cy = 820.0
+    box_width = 420.0
+    box_height = 170.0
+    rotation = 0.0
+    flip_x = false
+    flip_y = false
+
+        [desktop_widgets.widget.media_main.settings]
+        layout = "horizontal"
+        color = "on_surface"
+        shadow = true
+        hide_when_no_media = true
+        album_art_background = true
+        album_art_blur = 32
+        audio_visualizer = true
+        background = true
+        background_color = "surface"
+        background_opacity = 0.92
+        background_radius = 22.0
+        background_padding = 14.0
+
 [wallpaper]
 directory = "~/Ảnh/Wallpaper"
 edge_smoothness = 0.65
@@ -139,24 +234,32 @@ wallpaper_scheme = "m3-content"
     builtin_ids = [ "btop", "gtk3", "gtk4", "kcolorscheme", "kitty", "qt", "alacritty", "hyprland" ]
 
 [widget.clock]
-color = "secondary"
-format = "{:%H:%M · %a %d/%m}"
+color = "on_surface"
+format = "{:%H:%M}"
+font_weight = 600
+font_scale = 1.08
 
 [widget.launcher]
-color = "secondary"
+color = "on_primary"
+icon_color = "on_primary"
+capsule_fill = "primary"
+capsule_opacity = 1.0
+capsule_padding = 11.0
 
 [widget.media]
 hide_when_no_media = true
 title_scroll = "on_hover"
+max_length = 160.0
+min_length = 64.0
 
 [widget.network]
-color = "secondary"
+color = "on_surface_variant"
 
 [widget.notifications]
-color = "secondary"
+color = "on_surface_variant"
 
 [widget.session]
-color = "secondary"
+color = "on_surface_variant"
 
 [widget.hotspot]
 glyph = "antenna-bars-5"
@@ -197,26 +300,56 @@ capsule = true
 capsule_fill = "surface_variant"
 
 [widget.volume]
-color = "secondary"
+color = "on_surface_variant"
 
 [widget.workspaces]
-active_pill_size = 2.8
-capsule = false
-empty_color = "secondary"
+active_pill_size = 3.0
+capsule = true
+empty_color = "hover"
 focused_color = "primary"
 label_source = "id"
 occupied_color = "secondary"
-inactive_pill_size = 1.2
-pill_scale = 0.9
+inactive_pill_size = 1.4
+pill_scale = 1.0
 show_labels = true
 style = "regular"
 urgent_color = "error"
+font_weight = 600
 
 [control_center]
-width = 1180
+width = 950
 sidebar = "compact"
 sidebar_section = "compact"
 show_shortcut_labels = true
+
+[notification]
+background_opacity = 0.92
+border = true
+border_color = "outline"
+width = 380
+position = "top_right"
+offset_x = 12
+offset_y = 64
+max_visible = 3
+show_actions = true
+show_app_name = true
+border_width = 1.0
+
+[osd]
+background_opacity = 0.92
+border = true
+border_color = "outline"
+position = "top_center"
+offset_y = 64
+orientation = "horizontal"
+hide_delay_ms = 1300
+border_width = 1.0
+
+[lockscreen]
+blur_intensity = 0.62
+tint_intensity = 0.34
+transition = [ "fade", "zoom" ]
+transition_duration = 1000
 
     [[control_center.shortcuts]]
     type = "wifi"
@@ -239,7 +372,7 @@ show_shortcut_labels = true
 # Laptop power belongs on the bar; hardware details remain in Control Center.
 [widget.battery]
 type = "battery"
-color = "secondary"
+color = "on_surface_variant"
 
 [hooks]
 wallpaper_changed = ["python3 $HOME/.config/hypr/scripts/generate-theme.py --wallpaper-changed"]
@@ -247,3 +380,19 @@ theme_mode_changed = ["python3 $HOME/.config/hypr/scripts/generate-theme.py --th
 
 [plugins]
 enabled = []
+
+[widget.calendar_date]
+type = "clock"
+format = "{:%a · %d/%m}"
+color = "on_surface_variant"
+font_scale = 0.94
+
+
+[[bar.default.capsule_group]]
+id = "session_controls"
+members = [ "notifications", "session" ]
+fill = "surface_variant"
+border = "outline"
+opacity = 0.92
+padding = 11.0
+widget_spacing = 14
