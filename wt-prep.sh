@@ -5,6 +5,10 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 wt="${1:?Usage: ./wt-prep.sh <worktree-path>}"
 [ -d "$wt/config/hypr" ] || { echo "worktree khong hop le: $wt" >&2; exit 1; }
+if [ "$wt/config/hypr" -ef config/hypr ]; then
+    echo 'Khong the chuan bi chinh repo nguon nhu worktree' >&2
+    exit 1
+fi
 
 copied=0
 if [ -e config/hypr/current_wallpaper ] || [ -L config/hypr/current_wallpaper ]; then

@@ -54,7 +54,9 @@ Các symlink sau là machine-specific và đã được gitignore, không dùng 
 - `config/hypr/current_wallpaper` → một ảnh trong `~/Ảnh/Wallpaper`
 - `config/hypr/gpu/{intel,nvidia}` → `/dev/dri/by-path/...` (theo PCI của máy)
 
-Toàn bộ dịch vụ systemd user đã dùng specifier `%h`, Qt6ct dùng đường dẫn `~/.config/qt6ct/colors/noctalia.conf` và các symlink nội bộ đều là tương đối, hoàn toàn tương thích khi sao chép sang máy khác.
+Các dịch vụ systemd user dùng specifier `%h`, Qt6ct dùng đường dẫn `~/.config/qt6ct/colors/noctalia.conf` và các symlink nội bộ là tương đối để giảm phụ thuộc vào đường dẫn home. Khi chuyển sang máy khác, vẫn cần chuẩn bị wallpaper, liên kết GPU theo phần cứng, font/icon và các chương trình tương ứng trong bảng hệ sinh thái bên dưới; kiểm tra cấu hình màn hình trước khi áp dụng.
+
+Sau khi chuẩn bị ảnh nền, chạy `python3 ~/.config/hypr/scripts/generate-theme.py --apply-wallpaper /path/to/wallpaper.jpg` để tái sinh theme. `config/hypr/colors.conf` là file sinh và có thể còn ghi đường dẫn wallpaper của máy cũ; không sửa tay file này.
 
 Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục widget lockscreen của máy này. Mặc định `./install.sh` sẽ không cài đè file này để tránh xung đột màn hình; muốn áp dụng trạng thái này lên máy mới hãy chạy `./install.sh noctalia` (hoặc `./install.sh --all`).
 

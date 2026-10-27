@@ -89,7 +89,10 @@ class InstallerSafetyTest(unittest.TestCase):
         # Put an existing file in worktree
         (wt_dir / 'config/hypr/current_wallpaper').write_text('EXISTING_WT_WALLPAPER')
 
-        prep_script = self.repo / 'wt-prep.sh'
+        source = Path(self.temp_dir) / 'source'
+        (source / 'config/hypr').mkdir(parents=True)
+        prep_script = source / 'wt-prep.sh'
+        shutil.copy2(self.repo / 'wt-prep.sh', prep_script)
         proc = subprocess.run(
             ['bash', str(prep_script), str(wt_dir)],
             capture_output=True,
@@ -100,6 +103,61 @@ class InstallerSafetyTest(unittest.TestCase):
         self.assertIn('prepped', proc.stdout)
         # Verify the file was not deleted or replaced with valid source
         self.assertTrue((wt_dir / 'config/hypr/current_wallpaper').exists())
+
+    def test_wt_prep_rejects_source_aliases_without_deleting_files(self):
+        for target in ('relative', 'absolute', 'symlink', 'hypr_alias', 'gpu_only'):
+            with self.subTest(target=target):
+                source = Path(self.temp_dir) / target / 'source'
+                hypr = source / 'config/hypr'
+                (hypr / 'gpu').mkdir(parents=True)
+                gpu = hypr / 'gpu/intel'
+                gpu.write_text('GPU_CONFIG')
+                wallpaper = hypr / 'current_wallpaper'
+                if target != 'gpu_only':
+                    wallpaper.symlink_to('/missing/test-wallpaper.png')
+                script = source / 'wt-prep.sh'
+                shutil.copy2(self.repo / 'wt-prep.sh', script)
+                destination = source
+                if target == 'symlink':
+                    destination = source.parent / 'alias'
+                    destination.symlink_to(source, target_is_directory=True)
+                elif target == 'hypr_alias':
+                    destination = source.parent / 'other'
+                    (destination / 'config').mkdir(parents=True)
+                    (destination / 'config/hypr').symlink_to(hypr, target_is_directory=True)
+                proc = subprocess.run(
+                    ['bash', str(script), '.' if target == 'relative' else str(destination)],
+                    capture_output=True, text=True, cwd=self.temp_dir,
+                )
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(gpu.read_text(), 'GPU_CONFIG')
+                if target != 'gpu_only':
+                    self.assertTrue(wallpaper.is_symlink(), proc.stderr)
+                    self.assertEqual(os.readlink(wallpaper), '/missing/test-wallpaper.png')
+                self.assertIn('repo nguon', proc.stderr)
+
+    def test_wt_prep_copies_machine_files_to_distinct_destination(self):
+        source = Path(self.temp_dir) / 'source'
+        hypr = source / 'config/hypr'
+        (hypr / 'gpu').mkdir(parents=True)
+        (hypr / 'gpu/intel').symlink_to('/dev/dri/missing-test-gpu')
+        (hypr / 'current_wallpaper').symlink_to('/missing/test-wallpaper.png')
+        script = source / 'wt-prep.sh'
+        shutil.copy2(self.repo / 'wt-prep.sh', script)
+        destination = Path(self.temp_dir) / 'destination/config/hypr'
+        (destination / 'gpu').mkdir(parents=True)
+        (destination / 'gpu/stale').write_text('OLD')
+        (destination / 'current_wallpaper').write_text('OLD')
+        proc = subprocess.run(
+            ['bash', str(script), str(destination.parents[1])],
+            capture_output=True, text=True, cwd=self.temp_dir,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(os.readlink(destination / 'current_wallpaper'), '/missing/test-wallpaper.png')
+        self.assertEqual(os.readlink(destination / 'gpu/intel'), '/dev/dri/missing-test-gpu')
+        self.assertFalse((destination / 'gpu/stale').exists())
+        self.assertTrue((hypr / 'gpu/intel').is_symlink())
+        self.assertTrue((hypr / 'current_wallpaper').is_symlink())
 
 
     def test_multiple_conflicts_share_single_backup_dir(self):
