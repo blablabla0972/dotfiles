@@ -22,7 +22,7 @@ BIN_TARGET="$HOME/.local/bin"
 # Core live desktop targets (mặc định chỉ cài những mục này để đảm bảo tính an toàn & khả chuyển)
 CORE_CONFIGS=(hypr noctalia quickshell matugen kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop starship.toml)
 CORE_ROOTS=(kdeglobals)
-CORE_STATES=(noctalia)
+CORE_STATES=()
 
 DRY_RUN=0
 INSTALL_ALL=0

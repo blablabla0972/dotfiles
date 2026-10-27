@@ -153,14 +153,6 @@ hl.window_rule({
     rounding  = 0,
 })
 
--- Mobile Hotspot QR dialog
-hl.window_rule({
-    match  = { class = "^(hotspot-qr)$" },
-    float  = true,
-    center = true,
-    size   = { "600", "680" },
-})
-
 -- Noctalia layer rule
 hl.layer_rule({
   name = "noctalia",

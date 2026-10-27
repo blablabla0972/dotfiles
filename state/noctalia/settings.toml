@@ -92,12 +92,3 @@ wallpaper_scheme = "m3-content"
 [wallpaper]
 enabled = false
 fill_mode = "fit"
-
-    [wallpaper.default]
-    path = "/home/admin/Ảnh/Wallpaper/image-from-rawpixel-id-3864331-original.jpg"
-
-    [wallpaper.last]
-    path = "/home/admin/Ảnh/Wallpaper/image-from-rawpixel-id-3864331-original.jpg"
-
-    [wallpaper.monitors.eDP-1]
-    path = "/home/admin/Ảnh/Wallpaper/image-from-rawpixel-id-3864331-original.jpg"

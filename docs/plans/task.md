@@ -15,3 +15,6 @@
 | Round 2.5: Mask password input in hotspot-menu | done | bin/hotspot-menu rofi_cmd -password |
 | Round 2.6: Wallpaper picker thumbnail generation deferral | done | idle timer + renice/ionice idle priority |
 | Round 2.7: Verification, installation & Git push (Round 2) | done | 21 tests pass, install.sh verified, pushed to GitHub |
+| Round 3.1: Remove hotspot feature (scripts, binds, window rules) | done | bin/hotspot*, binds & window rules deleted |
+| Round 3.2: Sanitize state/noctalia & decouple from default install | done | hardcoded wallpaper/monitor removed, CORE_STATES=() |
+| Round 3.3: Verification, installation & Git push (Round 3) | done | 21 tests pass, hyprctl 0 errors, pushed to GitHub |

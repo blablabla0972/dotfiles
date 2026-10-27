@@ -128,8 +128,6 @@ hl.bind(mainMod .. " + Space",      hl.dsp.exec_cmd(noctCall .. "panel-toggle la
 hl.bind(mainMod .. " + period",     hl.dsp.exec_cmd(noctCall .. "panel-toggle launcher /emo"))
 hl.bind(mainMod .. " + L",          hl.dsp.exec_cmd("hyprlock"))
 hl.bind(mainMod .. " + ALT + C",    hl.dsp.exec_cmd(noctCall .. "panel-toggle session"))
-hl.bind(mainMod .. " + H",          hl.dsp.exec_cmd("~/.local/bin/hotspot toggle"))
-hl.bind(mainMod .. " + SHIFT + H",  hl.dsp.exec_cmd("~/.local/bin/hotspot-menu"))
 
 
 ---------------------------
