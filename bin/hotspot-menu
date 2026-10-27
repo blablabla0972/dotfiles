@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Mobile Hotspot Interactive Menu (Rofi-based)
+# ==============================================================================
+
+set -euo pipefail
+
+HOTSPOT_BIN="$HOME/.local/bin/hotspot"
+
+export LC_ALL="C.UTF-8"
+
+rofi_cmd() {
+    local result
+    rofi -dmenu "$@" || {
+        result=$?
+        # Rofi returns 1 for cancellation; other failures remain errors.
+        [[ "$result" -eq 1 ]] && return 0
+        return "$result"
+    }
+}
+
+main_menu() {
+    local is_active=false status
+    status=$("$HOTSPOT_BIN" status)
+    if [[ "$status" == *"ĐANG BẬT"* ]]; then
+        is_active=true
+    fi
+
+    local ssid band_desc clients
+    if [[ "$status" == *"Chưa có cấu hình Hotspot."* ]]; then
+        ssid="Chưa tạo"
+        band_desc="2.4 GHz"
+        clients="0 thiết bị"
+    else
+        ssid=$("$HOTSPOT_BIN" get-ssid)
+        band_desc=$(awk -F': ' '/Băng tần:/{print $2}' <<< "$status" | xargs)
+        clients=$(awk -F': ' '/Số thiết bị nối:/{print $2}' <<< "$status" | xargs)
+    fi
+
+    local options=()
+    if [[ "$is_active" == true ]]; then
+        options+=(
+            "🔴 Tắt Hotspot (Đang phát: $ssid)"
+            "📱 Hiển thị mã QR Code kết nối"
+            "👥 Danh sách thiết bị kết nối ($clients)"
+            "ℹ️ Thông tin chi tiết Hotspot"
+            "⚙️ Đổi tên Hotspot (SSID)"
+            "🔑 Đổi mật khẩu (Password)"
+            "📶 Chuyển băng tần (Hiện tại: $band_desc)"
+        )
+    else
+        options+=(
+            "🟢 Bật Hotspot (Tên: $ssid)"
+            "📱 Xem trước mã QR Code kết nối"
+            "⚙️ Đổi tên Hotspot (SSID)"
+            "🔑 Đổi mật khẩu (Password)"
+            "📶 Chuyển băng tần (Hiện tại: $band_desc)"
+            "ℹ️ Xem thông tin cấu hình"
+        )
+    fi
+
+    local choice
+    choice=$(printf '%s\n' "${options[@]}" | rofi_cmd -p "Mobile Hotspot" -lines "${#options[@]}")
+
+    [[ -z "$choice" ]] && exit 0
+
+    case "$choice" in
+        "🟢 Bật Hotspot"*)
+            "$HOTSPOT_BIN" on
+            ;;
+        "🔴 Tắt Hotspot"*)
+            "$HOTSPOT_BIN" off
+            ;;
+        *"mã QR Code"*)
+            "$HOTSPOT_BIN" qr-gui
+            ;;
+        *"Danh sách thiết bị kết nối"*)
+            local client_info
+            client_info=$("$HOTSPOT_BIN" clients)
+            printf '%s\n' "$client_info" | rofi_cmd -p "Thiết bị kết nối" -lines 10 >/dev/null 2>&1 || true
+            ;;
+        *"Đổi tên Hotspot"*)
+            local new_name
+            new_name=$(printf '%s' "$ssid" | rofi_cmd -p "Nhập tên Hotspot (SSID) mới:")
+            if [[ -n "$new_name" && "$new_name" != "$ssid" ]]; then
+                "$HOTSPOT_BIN" set-ssid "$new_name"
+            fi
+            ;;
+        *"Đổi mật khẩu"*)
+            local new_pass
+            new_pass=$(rofi_cmd -p "Nhập mật khẩu mới (8-63 ký tự):")
+            if [[ -n "$new_pass" ]]; then
+                "$HOTSPOT_BIN" set-pass "$new_pass"
+            fi
+            ;;
+        *"Chuyển băng tần"*)
+            local band_choice
+            band_choice=$(printf '%s\n' "2.4 GHz (Tương thích mọi thiết bị)" "5 GHz (Tốc độ cao, phụ thuộc thiết bị)" | rofi_cmd -p "Chọn băng tần:")
+            if [[ "$band_choice" =~ "2.4 GHz" ]]; then
+                "$HOTSPOT_BIN" set-band "bg"
+            elif [[ "$band_choice" =~ "5 GHz" ]]; then
+                "$HOTSPOT_BIN" set-band "a"
+            fi
+            ;;
+        *"Thông tin"*|*"thông tin"*)
+            local status_info
+            status_info=$("$HOTSPOT_BIN" status)
+            printf '%s\n' "$status_info" | rofi_cmd -p "Thông tin Hotspot" -lines 12 >/dev/null 2>&1 || true
+            ;;
+    esac
+}
+
+main_menu

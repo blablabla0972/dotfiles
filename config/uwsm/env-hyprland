@@ -1,2 +1,4 @@
-# Use only the Intel GPU for the Hyprland session.
-export AQ_DRM_DEVICES="$HOME/.config/hypr/gpu/intel"
+# Use Intel GPU if symlink is configured, otherwise fallback to Hyprland auto-detection
+if [ -e "$HOME/.config/hypr/gpu/intel" ]; then
+    export AQ_DRM_DEVICES="$HOME/.config/hypr/gpu/intel"
+fi

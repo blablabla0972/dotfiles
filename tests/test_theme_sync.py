@@ -33,6 +33,8 @@ class ThemeSyncTest(unittest.TestCase):
         for p in self.outputs:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text('dark')
+        for icon in ('Papirus', 'Papirus-Dark'):
+            (root / 'data/icons' / icon).mkdir(parents=True, exist_ok=True)
         (self.config / 'hypr/current_wallpaper').symlink_to(self.wallpaper)
         self.settings = self.state / 'noctalia/settings.toml'
         self.settings.parent.mkdir(parents=True)
@@ -177,6 +179,50 @@ class ThemeSyncTest(unittest.TestCase):
         real_spec.loader.exec_module(real)
         with patch.object(real, 'command', side_effect=command):
             self.assertFalse(real.quiesce_shell())
+
+    def test_snapshot_retention_prunes_old_directories(self):
+        root = self.state / 'desktop-wallpaper/backups'
+        root.mkdir(parents=True, exist_ok=True)
+        # Create 20 mock backup directories
+        created = []
+        for i in range(20):
+            d = root / f'20260101-0000{i:02d}-test'
+            d.mkdir()
+            # Stagger mtimes
+            os.utime(d, (1000 + i * 10, 1000 + i * 10))
+            created.append(d)
+
+        # Creating a snapshot should prune older directories beyond 15
+        dummy_file = self.config / 'test_file'
+        dummy_file.write_text('content')
+        snap = theme.Snapshot([dummy_file], self.state)
+        remaining = list(root.iterdir())
+        self.assertLessEqual(len(remaining), 16)
+        # Oldest directory should have been pruned
+        self.assertFalse(created[0].exists())
+
+    def test_wait_for_templates_retries_on_command_runtime_error(self):
+        attempts = 0
+        digest = hashlib.sha256(b'template_content').hexdigest()
+        target = self.config / 'target_template'
+        target.write_bytes(b'template_content')
+        expected = {str(target): digest}
+
+        def flaky_command(argv):
+            nonlocal attempts
+            attempts += 1
+            if argv[1:] == ['msg', 'wallpaper-get']:
+                if attempts < 3:
+                    raise RuntimeError('IPC socket temporarily unavailable')
+                return str(self.wallpaper)
+            if argv[1:] == ['msg', 'theme-mode-get']:
+                return 'dark'
+            return ''
+
+        with patch.object(theme, 'command', side_effect=flaky_command), \
+             patch.object(theme.time, 'sleep'):
+            theme.wait_for_templates(self.wallpaper, expected, mode='dark')
+        self.assertGreaterEqual(attempts, 3)
 
 
 if __name__ == '__main__':

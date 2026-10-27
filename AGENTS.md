@@ -3,7 +3,8 @@
 Live config của máy này là **symlink** vào repo này:
 `~/.config/{hypr,noctalia,quickshell,matugen,kitty,alacritty,gtk-3.0,gtk-4.0,qt5ct,qt6ct,btop}` → `config/*` (nhánh `main`).
 `~/.config/kdeglobals` → `root/kdeglobals`.
-Thêm `~/.local/state/noctalia/settings.toml` → `state/noctalia/settings.toml` (Noctalia ghi settings xuyên symlink vào repo).
+`~/.local/state/noctalia/settings.toml` → `state/noctalia/settings.toml` (Noctalia ghi settings xuyên symlink vào repo).
+`~/.local/bin/{toggle-desktop,hotspot,hotspot-menu}` → `bin/*`.
 
 Mọi mục còn lại trong `config/` và `root/` (fish, systemd, fcitx5...) là **snapshot**: sửa repo KHÔNG đổi máy — muốn áp lên máy thì `./install.sh <mục>` (có backup). Đồng bộ máy → repo: copy `~/.config/<mục>` vào `config/<mục>` (như commit `sync: live state`), bỏ qua file runtime đã gitignore (`*.log`, `*.bak*`, `cached_layouts`, `fish_variables`, `thumbnail.png`, `micro/syntax/`, `gpu/`, `current_wallpaper`). Tổng quan + cài máy mới: `README.md`.
 

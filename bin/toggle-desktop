@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# toggle-desktop — Hyprland "Show Desktop" (hide all windows, reveal the wallpaper).
+#
+# Hyprland is a tiling compositor and has no per-window minimise button, so this
+# emulates the Windows "Show Desktop" strip: pressing it jumps to a dedicated
+# EMPTY workspace (default 10) so you see only the desktop, and pressing again
+# returns you to the workspace you came from.
+set -euo pipefail
+
+# Ensure only one instance runs at a time to serialize intentional calls
+LOCKFILE="${XDG_RUNTIME_DIR:-/tmp}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/toggle-desktop.lock"
+mkdir -p "$(dirname "$LOCKFILE")" 2>/dev/null || true
+exec 200>"$LOCKFILE"
+flock 200
+
+DESKTOP_WS="${HYPR_DESKTOP_WS:-10}"
+STATE="${XDG_RUNTIME_DIR:-/tmp}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/toggle-desktop.state"
+
+mon_info="$(hyprctl monitors -j 2>/dev/null || echo '[]')"
+
+# Use jq with mapfile to properly extract variables and ensure exactly ONE focused monitor
+if ! focused_data=$(jq -e -r 'map(select(.focused == true)) | if length == 1 then .[0] | (.activeWorkspace.name // "1"), (.specialWorkspace.id // 0), (.specialWorkspace.name // "") else error("Expected exactly 1 focused monitor") end' <<< "$mon_info"); then
+    # Invalid, malformed, or no focused monitor data
+    exit 1
+fi
+
+mapfile -t vals <<< "$focused_data"
+cur_ws="${vals[0]:-1}"
+special_id="${vals[1]:-0}"
+special_name="${vals[2]:-}"
+
+# Helper function to execute batch and validate
+dispatch_and_validate() {
+    local batch_cmds="$1"
+    local batch_out
+    # hyprctl dispatch can return 0 but output "error:" with the lua bridge
+    if ! batch_out=$(hyprctl --batch "$batch_cmds" 2>&1) || echo "$batch_out" | grep -qi "error"; then
+        echo "Dispatch error: $batch_out" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Nếu special workspace (cửa sổ thu nhỏ / đặc biệt) đang mở che màn hình, đóng nó lại
+if [ "$special_id" != "0" ] && [ -n "$special_name" ] && [ "$special_name" != "null" ]; then
+    batch_cmds="dispatch hl.dsp.workspace.toggle_special()"
+    if [ "$cur_ws" != "$DESKTOP_WS" ]; then
+        batch_cmds="$batch_cmds ; dispatch hl.dsp.focus({ workspace = \"$DESKTOP_WS\" })"
+    fi
+    
+    dispatch_and_validate "$batch_cmds" || exit 1
+    printf '%s|special:%s' "$cur_ws" "$special_name" > "$STATE"
+    exit 0
+fi
+
+# Nếu đang ở workspace màn hình trống (10) -> quay trở lại workspace cũ
+if [ "$cur_ws" = "$DESKTOP_WS" ]; then
+    target_ws="previous"
+    restore_special=""
+    state_content=""
+    if [ -f "$STATE" ]; then
+        state_content="$(cat "$STATE")"
+        saved_ws="${state_content%%|*}"
+        saved_special="${state_content#*|}"
+        if [ -n "$saved_ws" ] && [ "$saved_ws" != "$DESKTOP_WS" ]; then
+            target_ws="$saved_ws"
+        fi
+        if [ "$saved_special" != "$state_content" ] && [ -n "$saved_special" ]; then
+            restore_special="1"
+        fi
+    fi
+    
+    batch_cmds="dispatch hl.dsp.focus({ workspace = \"$target_ws\" })"
+    if [ -n "$restore_special" ]; then
+        batch_cmds="$batch_cmds ; dispatch hl.dsp.workspace.toggle_special()"
+    fi
+    
+    dispatch_and_validate "$batch_cmds" || exit 1
+    rm -f "$STATE"
+else
+    # Đang ở workspace bình thường -> lưu lại workspace hiện tại và nhảy về workspace 10 (màn hình không có cửa sổ)
+    dispatch_and_validate "dispatch hl.dsp.focus({ workspace = \"$DESKTOP_WS\" })" || exit 1
+    printf '%s' "$cur_ws" > "$STATE"
+fi

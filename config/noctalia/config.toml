@@ -50,15 +50,6 @@ capsule_border_width = 1.0
     [[bar.default.capsule_group]]
     border = "outline"
     fill = "surface_variant"
-    id = "hardware"
-    members = [ "temp", "sysmon_3" ]
-    opacity = 0.92
-    padding = 11.0
-    widget_spacing = 12
-
-    [[bar.default.capsule_group]]
-    border = "outline"
-    fill = "surface_variant"
     id = "status"
     members = [ "network", "volume", "battery" ]
     opacity = 0.92

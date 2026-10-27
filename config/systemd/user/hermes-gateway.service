@@ -6,11 +6,11 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart="/home/admin/.hermes/hermes-agent/.hermes/bin/hermes" "gateway" "run"
-WorkingDirectory=/home/admin/.hermes
-Environment="PATH=/home/admin/.hermes/hermes-agent/node_modules/.bin:/home/admin/.hermes/tools/node-26.7.0-linux-x64/bin:/home/admin/.hermes/tools/npm-12.0.2-linux-x64/bin:/home/admin/.local/bin:/home/admin/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart="%h/.hermes/hermes-agent/.hermes/bin/hermes" "gateway" "run"
+WorkingDirectory=%h/.hermes
+Environment="PATH=%h/.hermes/hermes-agent/node_modules/.bin:%h/.hermes/tools/node-26.7.0-linux-x64/bin:%h/.hermes/tools/npm-12.0.2-linux-x64/bin:%h/.local/bin:%h/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-Environment="HERMES_HOME=/home/admin/.hermes"
+Environment="HERMES_HOME=%h/.hermes"
 Environment="HERMES_SUPERVISED_CHILD=1"
 Restart=always
 RestartSec=5
@@ -20,8 +20,8 @@ RestartPreventExitStatus=78
 KillMode=mixed
 KillSignal=SIGTERM
 ExecReload=/bin/kill -USR1 $MAINPID
-ExecStop=-"/home/admin/.hermes/hermes-agent/.hermes/bin/hermes" "--run-module" "gateway.systemd_stop_mark"
-ExecStopPost=-"/home/admin/.hermes/hermes-agent/.hermes/bin/hermes" "--run-module" "gateway.cgroup_cleanup"
+ExecStop=-"%h/.hermes/hermes-agent/.hermes/bin/hermes" "--run-module" "gateway.systemd_stop_mark"
+ExecStopPost=-"%h/.hermes/hermes-agent/.hermes/bin/hermes" "--run-module" "gateway.cgroup_cleanup"
 TimeoutStopSec=70
 StandardOutput=journal
 StandardError=journal

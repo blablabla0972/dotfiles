@@ -67,6 +67,19 @@ class Snapshot:
                 self.appearance[key] = command(['gsettings', 'get', 'org.gnome.desktop.interface', key])
         (self.directory / 'appearance.json').write_text(json.dumps(self.appearance))
 
+        # Retention policy: keep at most 15 most recent backup snapshots
+        retention_limit = 15
+        try:
+            existing = sorted(
+                [p for p in root.iterdir() if p.is_dir() and p != self.directory],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True
+            )
+            for old in existing[retention_limit - 1:]:
+                shutil.rmtree(old, ignore_errors=True)
+        except OSError:
+            pass
+
     def restore(self):
         for name, entry in self.entries.items():
             path = Path(name)
@@ -111,7 +124,7 @@ def palette_for(wallpaper, config_dir):
     if mode == 'auto':
         try:
             mode = command(['noctalia', 'msg', 'theme-mode-get'])
-        except subprocess.SubprocessError:
+        except (RuntimeError, subprocess.SubprocessError, OSError):
             mode = 'dark'
     if mode not in {'dark', 'light'}:
         raise ValueError(f'Unsupported Noctalia theme mode: {mode}')
@@ -178,6 +191,13 @@ def reload_matugen_palette(config, changed):
 def sync_toolkit_settings(config_dir, mode):
     """Remove stale dark-only preferences while keeping other application settings."""
     icons = 'Papirus-Dark' if mode == 'dark' else 'Papirus'
+    icon_dirs = [
+        Path('/usr/share/icons'),
+        Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'icons',
+        Path.home() / '.icons',
+    ]
+    icon_available = any((d / icons).is_dir() for d in icon_dirs)
+
     for app in ('gtk-3.0', 'gtk-4.0', 'qt5ct', 'qt6ct'):
         path = config_dir / app / ('settings.ini' if app.startswith('gtk') else f'{app}.conf')
         if not path.parent.is_dir() or (app.startswith('qt') and not path.is_file()):
@@ -190,13 +210,16 @@ def sync_toolkit_settings(config_dir, mode):
         if app.startswith('gtk'):
             ini[section]['gtk-theme-name'] = 'adw-gtk3-dark' if mode == 'dark' else 'adw-gtk3'
             ini[section]['gtk-application-prefer-dark-theme'] = str(int(mode == 'dark'))
-        if (Path('/usr/share/icons') / icons).is_dir():
+        if icon_available:
             ini[section]['gtk-icon-theme-name' if app.startswith('gtk') else 'icon_theme'] = icons
         output = io.StringIO()
         ini.write(output, space_around_delimiters=False)
         atomic_write(path, (output.getvalue().rstrip() + '\n').encode())
-    if shutil.which('gsettings') and (Path('/usr/share/icons') / icons).is_dir():
-        command(['gsettings', 'set', 'org.gnome.desktop.interface', 'icon-theme', icons])
+    if shutil.which('gsettings') and icon_available:
+        try:
+            command(['gsettings', 'set', 'org.gnome.desktop.interface', 'icon-theme', icons])
+        except (RuntimeError, subprocess.SubprocessError, OSError):
+            pass
 
 
 def stage_native(theme_command, config, config_dir, data_dir, directory):
@@ -238,7 +261,7 @@ def wait_for_templates(wallpaper, expected, mode=None):
                     hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest
                     for name, digest in expected.items())):
                 return
-        except (OSError, subprocess.SubprocessError):
+        except (RuntimeError, OSError, subprocess.SubprocessError):
             pass
         if time.monotonic() >= deadline:
             raise TimeoutError('Noctalia did not apply the native templates for the selected wallpaper')
