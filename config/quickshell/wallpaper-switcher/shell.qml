@@ -128,7 +128,7 @@ PanelWindow {
         var requiredItems = 7;
         var repeatCount = n < requiredItems ? Math.ceil(requiredItems / n) : 1;
         var cacheRoot = Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache");
-        var thumbBase = "file://" + cacheRoot + "/wallpaper-switcher-thumbs-v2/";
+        var thumbBase = "file://" + cacheRoot + "/wallpaper-switcher-thumbs-v3/";
 
         for (var r = 0; r < repeatCount; ++r) {
             for (var i = 0; i < n; ++i) {
@@ -137,7 +137,7 @@ PanelWindow {
                     "fileName": name,
                     "filePath": folderModel.get(i, "filePath"),
                     "fileUrl": folderModel.get(i, "fileUrl"),
-                    "thumbUrl": thumbBase + encodeURIComponent(name) + ".jpg",
+                    "thumbUrl": thumbBase + Qt.md5(name) + ".jpg",
                     "originalIndex": i
                 });
             }

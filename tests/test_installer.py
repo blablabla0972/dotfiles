@@ -19,6 +19,127 @@ class InstallerSafetyTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def make_installer_repo(self, name):
+        repo = Path(self.temp_dir) / name
+        (repo / 'config/btop').mkdir(parents=True)
+        (repo / 'config/btop/btop.conf').write_text('BTOP_CONFIG')
+        (repo / 'config/starship.toml').write_text('STARSHIP_CONFIG')
+        (repo / 'root').mkdir()
+        (repo / 'root/kdeglobals').write_text('KDE_CONFIG')
+        (repo / 'state/noctalia').mkdir(parents=True)
+        (repo / 'state/noctalia/settings.toml').write_text('STATE_CONFIG')
+        (repo / 'bin').mkdir()
+        (repo / 'bin/test-command').write_text('#!/bin/sh\n')
+        shutil.copy2(self.install_script, repo / 'install.sh')
+        return repo
+
+    def test_symlinked_destination_parents_preserve_sources(self):
+        for category, destination, selectors, payload in (
+            ('config', '.config', ['btop', 'starship.toml'], 'btop/btop.conf'),
+            ('root', '.config', ['kdeglobals'], 'kdeglobals'),
+            ('state', '.local/state', ['noctalia'], 'noctalia/settings.toml'),
+            ('bin', '.local/bin', ['test-command'], 'test-command'),
+        ):
+            with self.subTest(category=category):
+                repo = self.make_installer_repo(category)
+                home = Path(self.temp_dir) / f'home-{category}'
+                dst = home / destination
+                dst.parent.mkdir(parents=True)
+                dst.symlink_to(repo / category, target_is_directory=True)
+                source = repo / category / payload
+                content = source.read_text()
+                proc = subprocess.run(
+                    ['bash', str(repo / 'install.sh'), *selectors],
+                    capture_output=True, text=True, env={**self.env, 'HOME': str(home)},
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertFalse(source.is_symlink(), 'Installer replaced its own source')
+                if category == 'config':
+                    self.assertFalse((repo / 'config/btop').is_symlink())
+                    self.assertEqual((repo / 'config/starship.toml').read_text(), 'STARSHIP_CONFIG')
+                self.assertTrue(source.is_file(), 'Installer removed its own source')
+                self.assertEqual(source.read_text(), content)
+                self.assertFalse((home / '.config/backups').exists())
+
+    def test_same_file_destinations_need_no_backup(self):
+        repo = self.make_installer_repo('same-file')
+        target = self.home / '.config/starship.toml'
+        target.parent.mkdir()
+        source = repo / 'config/starship.toml'
+        for kind in ('symlink', 'hardlink'):
+            with self.subTest(kind=kind):
+                if kind == 'symlink':
+                    target.symlink_to(source)
+                else:
+                    os.link(source, target)
+                inode = target.lstat().st_ino
+                proc = subprocess.run(
+                    ['bash', str(repo / 'install.sh'), 'starship.toml'],
+                    capture_output=True, text=True, env=self.env,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(target.lstat().st_ino, inode)
+                self.assertFalse((self.home / '.config/backups').exists())
+                target.unlink()
+
+    def test_selected_installs_preserve_unrelated_bin_links(self):
+        repo = self.make_installer_repo('selected')
+        bin_dir = self.home / '.local/bin'
+        bin_dir.mkdir(parents=True)
+        # Include a config-only name to catch category-blind selection checks.
+        orphans = [bin_dir / name for name in ('deleted-command', 'btop')]
+        for selectors in (['btop'], ['--all', 'btop'], ['test-command']):
+            with self.subTest(selectors=selectors):
+                for orphan in orphans:
+                    if not orphan.is_symlink():
+                        orphan.symlink_to(repo / 'bin' / orphan.name)
+                proc = subprocess.run(
+                    ['bash', str(repo / 'install.sh'), *selectors],
+                    capture_output=True, text=True, env=self.env,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                for orphan in orphans:
+                    self.assertTrue(orphan.is_symlink(), f'Unselected link pruned: {orphan}')
+                if selectors == ['test-command']:
+                    self.assertEqual((bin_dir / 'test-command').resolve(), repo / 'bin/test-command')
+                else:
+                    self.assertTrue((self.home / '.config/btop').is_symlink())
+
+    def test_full_installs_prune_only_repo_orphans(self):
+        for index, args in enumerate(([], ['--all'], ['--dry-run'])):
+            with self.subTest(args=args):
+                repo = self.make_installer_repo(f'prune-{index}')
+                home = Path(self.temp_dir) / f'prune-home-{index}'
+                bin_dir = home / '.local/bin'
+                bin_dir.mkdir(parents=True)
+                orphan = bin_dir / 'deleted-command'
+                orphan.symlink_to(repo / 'bin/deleted-command')
+                foreign = bin_dir / 'foreign-command'
+                foreign.symlink_to(home / 'missing-command')
+                regular = bin_dir / 'local-command'
+                regular.write_text('LOCAL')
+                proc = subprocess.run(
+                    ['bash', str(repo / 'install.sh'), *args],
+                    capture_output=True, text=True, env={**self.env, 'HOME': str(home)},
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(orphan.is_symlink(), args == ['--dry-run'])
+                self.assertTrue(foreign.is_symlink())
+                self.assertEqual(regular.read_text(), 'LOCAL')
+
+    def test_path_selectors_are_rejected_before_mutation(self):
+        repo = self.make_installer_repo('selectors')
+        for selector in ('btop/', './btop', 'btop/../btop', '../root', '.', '..', ''):
+            with self.subTest(selector=selector):
+                proc = subprocess.run(
+                    ['bash', str(repo / 'install.sh'), 'btop', selector],
+                    capture_output=True, text=True, env=self.env,
+                )
+                self.assertNotEqual(proc.returncode, 0, f'Accepted non-installable selector: {selector!r}')
+                self.assertIn('hợp lệ', proc.stderr)
+                self.assertFalse((self.home / '.config').exists())
+                self.assertFalse((self.home / '.local').exists())
+
     def test_invalid_selector_exits_with_error(self):
         proc = subprocess.run(
             ['bash', str(self.install_script), 'nonexistent_selector_xyz'],

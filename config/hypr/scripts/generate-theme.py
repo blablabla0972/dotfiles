@@ -18,6 +18,9 @@ import time
 import tomllib
 
 
+MATUGEN_OUTPUTS = ('hypr/colors.conf', 'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro')
+
+
 def command(argv):
     try:
         result = subprocess.run(argv, check=True, capture_output=True, text=True, timeout=30)
@@ -43,11 +46,13 @@ def atomic_write(path, data):
 
 
 class Snapshot:
-    def __init__(self, paths, state_dir):
+    def __init__(self, paths, state_dir, link_only=()):
         root = state_dir / 'desktop-wallpaper/backups'
         root.mkdir(parents=True, exist_ok=True)
         self.directory = Path(tempfile.mkdtemp(prefix=time.strftime('%Y%m%d-%H%M%S-'), dir=root))
         self.entries = {}
+        paths = list(paths)
+        paths.extend(path.resolve() for path in tuple(paths) if path.is_symlink() and path not in link_only)
         for index, path in enumerate(dict.fromkeys(paths)):
             if path.is_symlink():
                 self.entries[str(path)] = {'link': os.readlink(path)}
@@ -107,6 +112,39 @@ def atomic_link(path, target):
         if os.path.lexists(temp): os.unlink(temp)
 
 
+def inline_toml(value):
+    if isinstance(value, dict):
+        return '{' + ', '.join(f'{json.dumps(key, ensure_ascii=False)} = {inline_toml(item)}' for key, item in value.items()) + '}'
+    if isinstance(value, list):
+        return '[' + ', '.join(inline_toml(item) for item in value) + ']'
+    return json.dumps(value, ensure_ascii=False)
+
+
+def render_matugen(wallpaper, config_dir, mode):
+    source = config_dir / 'matugen/config.toml'
+    settings = tomllib.loads(source.read_text())
+    home_config = Path.home() / '.config'
+    outputs = {config_dir / name for name in MATUGEN_OUTPUTS}
+    for template in settings.get('templates', {}).values():
+        for key in ('input_path', 'output_path'):
+            if key not in template: continue
+            path = Path(template[key]).expanduser()
+            if path.is_relative_to(home_config):
+                path = config_dir / path.relative_to(home_config)
+            elif not path.is_absolute():
+                path = source.parent / path
+            path = Path(os.path.abspath(path))
+            if key == 'output_path' and path not in outputs:
+                raise RuntimeError('Additional Matugen outputs need backup paths before theme generation')
+            template[key] = str(path)
+    # Absolute paths keep a symlinked Matugen directory from redirecting sibling outputs.
+    with tempfile.TemporaryDirectory(prefix='matugen-config-') as directory:
+        config = Path(directory) / 'config.toml'
+        config.write_text('\n'.join(f'{json.dumps(key, ensure_ascii=False)} = {inline_toml(value)}' for key, value in settings.items()))
+        command(['matugen', 'image', str(wallpaper), '--config', str(config),
+                 '--mode', mode, '--prefer', 'less-saturation', '--source-color-index', '0', '--quiet'])
+
+
 def palette_for(wallpaper, config_dir):
     config = tomllib.loads(command(['noctalia', 'config', 'export', 'full']))
     theme_config = config.get('theme', {})
@@ -131,11 +169,7 @@ def palette_for(wallpaper, config_dir):
 
     palette_path = config_dir / 'noctalia/palettes/matugen.json'
     previous_palette = palette_path.read_bytes() if palette_path.is_file() else None
-    matugen_config = config_dir / 'matugen/config.toml'
-    command([
-        'matugen', 'image', str(wallpaper), '--config', str(matugen_config),
-        '--mode', mode, '--prefer', 'less-saturation', '--source-color-index', '0', '--quiet',
-    ])
+    render_matugen(wallpaper, config_dir, mode)
     palette_json = json.loads(palette_path.read_text())
     required_fixed_roles = {
         'mPrimary', 'mOnPrimary', 'mSecondary', 'mOnSecondary', 'mTertiary', 'mOnTertiary',
@@ -289,15 +323,14 @@ def quiesce_shell():
 
 def theme_snapshot_paths(config_dir, state_dir):
     share = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
-    names = ['hypr/current_wallpaper', 'hypr/colors.conf', 'hypr/noctalia.lua', 'hypr/hyprland.lua',
+    names = ['hypr/current_wallpaper', 'hypr/noctalia.lua', 'hypr/hyprland.lua',
              'kitty/kitty.conf', 'kitty/themes/noctalia.conf',
              'gtk-3.0/gtk.css', 'gtk-3.0/noctalia.css', 'gtk-4.0/gtk.css', 'gtk-4.0/noctalia.css',
              'gtk-3.0/settings.ini', 'gtk-4.0/settings.ini', 'qt5ct/qt5ct.conf', 'qt6ct/qt6ct.conf',
              'qt5ct/colors/noctalia.conf', 'qt6ct/colors/noctalia.conf', 'kdeglobals',
-             'btop/btop.conf', 'btop/themes/noctalia.theme', 'alacritty/alacritty.toml', 'alacritty/themes/noctalia.toml',
-             'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro']
+             'btop/btop.conf', 'btop/themes/noctalia.theme', 'alacritty/alacritty.toml', 'alacritty/themes/noctalia.toml']
     return (
-        [config_dir / p for p in names]
+        [config_dir / p for p in (*names, *MATUGEN_OUTPUTS)]
         + [state_dir / 'noctalia/settings.toml', share / 'color-schemes/noctalia.colors']
     )
 
@@ -310,7 +343,7 @@ def apply(wallpaper, config_dir, state_dir, runtime):
     # Capture managed settings contents while preserving the outer dotfiles symlink.
     settings_target = settings.resolve()
     snapshot = Snapshot([settings_target if p == settings else p
-                         for p in theme_snapshot_paths(config_dir, state_dir)], state_dir)
+                         for p in theme_snapshot_paths(config_dir, state_dir)], state_dir, link_only=(link,))
     changed_backend = False
     changed_noctalia = False
     request = runtime / 'noctalia-matugen-request.json'
@@ -408,7 +441,7 @@ def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
         # Native wallpaper selection belongs to the user, including newer selections.
         paths = [p for p in theme_snapshot_paths(config_dir, state_dir)
                  if p != state_dir / 'noctalia/settings.toml']
-        snapshot = Snapshot(paths, state_dir)
+        snapshot = Snapshot(paths, state_dir, link_only=(link,))
         palette_changed = False
         changed_native = False
         changed_backend = False
@@ -488,11 +521,8 @@ def main():
             if args.apply_wallpaper:
                 apply(wallpaper, config_dir, state_dir, runtime)
             else:
-                palette_path = config_dir / 'noctalia/palettes/matugen.json'
-                snap = Snapshot([
-                    config_dir / 'hypr/colors.conf', palette_path,
-                    state_dir / 'noctalia/settings.toml',
-                ], state_dir)
+                snap = Snapshot([config_dir / name for name in MATUGEN_OUTPUTS]
+                                + [state_dir / 'noctalia/settings.toml'], state_dir)
                 palette_changed = False
                 try:
                     _, config, _, palette_changed, _ = palette_for(wallpaper, config_dir)

@@ -29,6 +29,24 @@ cur_ws="${vals[0]:-1}"
 special_id="${vals[1]:-0}"
 special_name="${vals[2]:-}"
 
+# Quote Lua strings, including semicolons consumed by hyprctl's batch parser.
+lua_string() {
+    jq -nr --arg value "$1" '$value | explode | map(
+        if . < 32 or . == 34 or . == 59 or . == 92 or . == 127 then
+            "\\" + ((. + 1000) | tostring | .[1:])
+        else [.] | implode end
+    ) | join("") | "\"" + . + "\""'
+}
+
+toggle_special() {
+    local name="$1"
+    if [[ "$name" == "special" || -z "$name" ]]; then
+        printf 'dispatch hl.dsp.workspace.toggle_special()'
+    else
+        printf 'dispatch hl.dsp.workspace.toggle_special(%s)' "$(lua_string "${name#special:}")"
+    fi
+}
+
 # Helper function to execute batch and validate
 dispatch_and_validate() {
     local batch_cmds="$1"
@@ -42,10 +60,10 @@ dispatch_and_validate() {
 }
 
 # Nếu special workspace (cửa sổ thu nhỏ / đặc biệt) đang mở che màn hình, đóng nó lại
-if [ "$special_id" != "0" ] && [ -n "$special_name" ] && [ "$special_name" != "null" ]; then
-    batch_cmds="dispatch hl.dsp.workspace.toggle_special()"
+if [ "$special_id" != "0" ] && [ "$special_name" != "null" ]; then
+    batch_cmds="$(toggle_special "$special_name")"
     if [ "$cur_ws" != "$DESKTOP_WS" ]; then
-        batch_cmds="$batch_cmds ; dispatch hl.dsp.focus({ workspace = \"$DESKTOP_WS\" })"
+        batch_cmds="$batch_cmds ; dispatch hl.dsp.focus({ workspace = $(lua_string "$DESKTOP_WS") })"
     fi
     
     dispatch_and_validate "$batch_cmds" || exit 1
@@ -70,15 +88,15 @@ if [ "$cur_ws" = "$DESKTOP_WS" ]; then
         fi
     fi
     
-    batch_cmds="dispatch hl.dsp.focus({ workspace = \"$target_ws\" })"
+    batch_cmds="dispatch hl.dsp.focus({ workspace = $(lua_string "$target_ws") })"
     if [ -n "$restore_special" ]; then
-        batch_cmds="$batch_cmds ; dispatch hl.dsp.workspace.toggle_special()"
+        batch_cmds="$batch_cmds ; $(toggle_special "${saved_special#special:}")"
     fi
     
     dispatch_and_validate "$batch_cmds" || exit 1
     rm -f "$STATE"
 else
     # Đang ở workspace bình thường -> lưu lại workspace hiện tại và nhảy về workspace 10 (màn hình không có cửa sổ)
-    dispatch_and_validate "dispatch hl.dsp.focus({ workspace = \"$DESKTOP_WS\" })" || exit 1
+    dispatch_and_validate "dispatch hl.dsp.focus({ workspace = $(lua_string "$DESKTOP_WS") })" || exit 1
     printf '%s' "$cur_ws" > "$STATE"
 fi

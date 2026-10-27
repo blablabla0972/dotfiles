@@ -70,8 +70,8 @@ ensure_backup_dir() {
 link() {
     local src="$1" dst="$2"
 
-    # Nếu đã là symlink trỏ đúng đích rồi thì bỏ qua
-    if [ -L "$dst" ] && [ "$(readlink -f "$dst")" = "$(readlink -f "$src")" ]; then
+    # Bỏ qua cùng file, kể cả khi thư mục cha là symlink
+    if [ "$src" -ef "$dst" ]; then
         ok "đã link sẵn: $dst"
         return
     fi
@@ -97,6 +97,9 @@ link() {
 # --- kiểm tra tham số ONLY ------------------------------------------------
 is_valid_target() {
     local target="$1"
+    case "$target" in
+        ''|.*|*/*) return 1 ;;
+    esac
     [ -e "$CONFIG_SRC/$target" ] && return 0
     [ -e "$ROOT_SRC/$target" ] && return 0
     [ -e "$STATE_SRC/$target" ] && return 0
@@ -216,6 +219,10 @@ if [ -d "$BIN_SRC" ]; then
     # Dọn các symlink mồ côi trong ~/.local/bin từng trỏ vào repo bin/ nhưng file nguồn đã bị xóa
     if [ -d "$BIN_TARGET" ]; then
         for dst in "$BIN_TARGET"/*; do
+            if [ "${#ONLY[@]}" -gt 0 ]; then
+                name="$(basename "$dst")"
+                [ -e "$BIN_SRC/$name" ] && should_install "bin" "$name" || continue
+            fi
             if [ -L "$dst" ]; then
                 target_path="$(readlink "$dst" 2>/dev/null || true)"
                 if [[ "$target_path" == "$BIN_SRC/"* ]] && [ ! -e "$dst" ]; then
