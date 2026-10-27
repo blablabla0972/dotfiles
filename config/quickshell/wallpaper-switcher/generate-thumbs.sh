@@ -9,6 +9,10 @@ install -d -m 700 "$CACHE_DIR"
 exec 9>"$CACHE_DIR/generate.lock"
 flock -n 9 || exit 0
 
+# Lower CPU and I/O priority so background thumbnailing never starves compositor or UI
+renice -n 19 -p $$ >/dev/null 2>&1 || true
+ionice -c 3 -p $$ >/dev/null 2>&1 || true
+
 while IFS= read -r -d '' image; do
     name="${image##*/}"
     thumb="$CACHE_DIR/$name.jpg"

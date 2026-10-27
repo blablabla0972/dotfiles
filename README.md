@@ -33,7 +33,8 @@ dotfiles/
 git clone git@github.com:<user>/dotfiles.git ~/Projects/dotfiles
 cd ~/Projects/dotfiles
 ./install.sh --dry-run   # xem trước
-./install.sh             # cài hết (backup file cũ vào ~/.config/backups/dotfiles-<timestamp>/)
+./install.sh             # cài cấu hình desktop live mặc định (backup file cũ an toàn)
+./install.sh --all       # cài toàn bộ (bao gồm cả systemd và snapshot máy)
 ./install.sh hypr noctalia   # chỉ cài vài mục
 ```
 

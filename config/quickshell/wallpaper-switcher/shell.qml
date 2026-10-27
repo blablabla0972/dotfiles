@@ -366,8 +366,18 @@ PanelWindow {
             easing.type: Easing.OutBack
             easing.overshoot: 1.05
         }
-        // Sau khi hoàn thành entrance animation mới kích hoạt cập nhật thumbnail ngầm
+        // Trì hoãn sinh thumbnail ngầm khi UI đã hoàn toàn ổn định và idle
         onFinished: {
+            thumbTimer.restart();
+        }
+    }
+
+    Timer {
+        id: thumbTimer
+        interval: 800
+        running: false
+        repeat: false
+        onTriggered: {
             Quickshell.execDetached([
                 Quickshell.shellDir + "/generate-thumbs.sh"
             ]);
@@ -377,6 +387,7 @@ PanelWindow {
     // Hoạt ảnh biến mất (Exit)
     SequentialAnimation {
         id: exitAnimation
+        onStarted: thumbTimer.stop()
         ParallelAnimation {
             OpacityAnimator {
                 target: contentContainer

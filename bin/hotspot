@@ -387,10 +387,17 @@ stop_hotspot() {
     if [[ -f "$PREV_WIFI_FILE" ]]; then
         local prev_wifi
         prev_wifi=$(cat "$PREV_WIFI_FILE")
-        rm -f "$PREV_WIFI_FILE"
         if [[ -n "$prev_wifi" ]]; then
             printf 'Đang kết nối lại mạng Wi-Fi trước đó...\n'
-            nmcli con up uuid "$prev_wifi" >/dev/null 2>&1 9>&- &
+            if nmcli con up uuid "$prev_wifi" >/dev/null 2>&1 9>&-; then
+                rm -f "$PREV_WIFI_FILE"
+                send_notify "Wi-Fi đã kết nối lại 🟢" "Đã khôi phục kết nối Wi-Fi trước đó"
+            else
+                send_notify "Lỗi kết nối Wi-Fi ⚠️" "Không thể kết nối lại mạng trước đó. Giữ file cấu hình để thử lại." "critical"
+                printf 'Cảnh báo: Không thể kết nối lại Wi-Fi trước đó (UUID: %s). File lưu trạng thái được giữ lại.\n' "$prev_wifi" >&2
+            fi
+        else
+            rm -f "$PREV_WIFI_FILE"
         fi
     fi
 }

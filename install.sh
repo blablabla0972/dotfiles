@@ -2,9 +2,10 @@
 # =============================================================================
 # Dotfiles installer — tạo symlink từ repo về ~/.config và ~/.local/bin
 # Cách dùng:
-#   ./install.sh           # cài hết
-#   ./install.sh hypr noctalia # chỉ cài vài mục
-#   ./install.sh --dry-run # xem sẽ làm gì, chưa làm thật
+#   ./install.sh           # cài các cấu hình desktop live mặc định
+#   ./install.sh --all     # cài toàn bộ (gồm cả systemd và snapshot máy)
+#   ./install.sh hypr btop # chỉ cài các mục được chọn
+#   ./install.sh --dry-run # xem trước, chưa thay đổi thật
 # =============================================================================
 set -euo pipefail
 
@@ -18,11 +19,25 @@ TARGET="$HOME/.config"
 STATE_TARGET="$HOME/.local/state"
 BIN_TARGET="$HOME/.local/bin"
 
+# Core live desktop targets (mặc định chỉ cài những mục này để đảm bảo tính an toàn & khả chuyển)
+CORE_CONFIGS=(hypr noctalia quickshell matugen kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop starship.toml)
+CORE_ROOTS=(kdeglobals)
+CORE_STATES=(noctalia)
+
 DRY_RUN=0
+INSTALL_ALL=0
 ONLY=()
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=1 ;;
+        --all)     INSTALL_ALL=1 ;;
+        -h|--help)
+            echo "Cách dùng: $0 [--dry-run] [--all] [mục1 mục2 ...]"
+            echo "  Mặc định: Chỉ cài các cấu hình desktop live (${CORE_CONFIGS[*]} kdeglobals noctalia bin)."
+            echo "  --all:    Cài toàn bộ cấu hình, bao gồm cả systemd và cấu hình riêng máy (snapshot)."
+            echo "  --dry-run: Chỉ in thao tác dự kiến, không thay đổi file."
+            exit 0
+            ;;
         *) ONLY+=("$arg") ;;
     esac
 done
@@ -36,9 +51,9 @@ err()    { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 run() { if [ "$DRY_RUN" -eq 1 ]; then echo "DRY: $*"; else "$@"; fi; }
 
-# Lazy creation of unique backup directory
+# Lazy creation of unique backup directory in current shell (tránh subshell làm mất biến)
 ACTUAL_BACKUP_DIR=""
-get_backup_dir() {
+ensure_backup_dir() {
     if [ -z "$ACTUAL_BACKUP_DIR" ]; then
         local timestamp
         timestamp="$(date +%Y%m%d-%H%M%S)"
@@ -49,7 +64,6 @@ get_backup_dir() {
             ACTUAL_BACKUP_DIR="$(mktemp -d "$TARGET/backups/dotfiles-$timestamp-XXXXXX")"
         fi
     fi
-    echo "$ACTUAL_BACKUP_DIR"
 }
 
 # --- symlink một mục -------------------------------------------------------
@@ -64,8 +78,8 @@ link() {
 
     # Nếu target đã tồn tại thì backup trước khi ghi đè
     if [ -e "$dst" ] || [ -L "$dst" ]; then
-        local bdir
-        bdir="$(get_backup_dir)"
+        ensure_backup_dir
+        local bdir="$ACTUAL_BACKUP_DIR"
         run mkdir -p "$bdir"
         backup "$dst → $bdir/"
         local bdst="$bdir/$(basename "$dst")"
@@ -108,32 +122,60 @@ if [ "${#ONLY[@]}" -gt 0 ]; then
 fi
 
 should_install() {
-    local name="$1"
-    if [ "${#ONLY[@]}" -eq 0 ]; then
-        return 0
+    local category="$1" # config, root, state, bin
+    local name="$2"
+
+    # Nếu người dùng chỉ định cụ thể mục cần cài
+    if [ "${#ONLY[@]}" -gt 0 ]; then
+        for o in "${ONLY[@]}"; do
+            [ "$o" = "$name" ] && return 0
+        done
+        return 1
     fi
-    for o in "${ONLY[@]}"; do
-        if [ "$o" = "$name" ]; then
-            return 0
-        fi
-    done
+
+    # Nếu chọn --all thì cài toàn bộ
+    [ "$INSTALL_ALL" -eq 1 ] && return 0
+
+    # Mặc định: Chỉ cài các thành phần Core Live Desktop
+    case "$category" in
+        bin) return 0 ;; # Toàn bộ script tiện ích máy bàn
+        config)
+            for c in "${CORE_CONFIGS[@]}"; do [ "$c" = "$name" ] && return 0; done
+            return 1
+            ;;
+        root)
+            for r in "${CORE_ROOTS[@]}"; do [ "$r" = "$name" ] && return 0; done
+            return 1
+            ;;
+        state)
+            for s in "${CORE_STATES[@]}"; do [ "$s" = "$name" ] && return 0; done
+            return 1
+            ;;
+    esac
     return 1
 }
 
 # --- main ------------------------------------------------------------------
 info "Repo: $REPO"
 info "Target: $TARGET"
+if [ "$INSTALL_ALL" -eq 1 ]; then
+    info "Chế độ: Toàn bộ (bao gồm cả systemd và snapshot máy)"
+elif [ "${#ONLY[@]}" -gt 0 ]; then
+    info "Chế độ: Chọn lọc (${ONLY[*]})"
+else
+    info "Chế độ: Desktop Live mặc định (chạy './install.sh --all' nếu muốn liên kết cả systemd/snapshot)"
+fi
 [ "$DRY_RUN" -eq 1 ] && info "(dry-run — chưa thay đổi gì)"
 echo
 
 run mkdir -p "$TARGET"
 
-# 1) Các mục trong config/ (thư mục hoặc file lẻ như starship.toml) → ~/.config/<tên>
+# 1) Các mục trong config/ → ~/.config/<tên>
 if [ -d "$CONFIG_SRC" ]; then
     for src in "$CONFIG_SRC"/*; do
         [ -e "$src" ] || continue
         name="$(basename "$src")"
-        should_install "$name" || continue
+        should_install "config" "$name" || continue
         link "${src%/}" "$TARGET/$name"
     done
 fi
@@ -143,7 +185,7 @@ if [ -d "$ROOT_SRC" ]; then
     for src in "$ROOT_SRC"/*; do
         [ -e "$src" ] || continue
         name="$(basename "$src")"
-        should_install "$name" || continue
+        should_install "root" "$name" || continue
         link "$src" "$TARGET/$name"
     done
 fi
@@ -153,7 +195,7 @@ if [ -d "$STATE_SRC" ]; then
     for app_src in "$STATE_SRC"/*/; do
         [ -d "$app_src" ] || continue
         app="$(basename "$app_src")"
-        should_install "$app" || continue
+        should_install "state" "$app" || continue
         for src in "$app_src"*; do
             [ -e "$src" ] || continue
             link "$src" "$STATE_TARGET/$app/$(basename "$src")"
@@ -167,13 +209,13 @@ if [ -d "$BIN_SRC" ]; then
     for src in "$BIN_SRC"/*; do
         [ -e "$src" ] || continue
         name="$(basename "$src")"
-        should_install "$name" || continue
+        should_install "bin" "$name" || continue
         link "$src" "$BIN_TARGET/$name"
     done
 fi
 
 # 5) Reload systemd daemon nếu cấu hình systemd được cài
-if [ "$DRY_RUN" -eq 0 ] && should_install "systemd"; then
+if [ "$DRY_RUN" -eq 0 ] && should_install "config" "systemd"; then
     if [ -d "/run/user/$(id -u)/systemd" ] && command -v systemctl >/dev/null 2>&1; then
         systemctl --user daemon-reload >/dev/null 2>&1 || true
         info "Đã reload systemd user daemon."

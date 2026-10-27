@@ -102,5 +102,63 @@ class InstallerSafetyTest(unittest.TestCase):
         self.assertTrue((wt_dir / 'config/hypr/current_wallpaper').exists())
 
 
+    def test_multiple_conflicts_share_single_backup_dir(self):
+        # Create two conflicting target files
+        f1 = self.home / '.config/starship.toml'
+        f2 = self.home / '.config/kdeglobals'
+        f1.parent.mkdir(parents=True, exist_ok=True)
+        f1.write_text('STARSHIP_DATA')
+        f2.write_text('KDE_DATA')
+
+        proc = subprocess.run(
+            ['bash', str(self.install_script), 'starship.toml', 'kdeglobals'],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            cwd=str(self.repo)
+        )
+        self.assertEqual(proc.returncode, 0, f'Install failed: {proc.stderr}')
+
+        backup_root = self.home / '.config/backups'
+        backup_dirs = list(backup_root.glob('dotfiles-*'))
+        # Must be EXACTLY 1 backup dir, not 2 separate dirs
+        self.assertEqual(len(backup_dirs), 1, f'Expected 1 backup directory, got {len(backup_dirs)}')
+        bdir = backup_dirs[0]
+        self.assertTrue((bdir / 'starship.toml').exists())
+        self.assertTrue((bdir / 'kdeglobals').exists())
+        self.assertEqual((bdir / 'starship.toml').read_text(), 'STARSHIP_DATA')
+        self.assertEqual((bdir / 'kdeglobals').read_text(), 'KDE_DATA')
+
+        # Verify that output reports the backup directory correctly
+        self.assertIn(str(bdir), proc.stdout)
+
+    def test_default_install_excludes_snapshot_systemd(self):
+        # Default install should NOT link systemd
+        proc = subprocess.run(
+            ['bash', str(self.install_script)],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            cwd=str(self.repo)
+        )
+        self.assertEqual(proc.returncode, 0)
+        self.assertFalse((self.home / '.config/systemd').exists(), 'Default install should not link systemd')
+        # Core configs should be linked
+        self.assertTrue((self.home / '.config/hypr').is_symlink())
+        self.assertTrue((self.home / '.config/noctalia').is_symlink())
+        self.assertTrue((self.home / '.local/bin/toggle-desktop').is_symlink())
+
+        # When explicitly requested or with --all, systemd is linked
+        proc_all = subprocess.run(
+            ['bash', str(self.install_script), '--all'],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            cwd=str(self.repo)
+        )
+        self.assertEqual(proc_all.returncode, 0)
+        self.assertTrue((self.home / '.config/systemd').is_symlink(), '--all should link systemd')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -88,7 +88,7 @@ main_menu() {
             ;;
         *"Đổi mật khẩu"*)
             local new_pass
-            new_pass=$(rofi_cmd -p "Nhập mật khẩu mới (8-63 ký tự):")
+            new_pass=$(rofi_cmd -password -p "Nhập mật khẩu mới (8-63 ký tự):")
             if [[ -n "$new_pass" ]]; then
                 "$HOTSPOT_BIN" set-pass "$new_pass"
             fi
