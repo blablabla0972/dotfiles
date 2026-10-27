@@ -49,14 +49,14 @@ git add -A && git commit -m "update: mô tả thay đổi"
 
 ## Lưu ý khi dùng trên máy khác
 
-Các symlink sau là machine-specific, không hoạt động ở máy khác — cần tạo lại:
+Các symlink sau là machine-specific và đã được gitignore, không dùng chung giữa các máy khác nhau:
 
 - `config/hypr/current_wallpaper` → một ảnh trong `~/Ảnh/Wallpaper`
 - `config/hypr/gpu/{intel,nvidia}` → `/dev/dri/by-path/...` (theo PCI của máy)
 
-Một số đường dẫn trong config vẫn gắn với máy này, như executable trong user service
-và wallpaper đang chọn trong `state/noctalia/settings.toml`; khi chuyển máy, cập nhật
-chúng theo `$HOME` và các đường dẫn tương ứng.
+Toàn bộ dịch vụ systemd user đã dùng specifier `%h`, Qt6ct dùng đường dẫn `~/.config/qt6ct/colors/noctalia.conf` và các symlink nội bộ đều là tương đối, hoàn toàn tương thích khi sao chép sang máy khác.
+
+Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục widget lockscreen của máy này. Mặc định `./install.sh` sẽ không cài đè file này để tránh xung đột màn hình; muốn áp dụng trạng thái này lên máy mới hãy chạy `./install.sh noctalia` (hoặc `./install.sh --all`).
 
 ## Hệ sinh thái đang dùng
 
@@ -71,10 +71,11 @@ chúng theo `$HOME` và các đường dẫn tương ứng.
 
 ## Workflow rice với worktree (từ 2026-10-16)
 
-4 mục rice đã cài bằng `./install.sh` — **live là symlink vào repo** (nhánh `main`):
-`~/.config/{hypr,noctalia,quickshell,matugen}` → `config/*`.
-Sửa trong `config/` của repo = sửa luôn trên máy (4 mục này không cần rsync nữa).
-Thêm `state/noctalia/settings.toml`: Noctalia ghi settings **xuyên symlink** thẳng vào repo — đổi theme/setting là thấy diff ngay trong git.
+Các mục Core Desktop đã cài bằng `./install.sh` — **live là symlink vào repo** (nhánh `main`):
+`~/.config/{hypr,noctalia,quickshell,matugen,kitty,alacritty,gtk-3.0,gtk-4.0,qt5ct,qt6ct,btop,starship.toml}` → `config/*`.
+`~/.local/bin/toggle-desktop` → `bin/toggle-desktop`.
+Sửa trong `config/` của repo = sửa luôn trên máy.
+Muốn áp dụng hoặc đồng bộ trạng thái Noctalia UI: `./install.sh noctalia` (hoặc `./install.sh --all`).
 
 ### Thử thay đổi cách ly bằng worktree
 

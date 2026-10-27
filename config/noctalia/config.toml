@@ -252,16 +252,6 @@ color = "on_surface_variant"
 [widget.session]
 color = "on_surface_variant"
 
-[widget.hotspot]
-glyph = "antenna-bars-5"
-interactive = true
-tooltip = "Mobile Hotspot (Trái: Bật/Tắt | Phải: Menu)"
-type = "custom_button"
-
-    [widget.hotspot.actions]
-    left = "exec ~/.local/bin/hotspot toggle"
-    right = "exec ~/.local/bin/hotspot-menu"
-
 [widget.showdesktop]
 glyph = "device-desktop"
 interactive = true

@@ -159,6 +159,26 @@ class InstallerSafetyTest(unittest.TestCase):
         self.assertEqual(proc_all.returncode, 0)
         self.assertTrue((self.home / '.config/systemd').is_symlink(), '--all should link systemd')
 
+    def test_cleanup_orphaned_bin_symlinks(self):
+        bin_dir = self.home / '.local/bin'
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        # Create an orphaned symlink pointing to a deleted script in REPO/bin
+        orphaned = bin_dir / 'deleted_old_script'
+        orphaned.symlink_to(self.repo / 'bin/deleted_old_script')
+        self.assertTrue(orphaned.is_symlink())
+        self.assertFalse(orphaned.exists()) # Broken link
+
+        proc = subprocess.run(
+            ['bash', str(self.install_script)],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            cwd=str(self.repo)
+        )
+        self.assertEqual(proc.returncode, 0)
+        # Verify the orphaned symlink was cleaned up
+        self.assertFalse(orphaned.is_symlink())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,3 +18,8 @@
 | Round 3.1: Remove hotspot feature (scripts, binds, window rules) | done | bin/hotspot*, binds & window rules deleted |
 | Round 3.2: Sanitize state/noctalia & decouple from default install | done | hardcoded wallpaper/monitor removed, CORE_STATES=() |
 | Round 3.3: Verification, installation & Git push (Round 3) | done | 21 tests pass, hyprctl 0 errors, pushed to GitHub |
+| Round 4.1: Clean up [widget.hotspot] from config/noctalia | done | config/noctalia/config.toml cleaned |
+| Round 4.2: Portable color_scheme_path in qt6ct.conf | done | color_scheme_path=~/.config/qt6ct/colors/noctalia.conf |
+| Round 4.3: Automatic cleanup of orphaned bin symlinks in install.sh | done | install.sh cleans deleted bin script links |
+| Round 4.4: Documentation updates in README.md and AGENTS.md | done | README.md & AGENTS.md updated |
+| Round 4.5: Verification, install and Git push (Round 4) | done | 22 tests pass, hyprctl 0 errors, pushed to GitHub |

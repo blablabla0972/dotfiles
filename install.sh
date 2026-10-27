@@ -212,6 +212,23 @@ if [ -d "$BIN_SRC" ]; then
         should_install "bin" "$name" || continue
         link "$src" "$BIN_TARGET/$name"
     done
+
+    # Dọn các symlink mồ côi trong ~/.local/bin từng trỏ vào repo bin/ nhưng file nguồn đã bị xóa
+    if [ -d "$BIN_TARGET" ]; then
+        for dst in "$BIN_TARGET"/*; do
+            if [ -L "$dst" ]; then
+                target_path="$(readlink "$dst" 2>/dev/null || true)"
+                if [[ "$target_path" == "$BIN_SRC/"* ]] && [ ! -e "$dst" ]; then
+                    if [ "$DRY_RUN" -eq 1 ]; then
+                        info "DRY: rm -f $dst (symlink mồ côi)"
+                    else
+                        rm -f "$dst"
+                        warn "Đã dọn symlink mồ côi: $dst"
+                    fi
+                fi
+            fi
+        done
+    fi
 fi
 
 # 5) Reload systemd daemon nếu cấu hình systemd được cài
