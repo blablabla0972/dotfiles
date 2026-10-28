@@ -1,8 +1,9 @@
 # Quiet Current: finish the desktop rollout
 
 Source is on `feat/quiet-current` in `/home/admin/Projects/dotfiles/.worktrees/quiet-current`.
-The desktop still points to main. Native execution from the agent was denied by
-the connector approval policy; offline tests do not replace a live preview.
+The desktop now previews this worktree, after access permissions were opened and
+the controller applied/verified the native UI. Main merge awaits visual acceptance.
+The commands below remain available to repeat or roll back the pre-merge preview.
 
 Run from a terminal in the current Hyprland session:
 
@@ -11,7 +12,7 @@ bash /home/admin/Projects/dotfiles/.worktrees/quiet-current/docs/rice/preview-qu
 bash /home/admin/Projects/dotfiles/.worktrees/quiet-current/docs/rice/preview-quiet-current.sh --apply
 ```
 
-This switches only the thirteen theme/source targets listed by the dry run,
+This switches only the fourteen theme/source targets listed by the dry run,
 uses `--no-state`, preserves the current wallpaper and dark setting, and calls
 the existing theme owner. All generated app targets follow the worktree before
 generation. Unexpected real directories/other worktrees are preserved by refusal.

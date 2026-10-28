@@ -3,7 +3,7 @@
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 main="$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")"
-components=(hypr noctalia quickshell matugen rice kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals)
+components=(hypr noctalia quickshell matugen rice micro kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals)
 
 rollback() {
     # Restore only the validated directory/file symlinks, never state/bin/prompt.

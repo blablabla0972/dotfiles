@@ -5,11 +5,23 @@ import subprocess
 import shutil
 import tempfile
 import unittest
+import importlib.util
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class RiceInstallTest(unittest.TestCase):
+    def test_preview_covers_every_matugen_output_owner(self):
+        spec = importlib.util.spec_from_file_location('preview_theme', ROOT / 'config/hypr/scripts/generate-theme.py')
+        theme = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(theme)
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(['bash', str(ROOT / 'docs/rice/preview-quiet-current.sh'), '--dry-run'],
+                                    env={**os.environ, 'HOME': directory}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for app in {Path(name).parts[0] for name in theme.MATUGEN_OUTPUTS}:
+                self.assertIn(f'{ROOT}/config/{app} {directory}/.config/{app}', result.stdout)
+
     def test_default_and_all_no_state_install_sources_preserve_settings(self):
         for options in ([], ['--no-state'], ['--all', '--no-state']):
             with self.subTest(options=options), tempfile.TemporaryDirectory() as directory:

@@ -6,6 +6,7 @@
 *.pyc
 __pycache__/
 wallpaper_thumb.jpg
+/config/micro/colorschemes/adaptive.micro
 
 # Cache / log sinh ra bởi app (không phải config)
 *.log

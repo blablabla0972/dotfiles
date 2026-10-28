@@ -80,3 +80,12 @@ consumers require satisfied contrast diagnostics. Selected/default/all installer
 state-preservation paths pass. Final matrix remains24 cases/192 renders/no failures.
 Scoped source review approved; live execution is blocked by connector approval
 policy and still requires user-terminal execution per APPLY_QUIET_CURRENT.md.
+
+
+Live follow-up: permission blocker resolved; reviewed helper applied14 components
+(including Micro) and the actual owner acknowledged success with coherent hashes.
+Final109 tests pass without skips. Actual Wayland carousel preview/Esc-hide-pending/
+ack/clean-exit and native launcher capture passed. Exact text pixels in launcher
+screenshot measured7.75:1 selected and13.31:1 normal on this wallpaper/display.
+Private evidence and remaining unavailable/conditional checks are documented in
+QUIET_CURRENT_STATE.md. Preview is active; main merge still awaits user acceptance.
