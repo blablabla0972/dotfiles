@@ -127,3 +127,5 @@ python3 tests/check_palette_matrix.py
 ```
 
 Kế hoạch, quyết định thiết kế và kết quả nghiệm thu nằm trong `docs/rice/`. Ảnh preview và backup máy được giữ cục bộ, không đưa lên GitHub. Mỗi lần áp wallpaper đều có snapshot ở `~/.local/state/desktop-wallpaper/backups/`.
+
+Quiet Current: thư viện token semantic nằm ở `config/rice/theme/`, output giao dịch ở `$XDG_STATE_HOME/desktop-wallpaper/adaptive-theme.json`; carousel dùng acknowledgment và preview màu chỉ đọc. Quy trình preview/rollback/chốt merge: `docs/rice/APPLY_QUIET_CURRENT.md`; dùng `install.sh --no-state` khi chọn Noctalia mà cần giữ session/lock settings.

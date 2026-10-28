@@ -51,9 +51,9 @@ def stage_adaptive_theme(wallpaper, config_dir, mode):
     return (json.dumps(tokens, ensure_ascii=False, sort_keys=True, separators=(',', ':')) + '\n').encode(), revision
 
 
-def command(argv):
+def command(argv, timeout=30):
     try:
-        result = subprocess.run(argv, check=True, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(argv, check=True, capture_output=True, text=True, timeout=timeout)
     except subprocess.CalledProcessError as error:
         detail = (error.stderr or error.stdout or '').strip()
         raise RuntimeError(detail or f'Command failed with exit code {error.returncode}') from error
@@ -351,6 +351,25 @@ def quiesce_shell():
     return True
 
 
+def restart_shell():
+    launcher = subprocess.Popen(['noctalia', '-d'], stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, start_new_session=True)
+    # -d may exit zero after daemonizing; only a responding IPC proves readiness.
+    for _ in range(20):
+        if launcher.poll() not in (None, 0):
+            raise RuntimeError('Noctalia restart launcher failed')
+        try:
+            ready = isinstance(json.loads(command(['noctalia', 'msg', 'status'], timeout=.5)), dict)
+        except (RuntimeError, OSError, subprocess.SubprocessError, ValueError):
+            ready = False
+        if launcher.poll() not in (None, 0):
+            raise RuntimeError('Noctalia restart launcher failed')
+        if ready:
+            return
+        time.sleep(.1)
+    raise TimeoutError('Noctalia restart IPC did not become ready')
+
+
 def theme_snapshot_paths(config_dir, state_dir):
     share = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
     names = ['hypr/current_wallpaper', 'hypr/noctalia.lua', 'hypr/hyprland.lua',
@@ -439,14 +458,25 @@ def apply(wallpaper, config_dir, state_dir, runtime):
                 if not old_wallpaper or not old_wallpaper.is_file():
                     raise RuntimeError('Previous wallpaper is unknown; managed files restored but backend recovery cannot be verified')
                 command(['swww', 'img', str(old_wallpaper), '--transition-type', 'none'])
-            command(['hyprctl', 'reload', 'config-only'])
             restored = True
-            print('RESTORED_SNAPSHOT', snapshot.directory, file=sys.stderr)
         except Exception as error:
             print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
-        finally:
-            if stopped:
-                subprocess.Popen(['noctalia', '-d'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        if stopped:
+            try:
+                restart_shell()
+            except Exception as error:
+                restored = False
+                print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
+        if restored:
+            try:
+                command(['hyprctl', 'reload', 'config-only'])
+                errors = command(['hyprctl', 'configerrors'])
+                if errors: raise RuntimeError(errors)
+            except Exception as error:
+                restored = False
+                print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
+        if restored:
+            print('RESTORED_SNAPSHOT', snapshot.directory, file=sys.stderr)
         raise TransactionError(str(cause), restored, previous_revision) from cause
     finally:
         if request.exists(): request.unlink()

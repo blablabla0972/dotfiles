@@ -40,3 +40,43 @@ Terminal glass: parsed Kitty config with its native loader and Alacritty TOML wi
 
 Rofi removed on user request: package uninstalled; launcher configs, Matugen target, thumbnail generation and layer rule removed. Noctalia remains the SUPER+SPACE launcher.
 Verified: 10 theme transaction tests, 12 isolated palette cases, shell syntax checks; package removal completed via Polkit authentication.
+
+
+## Quiet Current — 2026-10-28 (offline acceptance)
+
+Branch `feat/quiet-current`, base `6b832a8`. Original baseline:44 tests, no skips.
+Initial integrated suite:102 tests, zero failures/errors/skips; includes pure token math,
+real transaction fault injection/rollback and three competing writer processes,
+Unicode paths, state-preserving install, 50+ carousel selections/three apply
+intentions, stale/duplicate/timeout replies, preview isolation and real offscreen
+Quickshell Process acknowledgment/hash ordering. Real Matugen preview produced
+five swatches with live generated-file hashes unchanged.
+
+Native config validation:zero warnings/errors. Offline matrix:12 wallpaper
+fixtures in both modes,192 native template renders, zero contrast failures;
+minimum existing bar/terminal checks5.34:1, modeled native surfaces5.52:1.
+Compositing remains an unverified sRGB model until actual pixel comparison;
+these counts do not certify live contrast, HDR/HiDPI/multimonitor or FPS.
+
+The palette transaction owns the new XDG state artifact, publishes it last,
+and acknowledges only verified outcomes. Missing previous wallpaper or failed
+restore cannot be reported as complete rollback. Installer `--no-state` protects
+native session/lock settings during component preview. Source manifests,
+known native binary/source differences and coverage are in
+`QUIET_CURRENT_NATIVE_AUDIT.md`; API/schema in `ADAPTIVE_DESIGN_SYSTEM.md`.
+
+Host baseline:Hyprland0.56.2 configerrors empty, eDP-1 1920x1080@144Hz scale1,
+Noctalia dark/wallpaper/Matugen effective config. Single10s CPU/RSS sample and
+private baseline image are recorded by `QUIET_CURRENT_STATE.md`; no automatic
+performance governor or native C++ island has been enabled.
+
+Live preview, screenshots and final merge acceptance are recorded below once
+performed; offline acceptance alone is not completion of the desktop rollout.
+
+Final review/fix suite:108 tests, zero failures/errors/skips. Recovery now verifies
+Noctalia restart/readiness and post-rollback configerrors; malformed/failed restart
+and persistent compositor errors cannot claim complete rollback. Derived-token
+consumers require satisfied contrast diagnostics. Selected/default/all installer
+state-preservation paths pass. Final matrix remains24 cases/192 renders/no failures.
+Scoped source review approved; live execution is blocked by connector approval
+policy and still requires user-terminal execution per APPLY_QUIET_CURRENT.md.

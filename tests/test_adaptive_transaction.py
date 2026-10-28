@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 from time import sleep as real_sleep
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('adaptive_transaction', ROOT / 'config/hypr/scripts/generate-theme.py')
@@ -73,7 +73,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
             raise RuntimeError('injected native template staging failure')
         return {str(self.native): hashlib.sha256(self.mode.encode()).hexdigest()}
 
-    def command(self, argv):
+    def command(self, argv, **kwargs):
         self.calls.append(argv)
         if argv[:3] == ['noctalia', 'config', 'export']:
             return f'[theme]\nmode="{self.mode}"\nsource="wallpaper"\nmatugen_palette="matugen"\n[wallpaper]\nenabled=false\n'
@@ -100,9 +100,11 @@ class AdaptiveTransactionTest(unittest.TestCase):
         args = [str(theme.__file__), '--apply-wallpaper', '--request-id', 'test_request_01', '--json',
                 str(self.wallpaper if wallpaper is None else wallpaper), *options]
         output = io.StringIO()
-        with patch('sys.argv', args), contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+        diagnostics = io.StringIO()
+        with patch('sys.argv', args), contextlib.redirect_stdout(output), contextlib.redirect_stderr(diagnostics):
             try: code = theme.main()
             except SystemExit as e: code = e.code
+        self.diagnostics = diagnostics.getvalue()
         lines = output.getvalue().splitlines()
         self.assertEqual(len(lines), 1, output.getvalue())
         return code, json.loads(lines[0])
@@ -132,7 +134,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.assertFalse(self.calls)
 
     def test_failed_steps_restore_old_palette_tokens_and_wallpaper_link(self):
-        for failure in ('matugen', 'stage', 'templates', 'hyprland'):
+        for failure in ('matugen', 'stage', 'templates'):
             with self.subTest(failure=failure):
                 before = self.raw.read_bytes()
                 self.failure = failure
@@ -143,6 +145,112 @@ class AdaptiveTransactionTest(unittest.TestCase):
                 self.assertEqual(self.tokens.read_text(), 'old adaptive')
                 self.assertEqual(self.native.read_text(), 'old native')
                 self.assertEqual(self.link.resolve(), self.old)
+
+    def test_persistent_compositor_errors_make_rollback_incomplete(self):
+        self.failure = 'hyprland'
+        code, record = self.invoke()
+        self.assertEqual((code, record['status'], record['error_code']),
+                         (1, 'failed', 'rollback_incomplete'))
+        self.assertIsNone(record['palette_revision'])
+        self.assertIn('Rollback incomplete', self.diagnostics)
+        self.assertNotIn('RESTORED_SNAPSHOT', self.diagnostics)
+
+    def test_restart_failures_make_rollback_incomplete(self):
+        self.failure = 'templates'
+        for failure in ('launch', 'exit', 'exit_after_ipc', 'socket', 'invalid_status', 'timeout'):
+            with self.subTest(failure=failure):
+                launcher = Mock()
+                launcher.poll.return_value = 17 if failure == 'exit' else 0
+                if failure == 'exit_after_ipc': launcher.poll.side_effect = [None, 17]
+                attempts = []
+                def ipc(argv, **kwargs):
+                    if argv == ['noctalia', 'msg', 'status']:
+                        attempts.append(kwargs.get('timeout'))
+                        if failure in ('exit', 'exit_after_ipc'): return '{"locked": false}'
+                        if failure == 'invalid_status': return '[]'
+                        if failure == 'timeout':
+                            raise theme.subprocess.TimeoutExpired(argv, .5)
+                        raise RuntimeError('socket unavailable')
+                    return self.command(argv, **kwargs)
+                with patch.object(theme, 'quiesce_shell', return_value=True), \
+                     patch.object(theme.subprocess, 'Popen', return_value=launcher,
+                                  side_effect=OSError('launch denied') if failure == 'launch' else None), \
+                     patch.object(theme, 'command', side_effect=ipc):
+                    code, record = self.invoke()
+                self.assertEqual((code, record['status'], record['error_code']),
+                                 (1, 'failed', 'rollback_incomplete'))
+                self.assertIsNone(record['palette_revision'])
+                self.assertIn('Rollback incomplete', self.diagnostics)
+                self.assertNotIn('RESTORED_SNAPSHOT', self.diagnostics)
+                self.assertEqual(self.tokens.read_text(), 'old adaptive')
+                if failure in ('socket', 'invalid_status', 'timeout'):
+                    self.assertGreater(len(attempts), 0)
+                    self.assertLessEqual(len(attempts), 20)
+                    self.assertTrue(all(0 < timeout <= 1 for timeout in attempts))
+
+    def test_compositor_is_verified_after_restart_readiness(self):
+        self.failure = 'templates'
+        launcher = Mock()
+        launcher.poll.return_value = 0
+        ready = False
+        def ipc(argv, **kwargs):
+            nonlocal ready
+            if argv == ['noctalia', 'msg', 'status']:
+                ready = True
+                return '{"locked": false}'
+            if ready and argv == ['hyprctl', 'configerrors']:
+                return 'restart triggered config error'
+            return self.command(argv, **kwargs)
+        with patch.object(theme, 'quiesce_shell', return_value=True), \
+             patch.object(theme.subprocess, 'Popen', return_value=launcher), \
+             patch.object(theme, 'command', side_effect=ipc):
+            code, record = self.invoke()
+        self.assertEqual((code, record['status'], record['error_code']),
+                         (1, 'failed', 'rollback_incomplete'))
+        self.assertIn('restart triggered config error', self.diagnostics)
+        self.assertNotIn('RESTORED_SNAPSHOT', self.diagnostics)
+
+    def test_restart_waits_for_socket_with_running_or_daemonized_launcher(self):
+        self.failure = 'templates'
+        for exit_code in (None, 0):
+            with self.subTest(exit_code=exit_code):
+                launcher = Mock()
+                launcher.poll.return_value = exit_code
+                replies = iter([RuntimeError('socket unavailable'), '{"locked": false}'])
+                def ipc(argv, **kwargs):
+                    if argv == ['noctalia', 'msg', 'status']:
+                        reply = next(replies)
+                        if isinstance(reply, Exception): raise reply
+                        return reply
+                    return self.command(argv, **kwargs)
+                with patch.object(theme, 'quiesce_shell', return_value=True), \
+                     patch.object(theme.subprocess, 'Popen', return_value=launcher), \
+                     patch.object(theme, 'command', side_effect=ipc):
+                    code, record = self.invoke()
+                self.assertEqual((code, record['status']), (1, 'rolled_back'))
+                self.assertEqual(list(replies), [], 'recovery must wait for socket readiness')
+                self.assertIn('RESTORED_SNAPSHOT', self.diagnostics)
+                self.assertNotIn('Rollback incomplete', self.diagnostics)
+
+    def test_restart_still_attempted_after_file_recovery_failure(self):
+        self.failure = 'templates'
+        launcher = Mock()
+        launcher.poll.return_value = 0
+        ready = []
+        def ipc(argv, **kwargs):
+            if argv == ['noctalia', 'msg', 'status']:
+                ready.append(True)
+                return '{"locked": false}'
+            return self.command(argv, **kwargs)
+        with patch.object(theme, 'quiesce_shell', return_value=True), \
+             patch.object(theme.Snapshot, 'restore', side_effect=OSError('restore denied')), \
+             patch.object(theme.subprocess, 'Popen', return_value=launcher), \
+             patch.object(theme, 'command', side_effect=ipc):
+            code, record = self.invoke()
+        self.assertEqual((code, record['status'], record['error_code']),
+                         (1, 'failed', 'rollback_incomplete'))
+        self.assertIn('restore denied', self.diagnostics)
+        self.assertTrue(ready)
 
     def test_token_publication_error_rolls_back_all_managed_outputs(self):
         original = theme.atomic_write

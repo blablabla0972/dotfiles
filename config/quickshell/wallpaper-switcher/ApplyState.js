@@ -116,7 +116,8 @@ function adaptivePalette(text, mode, revision) {
         if (!token || token.schema_version !== 1 || ["dark", "light"].indexOf(mode) < 0
                 || token.mode !== mode || !validHash(revision)
                 || token.source_palette_sha256 !== revision
-                || !validHash(token.wallpaper_sha256) || !token.colors)
+                || !validHash(token.wallpaper_sha256) || !token.colors
+                || !token.contrast || token.contrast.satisfied !== true)
             return null;
         for (var role of ["background", "surface_low", "surface", "surface_high", "text_primary",
                 "text_secondary", "accent", "on_accent", "outline", "focus_ring", "danger"])

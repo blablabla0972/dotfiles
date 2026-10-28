@@ -165,6 +165,7 @@ const colors = Object.fromEntries(['background', 'surface_low', 'surface', 'surf
     .map((role, i) => [role, '#' + (0x101010 + i).toString(16)]));
 const token = {schema_version: 1, mode: 'dark', colors,
     materials: {panel: {opacity: 0.96}},
+    contrast: {satisfied: true},
     source_palette_sha256: 'b'.repeat(64), wallpaper_sha256: 'c'.repeat(64)};
 const read = value => api.adaptivePalette(JSON.stringify(value), 'dark', 'b'.repeat(64));
 assert.equal(read(token).mPrimary, colors.accent);
@@ -173,6 +174,7 @@ assert.equal(read(token).panelOpacity, 0.96);
 assert.equal(api.adaptivePalette(JSON.stringify(token), 'dark', 'd'.repeat(64)), null);
 assert.equal(api.adaptivePalette(JSON.stringify(token), 'dark', null), null);
 for (const patch of [{schema_version: 2}, {mode: 'light'}, {mode: 'auto'},
+    {contrast: {satisfied: false}}, {contrast: {}}, {contrast: null},
     {source_palette_sha256: 'bad'}, {colors: {...colors, danger: 'red'}},
     {colors: {...colors, focus_ring: undefined}}, {materials: {}},
     ...[-0.1, 1.1, '0.96', null].map(opacity => ({materials: {panel: {opacity}}}))])
