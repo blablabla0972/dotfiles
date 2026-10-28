@@ -307,6 +307,7 @@ PanelWindow {
         if (!item || !item.filePath) return;
 
         transition({type: "request", wallpaper: item.filePath});
+        closeShell();
     }
 
     // Đọc ảnh từ thư mục ~/Ảnh/Wallpaper
