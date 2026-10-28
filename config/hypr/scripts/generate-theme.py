@@ -435,7 +435,9 @@ def apply(wallpaper, config_dir, state_dir, runtime):
         try:
             stopped = quiesce_shell() if changed_noctalia else False
             snapshot.restore()
-            if changed_backend and old_wallpaper and old_wallpaper.is_file():
+            if changed_backend:
+                if not old_wallpaper or not old_wallpaper.is_file():
+                    raise RuntimeError('Previous wallpaper is unknown; managed files restored but backend recovery cannot be verified')
                 command(['swww', 'img', str(old_wallpaper), '--transition-type', 'none'])
             command(['hyprctl', 'reload', 'config-only'])
             restored = True

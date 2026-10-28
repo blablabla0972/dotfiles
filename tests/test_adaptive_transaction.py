@@ -44,7 +44,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.tokens.chmod(0o640)
         self.mode, self.selected = 'dark', str(self.old)
         self.calls = []
-        self.fail = None
+        self.failure = None
         self.env = patch.dict(os.environ, {
             'XDG_CONFIG_HOME': str(self.config), 'XDG_STATE_HOME': str(self.state),
             'XDG_DATA_HOME': str(self.root / 'data'), 'XDG_RUNTIME_DIR': str(self.runtime),
@@ -65,11 +65,11 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.raw.write_text(json.dumps(self.palette, sort_keys=True))
         for name in ('hypr/colors.conf', 'micro/colorschemes/adaptive.micro'):
             (self.config / name).write_text(mode)
-        if self.fail == 'matugen':
+        if self.failure == 'matugen':
             raise RuntimeError('injected matugen failure after partial output')
 
     def stage(self, *args):
-        if self.fail == 'stage':
+        if self.failure == 'stage':
             raise RuntimeError('injected native template staging failure')
         return {str(self.native): hashlib.sha256(self.mode.encode()).hexdigest()}
 
@@ -87,10 +87,10 @@ class AdaptiveTransactionTest(unittest.TestCase):
             if argv[2] == 'wallpaper-set': self.selected = argv[3]
             if argv[2] == 'templates-apply':
                 self.native.write_text(self.mode)
-                if self.fail == 'templates': raise RuntimeError('injected native apply failure')
+                if self.failure == 'templates': raise RuntimeError('injected native apply failure')
             return ''
         if argv[0] == 'hyprctl':
-            if self.fail == 'hyprland' and argv[1] == 'configerrors': return 'injected config error'
+            if self.failure == 'hyprland' and argv[1] == 'configerrors': return 'injected config error'
             return ''
         if argv[0] == 'gsettings': return "'prefer-dark'"
         if argv[0] == 'swww': return ''
@@ -135,7 +135,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
         for failure in ('matugen', 'stage', 'templates', 'hyprland'):
             with self.subTest(failure=failure):
                 before = self.raw.read_bytes()
-                self.fail = failure
+                self.failure = failure
                 code, record = self.invoke()
                 self.assertEqual((code, record['status']), (1, 'rolled_back'))
                 self.assertEqual(record['palette_revision'], hashlib.sha256(before).hexdigest())
@@ -163,11 +163,18 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.assertEqual(self.link.resolve(), self.old)
 
     def test_incomplete_rollback_is_never_reported_as_rolled_back(self):
-        self.fail = 'templates'
+        self.failure = 'templates'
         with patch.object(theme.Snapshot, 'restore', side_effect=OSError('restore denied')):
             code, record = self.invoke()
         self.assertEqual((code, record['status'], record['error_code']), (1, 'failed', 'rollback_incomplete'))
         self.assertIsNone(record['palette_revision'])
+
+    def test_unknown_previous_wallpaper_cannot_claim_complete_rollback(self):
+        self.old.unlink()
+        self.failure = 'templates'
+        code, record = self.invoke()
+        self.assertEqual((code, record['status'], record['error_code']), (1, 'failed', 'rollback_incomplete'))
+        self.assertEqual(self.tokens.read_text(), 'old adaptive')
 
     def test_invalid_request_id_is_rejected_before_transaction(self):
         code, record = self.invoke('--request-id', '../bad\nrequest')
@@ -184,7 +191,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
 
     def test_failure_removes_a_new_artifact_instead_of_leaving_partial_state(self):
         self.tokens.unlink()
-        self.fail = 'templates'
+        self.failure = 'templates'
         code, record = self.invoke()
         self.assertEqual((code, record['status']), (1, 'rolled_back'))
         self.assertFalse(self.tokens.exists())
