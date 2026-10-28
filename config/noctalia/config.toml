@@ -97,7 +97,7 @@ settings_show_advanced = true
     wallpaper_placement = "floating"
     wallpaper_position = "center"
     shadow = true
-    transparency_mode = "glass"
+    transparency_mode = "soft"
 
     [shell.shadow]
     alpha = 0.30
@@ -304,7 +304,7 @@ sidebar_section = "compact"
 show_shortcut_labels = true
 
 [notification]
-background_opacity = 0.92
+background_opacity = 0.96
 border = true
 border_color = "outline"
 width = 380
@@ -317,7 +317,7 @@ show_app_name = true
 border_width = 1.0
 
 [osd]
-background_opacity = 0.92
+background_opacity = 0.96
 border = true
 border_color = "outline"
 position = "top_center"
