@@ -34,3 +34,9 @@ Rollback source: revert only this branch's source commits if requested; original
 - Private evidence in ~/.local/state/quiet-current-validation: apply-result.json, effective-config.toml, launcher.png, carousel.png, carousel-live.log, carousel-live-result.json, launcher-pixel-contrast.json. A nonfatal portal app-ID registration warning occurred in the instrumented Quickshell probe; no QML load/runtime errors or transaction failures occurred.
 - Current available monitor1920x1080@144Hz scale1 verified. Other physical outputs/scales and sustained resource benchmarking remain unavailable/unmeasured; lock/light-mode previews remain excluded per earlier user preference. No governor/service or native C++ fork added.
 - Remaining acceptance gate: user visual review and explicit consent to local main merge. Keep all existing runtime/user diffs and backups; no push.
+
+## User selected continued preview — 2026-10-28
+
+- User instruction: “giữ xem thử”. Keep the live worktree preview; do not merge, reinstall, roll back or remove this worktree while the user evaluates it.
+- Visual acceptance and main merge are intentionally deferred. Resume finalization only when the user requests it; do not repeatedly ask for merge consent.
+- Generated Matugen targets now have runtime changes in the worktree. Preserve these changes and exclude them from documentation commits; the earlier clean-worktree observation is historical.

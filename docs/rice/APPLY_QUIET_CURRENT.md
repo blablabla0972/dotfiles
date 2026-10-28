@@ -3,7 +3,9 @@
 Source is on `feat/quiet-current` in `/home/admin/Projects/dotfiles/.worktrees/quiet-current`.
 The desktop now previews this worktree, after access permissions were opened and
 the controller applied/verified the native UI. Main merge awaits visual acceptance.
-The commands below remain available to repeat or roll back the pre-merge preview.
+The user selected “giữ xem thử” on 2026-10-28: retain the live preview and defer
+finalization until requested. The commands below are reference instructions,
+not pending actions to execute automatically.
 
 Run from a terminal in the current Hyprland session:
 
