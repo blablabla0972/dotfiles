@@ -280,15 +280,14 @@ PanelWindow {
     function statusText() {
         var state = applyState;
         if (state.active) {
-            var name = state.active.wallpaper.split("/").pop();
-            var pending = state.phase === "unknown" ? "Outcome unknown; still waiting: " : "Applying: ";
-            return pending + name + (state.queued ? " · Next: " + state.queued.split("/").pop() : "") + " · Esc hides";
+            return state.phase === "unknown"
+                ? "Outcome unknown · still waiting…"
+                : (state.queued ? "Applying… (queued next)" : "Applying…");
         }
-        if (state.phase === "applied") return "Applied: " + state.applied.split("/").pop();
         if (state.phase === "failed" || state.phase === "rolled_back")
-            return (state.phase === "rolled_back" ? "Rolled back" : "Apply failed") + ": " + (state.error || "transaction_failed") + " · Enter to retry";
+            return (state.phase === "rolled_back" ? "Rolled back: " : "Apply failed: ") + (state.error || "transaction_failed") + " · Enter to retry";
         if (state.phase === "unknown") return "Outcome unknown · Enter to retry · Esc closes";
-        return displayModel.count ? "← / → · H / L · Scroll to select · Enter / Space to apply · Esc closes" : "No wallpapers found · Esc closes";
+        return displayModel.count ? "" : "No wallpapers found";
     }
 
     // Đóng Quickshell với hoạt ảnh mượt mà
@@ -517,18 +516,6 @@ PanelWindow {
                     }
                 }
 
-                Text {
-                    anchors.centerIn: parent
-                    text: root.applyState.active && root.applyState.active.wallpaper === filePath
-                        ? (root.applyState.phase === "unknown" ? "Pending…" : "Applying…")
-                        : root.applyState.queued === filePath ? "Queued"
-                        : root.applyState.applied === filePath ? "Last confirmed" : ""
-                    visible: text !== "" && cardItem.effectsActive
-                    color: root.palette.mOnSurface || root.palette.mPrimary || "transparent"
-                    style: Text.Outline
-                    styleColor: root.palette.mSurface || "transparent"
-                }
-
                 MouseArea {
                     anchors.fill: parent
                     enabled: !root.closing
@@ -601,44 +588,47 @@ PanelWindow {
         Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             y: Math.min(parent.height - height - 24, parent.height / 2 + root.selectedHeight / 2 + 24)
-            width: Math.min(parent.width - 32, Math.max(statusLabel.implicitWidth, previewRow.implicitWidth) + 32)
-            height: statusLabel.implicitHeight + previewRow.height + 28
+            readonly property bool hasStatus: statusLabel.text !== ""
+            width: Math.min(parent.width - 32, Math.max(hasStatus ? statusLabel.implicitWidth : 0, previewRow.implicitWidth) + 24)
+            height: previewRow.height + (hasStatus ? statusLabel.implicitHeight + 14 : 12)
             radius: 8
             color: Qt.alpha(root.palette.mSurface || "transparent", root.panelOpacity)
-            Row {
-                id: previewRow
-                anchors.horizontalCenter: parent.horizontalCenter
-                y: 8
+
+            Column {
+                anchors.centerIn: parent
                 spacing: 6
-                Text {
-                    text: root.previewState.phase === "ready" ? "Preview"
-                        : root.previewState.phase === "pending" ? "Preview pending · current palette"
-                        : root.previewState.phase === "failed" ? "Preview unavailable · current palette" : "Current palette"
-                    color: root.palette.mOnSurface || root.palette.mPrimary || "transparent"
-                }
-                Repeater {
-                    model: root.previewSwatches
-                    Rectangle {
-                        required property string modelData
-                        width: 16
-                        height: 16
-                        radius: 3
-                        color: modelData
-                        border.width: 1
-                        border.color: root.palette.mOutline || "transparent"
+
+                Row {
+                    id: previewRow
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 6
+                    Repeater {
+                        model: root.previewSwatches
+                        Rectangle {
+                            required property string modelData
+                            width: 16
+                            height: 16
+                            radius: 3
+                            color: modelData
+                            border.width: 1
+                            border.color: root.palette.mOutline || "transparent"
+                        }
                     }
                 }
-            }
-            Text {
-                id: statusLabel
-                anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 10 }
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideMiddle
-                text: root.statusText()
-                color: (root.applyState.phase === "failed" || root.applyState.phase === "rolled_back")
-                    ? (root.palette.mError || root.palette.mOnSurface || "transparent")
-                    : (root.palette.mOnSurface || root.palette.mPrimary || "transparent")
+
+                Text {
+                    id: statusLabel
+                    width: Math.min(implicitWidth, contentContainer.width - 56)
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideMiddle
+                    text: root.statusText()
+                    visible: text !== ""
+                    color: (root.applyState.phase === "failed" || root.applyState.phase === "rolled_back")
+                        ? (root.palette.mError || root.palette.mOnSurface || "transparent")
+                        : (root.palette.mOnSurface || root.palette.mPrimary || "transparent")
+                }
             }
         }
 
