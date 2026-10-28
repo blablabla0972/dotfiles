@@ -165,17 +165,32 @@ class ThumbnailTests(IsolatedHome):
             self.skipTest("Node required to execute the QML model function without a UI")
         qml = (SWITCHER / "shell.qml").read_text()
         function = re.search(r"    function updateDisplayModel\(\) \{.*?\n    \}", qml, re.S).group()
+        sync = re.search(r"    function syncSelection\(\) \{.*?\n    \}", qml, re.S).group()
         # Run the actual model function with Qt's UTF-8 MD5 semantics and fake models.
         javascript = r'''
 const crypto = require("crypto");
+const fs = require("fs"), vm = require("vm"), assert = require("assert/strict");
+const ApplyState = vm.createContext({});
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), ApplyState);
 const names = JSON.parse(process.argv[1]);
+let applyState = ApplyState.create("thumbnail-fixture");
+applyState = ApplyState.reduce(applyState, {type: "select", wallpaper: names[1]});
+const transition = event => { applyState = ApplyState.reduce(applyState, event); };
+const carousel = {currentIndex: 0};
 const Qt = {md5: name => crypto.createHash("md5").update(name, "utf8").digest("hex")};
 const Quickshell = {env: key => process.env[key]};
 const folderModel = {count: names.length, get: (i, role) => role === "fileName" ? names[i] : names[i]};
-const urls = [];
-const displayModel = {clear: () => {}, append: item => urls.push(item.thumbUrl)};
-''' + function + '\nupdateDisplayModel(); console.log(JSON.stringify(urls));'
-        result = subprocess.run(["node", "-e", javascript, json.dumps([p.name for p in images])],
+const items = [];
+const displayModel = {get count() { return items.length; }, clear: () => { items.length = 0; },
+    append: item => items.push(item), get: i => items[i]};
+''' + function + sync + '''
+updateDisplayModel();
+assert.equal(carousel.currentIndex, 1);
+assert.equal(applyState.selection, names[1]);
+console.log(JSON.stringify(items.map(item => item.thumbUrl)));
+'''
+        result = subprocess.run(["node", "-e", javascript, json.dumps([p.name for p in images]),
+                                 str(SWITCHER / "ApplyState.js")],
                                 env=self.env, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         urls = json.loads(result.stdout)

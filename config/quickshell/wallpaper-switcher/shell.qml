@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Qt.labs.folderlistmodel
+import "ApplyState.js" as ApplyState
 
 PanelWindow {
     id: root
@@ -19,16 +20,35 @@ PanelWindow {
     }
 
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     property bool closing: false
-    property string pendingWallpaper: ""
+    property var applyState: ApplyState.create(Date.now().toString(36) + "-" + Math.random().toString(36).slice(2))
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")
     property string themeMode: "dark"
     property var paletteData: ({})
-    readonly property var palette: paletteData[themeMode] || ({})
+    property string adaptiveText: ""
+    property int paletteGeneration: 0
+    property string nativePaletteRevision: ""
+    property bool paletteHashWanted: false
+    readonly property var adaptivePalette: ApplyState.adaptivePalette(adaptiveText, themeMode, nativePaletteRevision)
+    readonly property var palette: adaptivePalette || paletteData[themeMode] || ({})
+    readonly property real panelOpacity: adaptivePalette ? adaptivePalette.panelOpacity : 1
+    property var previewState: ApplyState.createPreview(Date.now().toString(36) + "-preview-" + Math.random().toString(36).slice(2))
+    readonly property var previewSwatches: previewState.phase === "ready" ? previewState.swatches
+        : [palette.mPrimary || "transparent", palette.mOnPrimary || "transparent",
+           palette.mSurfaceVariant || "transparent", palette.mSurface || "transparent", palette.mOnSurface || "transparent"]
+    onThemeModeChanged: schedulePreview()
+
+    function invalidatePaletteRevision() {
+        paletteGeneration += 1;
+        nativePaletteRevision = "";
+        paletteHashWanted = false;
+    }
 
     function loadPalette() {
+        invalidatePaletteRevision();
         try {
             var next = JSON.parse(paletteFile.text());
             for (var mode of ["dark", "light"])
@@ -36,6 +56,8 @@ PanelWindow {
                     if (!next[mode] || !/^#[0-9a-fA-F]{6}$/.test(next[mode][role]))
                         return;
             paletteData = next;
+            paletteHashWanted = true;
+            Qt.callLater(pumpPaletteHash);
         } catch (error) {
             // Keep the last complete palette during atomic updates.
         }
@@ -47,9 +69,65 @@ PanelWindow {
         watchChanges: true
         printErrors: false
         onLoaded: root.loadPalette()
+        onLoadFailed: root.invalidatePaletteRevision()
         onFileChanged: {
+            root.invalidatePaletteRevision();
             reload();
             if (!modeQuery.running) modeQuery.running = true;
+        }
+    }
+
+    function pumpPaletteHash() {
+        if (!paletteHashWanted || paletteHash.running || paletteHash.generation === paletteGeneration
+                || (paletteHash.generation >= 0 && (!paletteHash.outputReady || paletteHash.resultCode < 0))) return;
+        paletteHash.generation = paletteGeneration;
+        paletteHash.outputReady = false;
+        paletteHash.resultCode = -1;
+        paletteHash.command = ["sha256sum", "--zero", "--", paletteFile.path];
+        paletteHash.running = true;
+    }
+
+    function finishPaletteHash() {
+        if (!paletteHash.outputReady || paletteHash.resultCode < 0) return;
+        var revision = ApplyState.paletteRevision(paletteGeneration, paletteHash.generation,
+            paletteHash.output, paletteHash.resultCode, paletteHash.resultStatus);
+        if (revision) nativePaletteRevision = revision;
+        Qt.callLater(pumpPaletteHash);
+    }
+
+    // Hash the actual file bytes once per loaded generation, never the parsed object.
+    Process {
+        id: paletteHash
+        property int generation: -1
+        property bool outputReady: false
+        property string output: ""
+        property int resultCode: -1
+        property int resultStatus: -1
+        stdout: StdioCollector {
+            onStreamFinished: {
+                paletteHash.output = text;
+                paletteHash.outputReady = true;
+                root.finishPaletteHash();
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            resultCode = exitCode;
+            resultStatus = exitStatus;
+            root.finishPaletteHash();
+        }
+    }
+
+    // Optional, read-only transaction output; invalid or mismatched modes use native colors.
+    FileView {
+        id: adaptiveFile
+        path: root.stateHome + "/desktop-wallpaper/adaptive-theme.json"
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.adaptiveText = text()
+        onLoadFailed: root.adaptiveText = ""
+        onFileChanged: {
+            root.adaptiveText = "";
+            reload();
         }
     }
 
@@ -71,24 +149,165 @@ PanelWindow {
     readonly property real selectedHeight: Math.min(height * 0.44, 480)
     readonly property real sideHeight: selectedHeight * 0.92
 
+    function transition(event) {
+        applyState = ApplyState.reduce(applyState, event);
+        if (event.type === "select") schedulePreview();
+        Qt.callLater(pumpApply);
+    }
+
+    function schedulePreview() {
+        if (closing || !previewState) return;
+        previewState = ApplyState.selectPreview(previewState, applyState.selection, themeMode);
+        previewDebounce.restart();
+    }
+
+    function pumpPreview() {
+        if (closing || previewDebounce.running || previewState.phase !== "pending"
+                || previewProcess.running || previewProcess.requestId === previewState.requestId
+                || (previewProcess.requestId && (!previewProcess.outputReady || previewProcess.resultCode < 0))) return;
+        previewProcess.requestId = previewState.requestId;
+        previewProcess.outputReady = false;
+        previewProcess.resultCode = -1;
+        previewProcess.didStart = false;
+        previewProcess.command = ["python3", Quickshell.shellDir + "/preview-palette.py",
+            "--request-id", previewState.requestId, "--mode", previewState.mode, previewState.wallpaper];
+        previewProcess.running = true;
+        previewStartWatch.restart();
+    }
+
+    function finishPreview() {
+        if (!previewProcess.outputReady || previewProcess.resultCode < 0) return;
+        previewState = ApplyState.finishPreview(previewState, previewProcess.requestId,
+            previewProcess.output, previewProcess.resultCode, previewProcess.resultStatus);
+        Qt.callLater(pumpPreview);
+        Qt.callLater(pumpApply);
+    }
+
+    Timer {
+        id: previewDebounce
+        interval: 150
+        onTriggered: root.pumpPreview()
+    }
+
+    Timer {
+        id: previewStartWatch
+        interval: 1000
+        onTriggered: {
+            if (!previewProcess.didStart && !previewProcess.running) {
+                previewProcess.output = "";
+                previewProcess.outputReady = true;
+                previewProcess.resultCode = 127;
+                previewProcess.resultStatus = 0;
+                root.finishPreview();
+            }
+        }
+    }
+
+    Process {
+        id: previewProcess
+        property string requestId: ""
+        property bool didStart: false
+        property bool outputReady: false
+        property string output: ""
+        property int resultCode: -1
+        property int resultStatus: -1
+        onStarted: didStart = true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                previewProcess.output = text;
+                previewProcess.outputReady = true;
+                root.finishPreview();
+            }
+        }
+        stderr: StdioCollector {}
+        onExited: (exitCode, exitStatus) => {
+            resultCode = exitCode;
+            resultStatus = exitStatus;
+            root.finishPreview();
+        }
+    }
+
+    function pumpApply() {
+        var active = applyState.active;
+        if (!active) {
+            ackTimeout.stop();
+            startWatch.stop();
+            if (applyState.closed && !visible && !previewProcess.running) Qt.quit();
+            return;
+        }
+        if (applyProcess.running || applyProcess.requestId === active.requestId) return;
+        applyProcess.requestId = active.requestId;
+        applyProcess.didStart = false;
+        applyProcess.command = ["bash", Quickshell.shellDir + "/apply-wallpaper.sh",
+            "--request-id", active.requestId, active.wallpaper];
+        applyProcess.running = true;
+        startWatch.restart();
+        ackTimeout.restart();
+    }
+
+    // Keep this object alive when Esc hides the window: destroying it would kill the transaction.
+    Process {
+        id: applyProcess
+        property string requestId: ""
+        property bool didStart: false
+        onStarted: didStart = true
+        stdout: StdioCollector {
+            onStreamFinished: root.transition({type: "stdout", requestId: applyProcess.requestId, text: text})
+        }
+        stderr: StdioCollector {
+            onStreamFinished: { if (text.trim()) console.warn(text.trim()); }
+        }
+        onExited: (exitCode, exitStatus) => root.transition({type: "exit",
+            requestId: requestId, code: exitCode, exitStatus: exitStatus})
+        onRunningChanged: { if (!running) Qt.callLater(root.pumpApply); }
+    }
+
+    Timer {
+        id: startWatch
+        interval: 1000
+        onTriggered: {
+            if (!applyProcess.didStart && !applyProcess.running)
+                root.transition({type: "launch_failed", requestId: applyProcess.requestId});
+        }
+    }
+
+    Timer {
+        id: ackTimeout
+        interval: 30000
+        onTriggered: root.transition({type: "timeout", requestId: applyProcess.requestId})
+    }
+
+    function statusText() {
+        var state = applyState;
+        if (state.active) {
+            var name = state.active.wallpaper.split("/").pop();
+            var pending = state.phase === "unknown" ? "Outcome unknown; still waiting: " : "Applying: ";
+            return pending + name + (state.queued ? " · Next: " + state.queued.split("/").pop() : "") + " · Esc hides";
+        }
+        if (state.phase === "applied") return "Applied: " + state.applied.split("/").pop();
+        if (state.phase === "failed" || state.phase === "rolled_back")
+            return (state.phase === "rolled_back" ? "Rolled back" : "Apply failed") + ": " + (state.error || "transaction_failed") + " · Enter to retry";
+        if (state.phase === "unknown") return "Outcome unknown · Enter to retry · Esc closes";
+        return displayModel.count ? "← / → · H / L · Scroll to select · Enter / Space to apply · Esc closes" : "No wallpapers found · Esc closes";
+    }
+
     // Đóng Quickshell với hoạt ảnh mượt mà
     function closeShell() {
         if (closing) return;
         closing = true;
+        previewDebounce.stop();
+        transition({type: "close"});
         enterAnimation.stop();
         exitAnimation.start();
     }
 
-    // Áp dụng hình nền an toàn qua helper script (tránh command injection và tranh chấp tiến trình)
+    // Navigation is independent of the active transaction; only explicit applies queue work.
     function applyCurrent() {
         if (closing || displayModel.count === 0) return;
         var item = displayModel.get(carousel.currentIndex);
         if (!item || !item.filePath) return;
 
-        closing = true;
-        pendingWallpaper = item.filePath;
-        enterAnimation.stop();
-        exitAnimation.start();
+        transition({type: "request", wallpaper: item.filePath});
     }
 
     // Đọc ảnh từ thư mục ~/Ảnh/Wallpaper
@@ -121,9 +340,13 @@ PanelWindow {
     }
 
     function updateDisplayModel() {
+        var selectedPath = applyState.selection;
         displayModel.clear();
         var n = folderModel.count;
-        if (n === 0) return;
+        if (n === 0) {
+            transition({type: "select", wallpaper: ""});
+            return;
+        }
 
         var requiredItems = 7;
         var repeatCount = n < requiredItems ? Math.ceil(requiredItems / n) : 1;
@@ -142,6 +365,18 @@ PanelWindow {
                 });
             }
         }
+        for (var index = 0; index < displayModel.count; ++index) {
+            if (displayModel.get(index).filePath === selectedPath) {
+                carousel.currentIndex = index;
+                break;
+            }
+        }
+        syncSelection();
+    }
+
+    function syncSelection() {
+        var item = displayModel.get(carousel.currentIndex);
+        transition({type: "select", wallpaper: item ? item.filePath : ""});
     }
 
     // Bấm ra ngoài vùng trống để đóng
@@ -210,6 +445,8 @@ PanelWindow {
             preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
             highlightMoveDuration: 240
+            interactive: !root.closing
+            onCurrentIndexChanged: root.syncSelection()
 
             delegate: Item {
                 id: cardItem
@@ -219,6 +456,7 @@ PanelWindow {
                 opacity: PathView.itemOpacity !== undefined ? PathView.itemOpacity : 1
                 readonly property real slant: height * 0.34
                 readonly property bool selected: PathView.isCurrentItem
+                readonly property bool effectsActive: root.visible && contentContainer.visible && PathView.onPath && opacity > 0
 
                 Image {
                     id: cardImg
@@ -242,7 +480,7 @@ PanelWindow {
                     id: cardMask
                     anchors.fill: parent
                     visible: false
-                    layer.enabled: true
+                    layer.enabled: cardItem.effectsActive
                     layer.smooth: true
                     ShapePath {
                         strokeWidth: 0
@@ -257,9 +495,10 @@ PanelWindow {
 
                 MultiEffect {
                     anchors.fill: parent
-                    source: cardImg
-                    maskEnabled: true
-                    maskSource: cardMask
+                    visible: cardItem.effectsActive
+                    source: cardItem.effectsActive ? cardImg : null
+                    maskEnabled: cardItem.effectsActive
+                    maskSource: cardItem.effectsActive ? cardMask : null
                     autoPaddingEnabled: false
                 }
 
@@ -267,7 +506,7 @@ PanelWindow {
                     anchors.fill: parent
                     ShapePath {
                         strokeWidth: cardItem.selected ? 3 : 2
-                        strokeColor: cardItem.selected ? (root.palette.mPrimary || "transparent") : (root.palette.mOutline || "transparent")
+                        strokeColor: cardItem.selected ? (root.palette.mFocusRing || root.palette.mPrimary || "transparent") : (root.palette.mOutline || "transparent")
                         fillColor: cardItem.selected || !root.palette.mSurfaceVariant ? "transparent" : Qt.alpha(root.palette.mSurfaceVariant, 0.26)
                         joinStyle: ShapePath.MiterJoin
                         startX: cardItem.slant + 1.5; startY: 1.5
@@ -278,8 +517,21 @@ PanelWindow {
                     }
                 }
 
+                Text {
+                    anchors.centerIn: parent
+                    text: root.applyState.active && root.applyState.active.wallpaper === filePath
+                        ? (root.applyState.phase === "unknown" ? "Pending…" : "Applying…")
+                        : root.applyState.queued === filePath ? "Queued"
+                        : root.applyState.applied === filePath ? "Last confirmed" : ""
+                    visible: text !== "" && cardItem.effectsActive
+                    color: root.palette.mOnSurface || root.palette.mPrimary || "transparent"
+                    style: Text.Outline
+                    styleColor: root.palette.mSurface || "transparent"
+                }
+
                 MouseArea {
                     anchors.fill: parent
+                    enabled: !root.closing
                     cursorShape: Qt.PointingHandCursor
                     // Let clicks in a card's transparent corners reach cards behind it.
                     onPressed: (mouse) => {
@@ -288,6 +540,7 @@ PanelWindow {
                             mouse.accepted = false;
                     }
                     onClicked: {
+                        contentContainer.forceActiveFocus();
                         if (carousel.currentIndex === index) root.applyCurrent();
                         else carousel.currentIndex = index;
                     }
@@ -345,6 +598,49 @@ PanelWindow {
             }
         }
 
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: Math.min(parent.height - height - 24, parent.height / 2 + root.selectedHeight / 2 + 24)
+            width: Math.min(parent.width - 32, Math.max(statusLabel.implicitWidth, previewRow.implicitWidth) + 32)
+            height: statusLabel.implicitHeight + previewRow.height + 28
+            radius: 8
+            color: Qt.alpha(root.palette.mSurface || "transparent", root.panelOpacity)
+            Row {
+                id: previewRow
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: 8
+                spacing: 6
+                Text {
+                    text: root.previewState.phase === "ready" ? "Preview"
+                        : root.previewState.phase === "pending" ? "Preview pending · current palette"
+                        : root.previewState.phase === "failed" ? "Preview unavailable · current palette" : "Current palette"
+                    color: root.palette.mOnSurface || root.palette.mPrimary || "transparent"
+                }
+                Repeater {
+                    model: root.previewSwatches
+                    Rectangle {
+                        required property string modelData
+                        width: 16
+                        height: 16
+                        radius: 3
+                        color: modelData
+                        border.width: 1
+                        border.color: root.palette.mOutline || "transparent"
+                    }
+                }
+            }
+            Text {
+                id: statusLabel
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 10 }
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideMiddle
+                text: root.statusText()
+                color: (root.applyState.phase === "failed" || root.applyState.phase === "rolled_back")
+                    ? (root.palette.mError || root.palette.mOnSurface || "transparent")
+                    : (root.palette.mOnSurface || root.palette.mPrimary || "transparent")
+            }
+        }
 
     }
 
@@ -405,14 +701,7 @@ PanelWindow {
         ScriptAction {
             script: {
                 root.visible = false;
-                // Decode the wallpaper and generate its theme after the exit animation.
-                if (root.pendingWallpaper !== "") {
-                    Quickshell.execDetached([
-                        Quickshell.shellDir + "/apply-wallpaper.sh",
-                        root.pendingWallpaper
-                    ]);
-                }
-                Qt.quit();
+                root.pumpApply();
             }
         }
     }

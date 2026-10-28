@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-wallpaper="${1:?Wallpaper path required}"
+if [[ $# -ne 3 || $1 != --request-id || -z $2 || -z $3 ]]; then
+    echo 'Usage: apply-wallpaper.sh --request-id <id> <wallpaper>' >&2
+    exit 2
+fi
+request_id=$2
+wallpaper=$3
 script="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/generate-theme.py"
 
-# Serialize, validate, apply and verify in one foreground transaction.
-# Noctalia remains the palette generator; awww remains the wallpaper backend.
-if ! err_msg=$(python3 "$script" --apply-wallpaper "$wallpaper" 2>&1); then
-    echo "$err_msg" >&2
+# Only the transaction owner emits stdout (one JSON result). Keep diagnostics separate.
+errors=$(mktemp)
+trap 'rm -f -- "$errors"' EXIT
+status=0
+python3 "$script" --apply-wallpaper --request-id "$request_id" --json "$wallpaper" 2>"$errors" || status=$?
+cat -- "$errors" >&2
+if (( status != 0 )); then
     if command -v notify-send >/dev/null 2>&1; then
-        last_line=$(echo "$err_msg" | grep -v '^$' | tail -n 1)
-        notify-send -u critical -a "Wallpaper Switcher" "Lỗi đổi hình nền" "Không thể áp dụng: $(basename "$wallpaper")\n$last_line"
+        last_line=$(tail -n 1 -- "$errors")
+        notify-send -u critical -a "Wallpaper Switcher" -- "Lỗi đổi hình nền" \
+            "Không thể áp dụng: ${wallpaper##*/} — ${last_line:-Transaction exited with status $status}" >/dev/null 2>&1 || true
     fi
-    exit 1
 fi
+exit "$status"
