@@ -51,6 +51,10 @@ class ThemeSyncTest(unittest.TestCase):
                                 'HYPRLAND_INSTANCE_SIGNATURE': 'test-instance'}).start()
         patch.object(theme, 'command', side_effect=self.command).start()
         patch.object(theme, 'palette_for', side_effect=self.palette_for).start()
+        # This fixture models generated palette files as mode strings; the real
+        # token derivation/transaction boundary is covered in test_adaptive_transaction.
+        patch.object(theme, 'stage_adaptive_theme', side_effect=lambda w, c, mode: (
+            json.dumps({'mode': mode}).encode(), hashlib.sha256(mode.encode()).hexdigest())).start()
         patch.object(theme, 'stage_native', side_effect=self.stage_native).start()
         patch.object(theme, 'quiesce_shell', return_value=False).start()
 

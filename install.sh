@@ -20,22 +20,25 @@ STATE_TARGET="$HOME/.local/state"
 BIN_TARGET="$HOME/.local/bin"
 
 # Core live desktop targets (mặc định chỉ cài những mục này để đảm bảo tính an toàn & khả chuyển)
-CORE_CONFIGS=(hypr noctalia quickshell matugen kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop starship.toml)
+CORE_CONFIGS=(hypr noctalia quickshell matugen rice kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop starship.toml)
 CORE_ROOTS=(kdeglobals)
 CORE_STATES=()
 
 DRY_RUN=0
 INSTALL_ALL=0
+INSTALL_STATE=1
 ONLY=()
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=1 ;;
         --all)     INSTALL_ALL=1 ;;
+        --no-state) INSTALL_STATE=0 ;;
         -h|--help)
-            echo "Cách dùng: $0 [--dry-run] [--all] [mục1 mục2 ...]"
+            echo "Cách dùng: $0 [--dry-run] [--all] [--no-state] [mục1 mục2 ...]"
             echo "  Mặc định: Chỉ cài các cấu hình desktop live (${CORE_CONFIGS[*]} kdeglobals noctalia bin)."
             echo "  --all:    Cài toàn bộ cấu hình, bao gồm cả systemd và cấu hình riêng máy (snapshot)."
             echo "  --dry-run: Chỉ in thao tác dự kiến, không thay đổi file."
+            echo "  --no-state: Giữ nguyên session/lock settings, kể cả khi chọn noctalia hoặc --all."
             exit 0
             ;;
         *) ONLY+=("$arg") ;;
@@ -127,6 +130,7 @@ fi
 should_install() {
     local category="$1" # config, root, state, bin
     local name="$2"
+    if [ "$category" = "state" ] && [ "$INSTALL_STATE" -eq 0 ]; then return 1; fi
 
     # Nếu người dùng chỉ định cụ thể mục cần cài
     if [ "${#ONLY[@]}" -gt 0 ]; then

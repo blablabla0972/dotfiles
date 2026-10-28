@@ -2,8 +2,10 @@
 """Generate Matugen's Noctalia palette and synchronize desktop theme outputs."""
 import argparse
 import configparser
+import contextlib
 import fcntl
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -16,9 +18,37 @@ import sys
 import tempfile
 import time
 import tomllib
+import uuid
 
 
 MATUGEN_OUTPUTS = ('hypr/colors.conf', 'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro')
+
+
+class TransactionError(RuntimeError):
+    """Carry a proven rollback outcome to the request acknowledgment boundary."""
+    def __init__(self, message, rolled_back, palette_revision=None):
+        super().__init__(message)
+        self.rolled_back = rolled_back
+        self.palette_revision = palette_revision if rolled_back else None
+
+
+def adaptive_path(state_dir):
+    return state_dir / 'desktop-wallpaper/adaptive-theme.json'
+
+
+def stage_adaptive_theme(wallpaper, config_dir, mode):
+    # Resolve source beside this script, including when ~/.config/hypr is a symlink.
+    source = Path(__file__).resolve().parents[2] / 'rice/theme/derive_tokens.py'
+    spec = importlib.util.spec_from_file_location('rice_derive_tokens', source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    palette = (config_dir / 'noctalia/palettes/matugen.json').read_bytes()
+    revision = hashlib.sha256(palette).hexdigest()
+    with wallpaper.open('rb') as stream:
+        wallpaper_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+    # No trusted region sampler yet: the pure library selects solid-safe surfaces.
+    tokens = module.derive_tokens(json.loads(palette), wallpaper_sha, revision, mode, [])
+    return (json.dumps(tokens, ensure_ascii=False, sort_keys=True, separators=(',', ':')) + '\n').encode(), revision
 
 
 def command(argv):
@@ -331,7 +361,7 @@ def theme_snapshot_paths(config_dir, state_dir):
              'btop/btop.conf', 'btop/themes/noctalia.theme', 'alacritty/alacritty.toml', 'alacritty/themes/noctalia.toml']
     return (
         [config_dir / p for p in (*names, *MATUGEN_OUTPUTS)]
-        + [state_dir / 'noctalia/settings.toml', share / 'color-schemes/noctalia.colors']
+        + [state_dir / 'noctalia/settings.toml', share / 'color-schemes/noctalia.colors', adaptive_path(state_dir)]
     )
 
 
@@ -348,6 +378,8 @@ def apply(wallpaper, config_dir, state_dir, runtime):
     changed_noctalia = False
     request = runtime / 'noctalia-matugen-request.json'
     mode = None
+    palette_path = config_dir / 'noctalia/palettes/matugen.json'
+    previous_revision = hashlib.sha256(palette_path.read_bytes()).hexdigest() if palette_path.is_file() else None
     try:
         # Start the wallpaper transition while palette and theme files are prepared.
         duration_sec = 0.8
@@ -358,6 +390,7 @@ def apply(wallpaper, config_dir, state_dir, runtime):
 
         _, config, theme_command, palette_changed, mode = palette_for(wallpaper, config_dir)
         changed_noctalia = palette_changed
+        adaptive, revision = stage_adaptive_theme(wallpaper, config_dir, mode)
         reload_matugen_palette(config, palette_changed)
         expected = stage_native(theme_command, config, config_dir, share, snapshot.directory)
         atomic_write(request, json.dumps({
@@ -381,9 +414,14 @@ def apply(wallpaper, config_dir, state_dir, runtime):
         command(['hyprctl', 'reload', 'config-only'])
         errors = command(['hyprctl', 'configerrors'])
         if errors: raise RuntimeError(errors)
+        if (command(['noctalia', 'msg', 'wallpaper-get']) != str(wallpaper)
+                or command(['noctalia', 'msg', 'theme-mode-get']) != mode):
+            raise RuntimeError('Theme transaction superseded by a newer native selection')
         atomic_link(link, str(wallpaper))
+        atomic_write(adaptive_path(state_dir), adaptive)
         print('WALLPAPER_AND_THEME_OK', wallpaper, '\nBACKUP', snapshot.directory)
-    except Exception:
+        return revision
+    except Exception as cause:
         try:
             preserve_selection = (command(['noctalia', 'msg', 'theme-mode-get']) != mode
                                   or command(['noctalia', 'msg', 'wallpaper-get']) != str(wallpaper))
@@ -392,23 +430,22 @@ def apply(wallpaper, config_dir, state_dir, runtime):
         if preserve_selection:
             snapshot.entries.pop(str(settings_target), None)
             snapshot.appearance.clear()
-        stopped = quiesce_shell() if changed_noctalia else False
+        stopped = False
+        restored = False
         try:
-            try:
-                snapshot.restore()
-            except Exception as error:
-                raise RuntimeError(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}') from error
+            stopped = quiesce_shell() if changed_noctalia else False
+            snapshot.restore()
             if changed_backend and old_wallpaper and old_wallpaper.is_file():
-                try:
-                    command(['swww', 'img', str(old_wallpaper), '--transition-type', 'none'])
-                except Exception as error: print('Wallpaper recovery needs attention:', error, file=sys.stderr)
-            try: command(['hyprctl', 'reload', 'config-only'])
-            except Exception as error: print('Hyprland recovery needs attention:', error, file=sys.stderr)
+                command(['swww', 'img', str(old_wallpaper), '--transition-type', 'none'])
+            command(['hyprctl', 'reload', 'config-only'])
+            restored = True
             print('RESTORED_SNAPSHOT', snapshot.directory, file=sys.stderr)
+        except Exception as error:
+            print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
         finally:
             if stopped:
                 subprocess.Popen(['noctalia', '-d'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        raise
+        raise TransactionError(str(cause), restored, previous_revision) from cause
     finally:
         if request.exists(): request.unlink()
 
@@ -454,6 +491,7 @@ def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
                 raise RuntimeError('Theme event superseded by a newer mode')
         try:
             _, config, theme_command, palette_changed, mode = palette_for(wallpaper, config_dir)
+            adaptive, _ = stage_adaptive_theme(wallpaper, config_dir, mode)
             check_selection()
             changed_native = palette_changed
             reload_matugen_palette(config, palette_changed)
@@ -478,6 +516,8 @@ def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
                 errors = command(['hyprctl', 'configerrors'])
                 if errors:
                     raise RuntimeError(errors)
+            check_selection()
+            atomic_write(adaptive_path(state_dir), adaptive)
         except Exception:
             stopped = quiesce_shell() if changed_native else False
             try:
@@ -501,12 +541,24 @@ def main():
     action.add_argument('--theme-mode-changed', action='store_true',
                         help='Synchronize palette outputs for the current wallpaper and theme mode')
     parser.add_argument('wallpaper', nargs='?')
+    parser.add_argument('--request-id', default=None, help='Opaque carousel request identifier')
+    parser.add_argument('--json', action='store_true', help='Emit one final transaction outcome as JSON')
     args = parser.parse_args()
     home = Path(os.path.expanduser('~'))
     config_dir = Path(os.environ.get('XDG_CONFIG_HOME', str(home / '.config')))
     state_dir = Path(os.environ.get('XDG_STATE_HOME', str(home / '.local/state')))
     runtime = Path(os.environ.get('XDG_RUNTIME_DIR', str(state_dir / 'desktop-wallpaper/runtime')))
+    record = {'schema_version': 1, 'request_id': args.request_id or uuid.uuid4().hex,
+              'status': 'failed', 'wallpaper': os.path.abspath(os.path.expanduser(
+                  args.wallpaper or str(config_dir / 'hypr/current_wallpaper'))),
+              'palette_revision': None, 'error_code': 'invalid_wallpaper'}
     try:
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', record['request_id']):
+            record['error_code'] = 'invalid_request'
+            raise ValueError('Request identifier must contain 1–80 letters, digits, underscores or hyphens')
+        if (args.json or args.request_id) and not args.apply_wallpaper:
+            record['error_code'] = 'invalid_request'
+            raise ValueError('Request acknowledgment requires --apply-wallpaper')
         runtime.mkdir(parents=True, exist_ok=True)
         if args.wallpaper_changed or args.theme_mode_changed:
             wallpaper_changed(config_dir, state_dir, runtime, mode_changed=args.theme_mode_changed)
@@ -518,15 +570,20 @@ def main():
         runtime.mkdir(parents=True, exist_ok=True)
         with (runtime / 'noctalia-wallpaper-apply.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            record['error_code'] = 'apply_failed'
             if args.apply_wallpaper:
-                apply(wallpaper, config_dir, state_dir, runtime)
+                with contextlib.redirect_stdout(sys.stderr) if args.json else contextlib.nullcontext():
+                    record['palette_revision'] = apply(wallpaper, config_dir, state_dir, runtime)
+                record.update(status='applied', error_code=None)
             else:
                 snap = Snapshot([config_dir / name for name in MATUGEN_OUTPUTS]
-                                + [state_dir / 'noctalia/settings.toml'], state_dir)
+                                + [state_dir / 'noctalia/settings.toml', adaptive_path(state_dir)], state_dir)
                 palette_changed = False
                 try:
-                    _, config, _, palette_changed, _ = palette_for(wallpaper, config_dir)
+                    _, config, _, palette_changed, mode = palette_for(wallpaper, config_dir)
+                    adaptive, _ = stage_adaptive_theme(wallpaper, config_dir, mode)
                     reload_matugen_palette(config, palette_changed)
+                    atomic_write(adaptive_path(state_dir), adaptive)
                 except Exception:
                     snap.restore()
                     if palette_changed:
@@ -537,8 +594,15 @@ def main():
                     raise
         return 0
     except Exception as error:
+        if isinstance(error, TransactionError):
+            record.update(status='rolled_back' if error.rolled_back else 'failed',
+                          palette_revision=error.palette_revision,
+                          error_code='apply_failed' if error.rolled_back else 'rollback_incomplete')
         print('Wallpaper/theme update failed:', error, file=sys.stderr)
         return 1
+    finally:
+        if args.json:
+            print(json.dumps(record, ensure_ascii=False, sort_keys=True))
 
 
 if __name__ == '__main__': sys.exit(main())
