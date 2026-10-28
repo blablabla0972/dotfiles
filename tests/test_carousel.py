@@ -264,7 +264,7 @@ sys.exit(int(os.environ['PREVIEW_STATUS']))
             live.mkdir()
             (live / 'config.toml').write_text('do not read this live config')
             env = dict(os.environ, PATH=str(base) + os.pathsep + os.environ['PATH'],
-                       XDG_CONFIG_HOME=str(live), XDG_CACHE_HOME=str(live), XDG_STATE_HOME=str(live),
+                       XDG_CONFIG_HOME=str(live), XDG_CACHE_HOME=str(base / 'cache'), XDG_STATE_HOME=str(live),
                        PREVIEW_RECORD=str(record), PREVIEW_OUTPUT=output, PREVIEW_STATUS=str(status))
             result = subprocess.run(['python3', str(CAROUSEL / 'preview-palette.py'),
                                      '--request-id', 'preview-42', '--mode', 'dark', str(wallpaper)],

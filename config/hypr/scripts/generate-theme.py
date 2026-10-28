@@ -22,6 +22,7 @@ import uuid
 
 
 MATUGEN_OUTPUTS = ('hypr/colors.conf', 'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro')
+MATUGEN_FLAGS = ('--prefer', 'less-saturation', '--source-color-index', '0', '--quiet')
 
 
 class TransactionError(RuntimeError):
@@ -150,6 +151,43 @@ def inline_toml(value):
     return json.dumps(value, ensure_ascii=False)
 
 
+def matugen_cache_path(wallpaper, source, settings, mode):
+    binary = shutil.which('matugen')
+    if not binary:
+        return None
+    binary = Path(binary).resolve()
+    stat = binary.stat()
+    inputs = [wallpaper, source]
+    inputs.extend(Path(template['input_path']) for template in settings.get('templates', {}).values())
+    hashes = []
+    for path in dict.fromkeys(inputs):
+        with path.open('rb') as stream:
+            hashes.append((str(path), hashlib.file_digest(stream, 'sha256').hexdigest()))
+    identity = [1, mode, MATUGEN_FLAGS,
+                str(binary), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
+                stat.st_ctime_ns, hashes, settings]
+    key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    cache = Path(os.environ.get('XDG_CACHE_HOME') or str(Path.home() / '.cache'))
+    return cache / 'desktop-wallpaper/matugen-v1' / (key + '.json')
+
+
+def cached_matugen_outputs(cache, names):
+    try:
+        if cache is None or cache.stat().st_size > 1024 * 1024:
+            return None
+        record = json.loads(cache.read_text())
+        if not isinstance(record, dict) or record.get('schema_version') != 1:
+            return None
+        outputs = record.get('outputs')
+        if (not isinstance(outputs, dict) or set(outputs) != names
+                or not all(isinstance(value, str) and value for value in outputs.values())):
+            return None
+        digest = hashlib.sha256(json.dumps(outputs, sort_keys=True).encode()).hexdigest()
+        return outputs if record.get('sha256') == digest else None
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
 def render_matugen(wallpaper, config_dir, mode):
     source = config_dir / 'matugen/config.toml'
     settings = tomllib.loads(source.read_text())
@@ -167,12 +205,36 @@ def render_matugen(wallpaper, config_dir, mode):
             if key == 'output_path' and path not in outputs:
                 raise RuntimeError('Additional Matugen outputs need backup paths before theme generation')
             template[key] = str(path)
+    names = {name for name in MATUGEN_OUTPUTS if any(
+        template.get('output_path') == str(config_dir / name)
+        for template in settings.get('templates', {}).values())}
+    try:
+        cache = matugen_cache_path(wallpaper, source, settings, mode) if names else None
+    except (OSError, ValueError):
+        cache = None  # Cache availability must never prevent normal generation.
+    cached = cached_matugen_outputs(cache, names)
+    if cached is not None:
+        for name, value in cached.items():
+            target = (config_dir / name).resolve()
+            contents = value.encode()
+            if not target.is_file() or target.read_bytes() != contents:
+                atomic_write(target, contents)
+        return
     # Absolute paths keep a symlinked Matugen directory from redirecting sibling outputs.
     with tempfile.TemporaryDirectory(prefix='matugen-config-') as directory:
         config = Path(directory) / 'config.toml'
         config.write_text('\n'.join(f'{json.dumps(key, ensure_ascii=False)} = {inline_toml(value)}' for key, value in settings.items()))
         command(['matugen', 'image', str(wallpaper), '--config', str(config),
-                 '--mode', mode, '--prefer', 'less-saturation', '--source-color-index', '0', '--quiet'])
+                 '--mode', mode, *MATUGEN_FLAGS])
+    try:
+        # Do not retain output if an input changed while Matugen was working.
+        if cache is not None and matugen_cache_path(wallpaper, source, settings, mode) == cache:
+            rendered = {name: (config_dir / name).read_bytes().decode('utf-8') for name in names}
+            record = dict(schema_version=1, outputs=rendered,
+                          sha256=hashlib.sha256(json.dumps(rendered, sort_keys=True).encode()).hexdigest())
+            atomic_write(cache, json.dumps(record, ensure_ascii=False).encode())
+    except (OSError, ValueError, UnicodeError):
+        pass
 
 
 def palette_for(wallpaper, config_dir):

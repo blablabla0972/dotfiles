@@ -69,6 +69,7 @@ class MatugenSafetyTest(unittest.TestCase):
         subprocess.run(['magick', '-size', '8x8', 'gradient:#14263e-#77a6ca', str(self.image)],
                        check=True, capture_output=True)
         env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.config),
+                   XDG_CACHE_HOME=str(self.root / 'cache'),
                    XDG_STATE_HOME=str(self.root / 'state'), XDG_DATA_HOME=str(self.root / 'data'),
                    XDG_RUNTIME_DIR=str(self.root / 'runtime'))
         for key in ('HYPRLAND_INSTANCE_SIGNATURE', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'):

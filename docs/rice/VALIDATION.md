@@ -89,3 +89,19 @@ ack/clean-exit and native launcher capture passed. Exact text pixels in launcher
 screenshot measured7.75:1 selected and13.31:1 normal on this wallpaper/display.
 Private evidence and remaining unavailable/conditional checks are documented in
 QUIET_CURRENT_STATE.md. Preview is active; main merge still awaits user acceptance.
+
+## Resumed caption cleanup and cache
+
+Final121 tests,0 failures/errors/skips;24 matrix cases/192 renders/0 failures.
+Native carousel probe confirms no idle/card text, five ready swatches, seven-card
+geometry, navigation round-trip and clean exit. AGY terminal implementation was
+reviewed by controller; AGY peer-reviewed the output cache (PASS).
+
+Real Matugen cold/cache comparisons verify identical output and subprocess counts
+1→0 for both the three-output renderer and five-swatch preview. One isolated CPU
+sample measured673.23→10.10ms and678.68→9.81ms respectively; these are rendering
+samples, not end-to-end apply/FPS claims. Cache corruption/unavailability, content
+and configuration changes, generation races, symlinks and fresh request identity
+are covered. Cache roots, ownership and private evidence are in the state ledger.
+The user-selected worktree preview remains active; final visual/main acceptance
+and previously unavailable live scenarios are not certified by these checks.
