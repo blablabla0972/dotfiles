@@ -270,6 +270,35 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.assertEqual(self.tokens.read_text(), 'old adaptive')
         self.assertEqual(self.link.resolve(), self.old)
 
+    def test_request_cleanup_failure_preserves_committed_acknowledgment(self):
+        request = self.runtime / 'noctalia-matugen-request.json'
+        unlink = Path.unlink
+        def fail_cleanup(path, *args, **kwargs):
+            if path == request:
+                raise PermissionError('injected request cleanup failure')
+            return unlink(path, *args, **kwargs)
+        with patch.object(Path, 'unlink', new=fail_cleanup):
+            code, record = self.invoke()
+        self.assertEqual((code, record['status'], record['error_code']), (0, 'applied', None))
+        self.assertEqual(record['palette_revision'], hashlib.sha256(self.raw.read_bytes()).hexdigest())
+        self.assertEqual(self.link.resolve(), self.wallpaper)
+        self.assertEqual(json.loads(self.tokens.read_text())['source_palette_sha256'], record['palette_revision'])
+        self.assertIn('injected request cleanup failure', self.diagnostics)
+
+    def test_request_cleanup_failure_preserves_verified_rollback_acknowledgment(self):
+        self.failure = 'templates'
+        request = self.runtime / 'noctalia-matugen-request.json'
+        unlink = Path.unlink
+        def fail_cleanup(path, *args, **kwargs):
+            if path == request:
+                raise PermissionError('injected request cleanup failure')
+            return unlink(path, *args, **kwargs)
+        with patch.object(Path, 'unlink', new=fail_cleanup):
+            code, record = self.invoke()
+        self.assertEqual((code, record['status'], record['error_code']), (1, 'rolled_back', 'apply_failed'))
+        self.assertEqual(self.link.resolve(), self.old)
+        self.assertEqual(self.tokens.read_text(), 'old adaptive')
+
     def test_incomplete_rollback_is_never_reported_as_rolled_back(self):
         self.failure = 'templates'
         with patch.object(theme.Snapshot, 'restore', side_effect=OSError('restore denied')):

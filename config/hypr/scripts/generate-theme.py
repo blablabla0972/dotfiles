@@ -194,6 +194,8 @@ def render_matugen(wallpaper, config_dir, mode):
     home_config = Path.home() / '.config'
     outputs = {config_dir / name for name in MATUGEN_OUTPUTS}
     for template in settings.get('templates', {}).values():
+        if any(template.get(hook) for hook in ('pre_hook', 'post_hook')):
+            raise RuntimeError('Matugen template hooks need backup paths before transactional theme generation')
         for key in ('input_path', 'output_path'):
             if key not in template: continue
             path = Path(template[key]).expanduser()
@@ -340,7 +342,7 @@ def sync_toolkit_settings(config_dir, mode):
             ini[section]['gtk-icon-theme-name' if app.startswith('gtk') else 'icon_theme'] = icons
         output = io.StringIO()
         ini.write(output, space_around_delimiters=False)
-        atomic_write(path, (output.getvalue().rstrip() + '\n').encode())
+        atomic_write(path.resolve(), (output.getvalue().rstrip() + '\n').encode())
     if shutil.which('gsettings') and icon_available:
         try:
             command(['gsettings', 'set', 'org.gnome.desktop.interface', 'icon-theme', icons])
@@ -541,7 +543,11 @@ def apply(wallpaper, config_dir, state_dir, runtime):
             print('RESTORED_SNAPSHOT', snapshot.directory, file=sys.stderr)
         raise TransactionError(str(cause), restored, previous_revision) from cause
     finally:
-        if request.exists(): request.unlink()
+        try:
+            request.unlink(missing_ok=True)
+        except OSError as error:
+            # The expiring event marker must not replace a proven transaction outcome.
+            print('Wallpaper request cleanup needs attention:', error, file=sys.stderr)
 
 
 def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
@@ -554,7 +560,9 @@ def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
     palette_path = config_dir / 'noctalia/palettes/matugen.json'
     try:
         data = json.loads(request.read_text())
-        if (not mode_changed and data.get('wallpaper') == str(wallpaper) and data.get('expires', 0) > time.time()
+        if (not mode_changed and isinstance(data, dict)
+                and data.get('wallpaper') == str(wallpaper)
+                and type(data.get('expires')) in (int, float) and data['expires'] > time.time()
                 and data.get('mode') == command(['noctalia', 'msg', 'theme-mode-get'])
                 and data.get('palette') == hashlib.sha256(palette_path.read_bytes()).hexdigest()):
             return

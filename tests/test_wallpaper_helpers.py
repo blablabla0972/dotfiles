@@ -166,6 +166,7 @@ class ThumbnailTests(IsolatedHome):
         qml = (SWITCHER / "shell.qml").read_text()
         function = re.search(r"    function updateDisplayModel\(\) \{.*?\n    \}", qml, re.S).group()
         sync = re.search(r"    function syncSelection\(\) \{.*?\n    \}", qml, re.S).group()
+        local_url = re.search(r"    function localFileUrl\(path\) \{.*?\n    \}", qml, re.S).group()
         # Run the actual model function with Qt's UTF-8 MD5 semantics and fake models.
         javascript = r'''
 const crypto = require("crypto");
@@ -183,7 +184,7 @@ const folderModel = {count: names.length, get: (i, role) => role === "fileName" 
 const items = [];
 const displayModel = {get count() { return items.length; }, clear: () => { items.length = 0; },
     append: item => items.push(item), get: i => items[i]};
-''' + function + sync + '''
+''' + function + sync + local_url + '''
 updateDisplayModel();
 assert.equal(carousel.currentIndex, 1);
 assert.equal(applyState.selection, names[1]);
@@ -209,6 +210,43 @@ console.log(JSON.stringify(items.map(item => item.thumbUrl)));
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue(self.thumb(valid).is_file(), result.stderr)
         self.assertFalse(self.thumb(corrupt).exists())
+        self.assertEqual(list(self.cache.glob(".thumbnail-*")), [])
+
+    def test_literal_image_names_are_not_magick_patterns(self):
+        original = self.image("original.png")
+        images = []
+        for name in ["scene%02d.png", "wild*.png", "single?.png", "frame[1].png",
+                     "line\nbreak.png", "slash\\name.png"]:
+            image = self.wallpapers / name
+            image.write_bytes(original.read_bytes())
+            images.append(image)
+        result = self.run_helper(SWITCHER / "generate-thumbs.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for image in images:
+            self.assertTrue(self.thumb(image).is_file(), image.name)
+
+    def test_empty_cached_thumbnail_is_regenerated(self):
+        image = self.image("empty cache.png")
+        self.cache.mkdir(parents=True)
+        thumb = self.thumb(image)
+        thumb.touch()
+        result = self.run_helper(SWITCHER / "generate-thumbs.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertGreater(thumb.stat().st_size, 0)
+
+    def test_directory_enumeration_failure_is_reported(self):
+        self.executable("find", "#!/bin/sh\necho 'enumeration failed' >&2\nexit 1\n")
+        result = self.run_helper(SWITCHER / "generate-thumbs.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("enumeration failed", result.stderr)
+
+    def test_animated_image_uses_only_first_frame(self):
+        image = self.wallpapers / "animated.webp"
+        subprocess.run(["magick", "-size", "4x3", "xc:red", "xc:blue", str(image)],
+                       env=self.env, check=True, capture_output=True)
+        result = self.run_helper(SWITCHER / "generate-thumbs.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.thumb(image).is_file())
         self.assertEqual(list(self.cache.glob(".thumbnail-*")), [])
 
     def test_stale_refresh_and_fresh_cache_reuse(self):

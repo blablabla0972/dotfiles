@@ -19,12 +19,13 @@ STATE="${XDG_RUNTIME_DIR:-/tmp}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/toggle-des
 mon_info="$(hyprctl monitors -j 2>/dev/null || echo '[]')"
 
 # Use jq with mapfile to properly extract variables and ensure exactly ONE focused monitor
-if ! focused_data=$(jq -e -r 'map(select(.focused == true)) | if length == 1 then .[0] | (.activeWorkspace.name // "1"), (.specialWorkspace.id // 0), (.specialWorkspace.name // "") else error("Expected exactly 1 focused monitor") end' <<< "$mon_info"); then
+if ! focused_data=$(jq -e -c 'map(select(.focused == true)) | if length == 1 then .[0] | [(.activeWorkspace.name // "1"), (.specialWorkspace.id // 0), (.specialWorkspace.name // "")] else error("Expected exactly 1 focused monitor") end' <<< "$mon_info"); then
     # Invalid, malformed, or no focused monitor data
     exit 1
 fi
 
-mapfile -t vals <<< "$focused_data"
+# NUL framing preserves workspace names containing newlines or pipe characters.
+mapfile -d '' -t vals < <(jq -j '.[] | tostring + "\u0000"' <<< "$focused_data")
 cur_ws="${vals[0]:-1}"
 special_id="${vals[1]:-0}"
 special_name="${vals[2]:-}"
@@ -67,7 +68,7 @@ if [ "$special_id" != "0" ] && [ "$special_name" != "null" ]; then
     fi
     
     dispatch_and_validate "$batch_cmds" || exit 1
-    printf '%s|special:%s' "$cur_ws" "$special_name" > "$STATE"
+    printf '%s\0special:%s\0' "$cur_ws" "$special_name" > "$STATE"
     exit 0
 fi
 
@@ -77,13 +78,20 @@ if [ "$cur_ws" = "$DESKTOP_WS" ]; then
     restore_special=""
     state_content=""
     if [ -f "$STATE" ]; then
-        state_content="$(cat "$STATE")"
-        saved_ws="${state_content%%|*}"
-        saved_special="${state_content#*|}"
+        mapfile -d '' -t saved < "$STATE"
+        saved_ws="${saved[0]:-}"
+        saved_special="${saved[1]:-}"
+        if [ "${#saved[@]}" -lt 2 ]; then
+            # Restore an in-flight toggle written by the previous script version.
+            state_content="$saved_ws"
+            saved_ws="${state_content%%|*}"
+            saved_special="${state_content#*|}"
+            [ "$saved_special" != "$state_content" ] || saved_special=""
+        fi
         if [ -n "$saved_ws" ] && [ "$saved_ws" != "$DESKTOP_WS" ]; then
             target_ws="$saved_ws"
         fi
-        if [ "$saved_special" != "$state_content" ] && [ -n "$saved_special" ]; then
+        if [ -n "$saved_special" ]; then
             restore_special="1"
         fi
     fi
@@ -98,5 +106,5 @@ if [ "$cur_ws" = "$DESKTOP_WS" ]; then
 else
     # Đang ở workspace bình thường -> lưu lại workspace hiện tại và nhảy về workspace 10 (màn hình không có cửa sổ)
     dispatch_and_validate "dispatch hl.dsp.focus({ workspace = $(lua_string "$DESKTOP_WS") })" || exit 1
-    printf '%s' "$cur_ws" > "$STATE"
+    printf '%s\0\0' "$cur_ws" > "$STATE"
 fi

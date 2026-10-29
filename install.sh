@@ -85,14 +85,14 @@ link() {
         local bdir="$ACTUAL_BACKUP_DIR"
         run mkdir -p "$bdir"
         backup "$dst → $bdir/"
-        local bdst="$bdir/$(basename "$dst")"
+        local bdst="$bdir/${dst##*/}"
         if [ -e "$bdst" ] || [ -L "$bdst" ]; then
-            bdst="$(mktemp -u "${bdir}/$(basename "$dst")-XXXXXX")"
+            bdst="$(mktemp -u "${bdir}/${dst##*/}-XXXXXX")"
         fi
         run mv -T "$dst" "$bdst"
     fi
 
-    run mkdir -p "$(dirname "$dst")"
+    run mkdir -p "${dst%/*}"
     run ln -sT "$src" "$dst"
     ok "linked: $dst → $src"
 }
@@ -121,7 +121,7 @@ if [ "${#ONLY[@]}" -gt 0 ]; then
         err "Mục cài không hợp lệ: ${invalid_targets[*]}"
         echo "Các mục hợp lệ có thể chọn:" >&2
         for d in "$CONFIG_SRC"/* "$ROOT_SRC"/* "$STATE_SRC"/* "$BIN_SRC"/*; do
-            [ -e "$d" ] && echo "  - $(basename "$d")" >&2
+            [ -e "$d" ] && echo "  - ${d##*/}" >&2
         done
         exit 1
     fi
@@ -181,7 +181,7 @@ run mkdir -p "$TARGET"
 if [ -d "$CONFIG_SRC" ]; then
     for src in "$CONFIG_SRC"/*; do
         [ -e "$src" ] || continue
-        name="$(basename "$src")"
+        name="${src##*/}"
         should_install "config" "$name" || continue
         link "${src%/}" "$TARGET/$name"
     done
@@ -191,7 +191,7 @@ fi
 if [ -d "$ROOT_SRC" ]; then
     for src in "$ROOT_SRC"/*; do
         [ -e "$src" ] || continue
-        name="$(basename "$src")"
+        name="${src##*/}"
         should_install "root" "$name" || continue
         link "$src" "$TARGET/$name"
     done
@@ -201,11 +201,12 @@ fi
 if [ -d "$STATE_SRC" ]; then
     for app_src in "$STATE_SRC"/*/; do
         [ -d "$app_src" ] || continue
-        app="$(basename "$app_src")"
+        app="${app_src%/}"
+        app="${app##*/}"
         should_install "state" "$app" || continue
         for src in "$app_src"*; do
             [ -e "$src" ] || continue
-            link "$src" "$STATE_TARGET/$app/$(basename "$src")"
+            link "$src" "$STATE_TARGET/$app/${src##*/}"
         done
     done
 fi
@@ -215,7 +216,7 @@ if [ -d "$BIN_SRC" ]; then
     run mkdir -p "$BIN_TARGET"
     for src in "$BIN_SRC"/*; do
         [ -e "$src" ] || continue
-        name="$(basename "$src")"
+        name="${src##*/}"
         should_install "bin" "$name" || continue
         link "$src" "$BIN_TARGET/$name"
     done
@@ -224,7 +225,7 @@ if [ -d "$BIN_SRC" ]; then
     if [ -d "$BIN_TARGET" ]; then
         for dst in "$BIN_TARGET"/*; do
             if [ "${#ONLY[@]}" -gt 0 ]; then
-                name="$(basename "$dst")"
+                name="${dst##*/}"
                 [ -e "$BIN_SRC/$name" ] && should_install "bin" "$name" || continue
             fi
             if [ -L "$dst" ]; then

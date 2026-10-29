@@ -2,8 +2,10 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -133,6 +135,19 @@ class MatugenSafetyTest(unittest.TestCase):
             theme.palette_for(self.image, self.config)
         self.assertEqual(outside.read_bytes(), b'PRESERVE')
         self.assertFalse((self.config / 'noctalia/palettes/matugen.json').exists())
+
+    def test_unprotected_template_hooks_are_rejected_before_matugen_writes(self):
+        config_file = self.config / 'matugen/config.toml'
+        original = config_file.read_text()
+        outside = self.root / 'unprotected.conf'
+        for hook in ('pre_hook', 'post_hook'):
+            with self.subTest(hook=hook):
+                outside.write_bytes(b'PRESERVE')
+                config_file.write_text(original + f'\n{hook} = ' + json.dumps(f'printf CHANGED > {shlex.quote(str(outside))}') + '\n')
+                with self.assertRaisesRegex(RuntimeError, 'hooks.*backup paths'):
+                    theme.palette_for(self.image, self.config)
+                self.assertEqual(outside.read_bytes(), b'PRESERVE')
+                self.assertFalse((self.config / 'noctalia/palettes/matugen.json').exists())
 
     def test_plain_regeneration_rolls_back_existing_and_new_micro_output(self):
         self.config = self.home_config

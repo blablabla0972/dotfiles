@@ -15,6 +15,12 @@ class InstallerSafetyTest(unittest.TestCase):
         self.install_script = self.repo / 'install.sh'
         self.env = os.environ.copy()
         self.env['HOME'] = str(self.home)
+        stub = Path(self.temp_dir) / 'stub'
+        stub.mkdir()
+        # --all must not reload the host's daemon, even with an isolated HOME.
+        (stub / 'systemctl').write_text('#!/bin/sh\nexit 0\n')
+        (stub / 'systemctl').chmod(0o700)
+        self.env['PATH'] = str(stub) + os.pathsep + self.env['PATH']
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)

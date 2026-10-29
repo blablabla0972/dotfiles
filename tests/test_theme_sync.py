@@ -108,6 +108,26 @@ class ThemeSyncTest(unittest.TestCase):
         theme.wallpaper_changed(self.config, self.state, self.runtime)
         self.assertEqual(self.outputs[-1].read_text(), 'light')
 
+    def test_malformed_wallpaper_requests_do_not_block_theme_sync(self):
+        marker = self.runtime / 'noctalia-matugen-request.json'
+        invalid = [[], None, 'invalid'] + [
+            {'wallpaper': str(self.wallpaper), 'expires': value} for value in ('broken', None, [], {})]
+        for request in invalid:
+            with self.subTest(request=request):
+                for output in self.outputs:
+                    output.write_text('dark')
+                marker.write_text(json.dumps(request))
+                with patch('sys.argv', [str(SCRIPT), '--wallpaper-changed']), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(theme.main(), 0)
+                self.assertEqual([p.read_text() for p in self.outputs], ['light'] * len(self.outputs))
+
+    def test_matching_wallpaper_transaction_marker_skips_duplicate_theme_work(self):
+        request = {'wallpaper': str(self.wallpaper), 'mode': self.mode, 'expires': theme.time.time() + 45,
+                   'palette': hashlib.sha256(self.outputs[-2].read_bytes()).hexdigest()}
+        (self.runtime / 'noctalia-matugen-request.json').write_text(json.dumps(request))
+        theme.wallpaper_changed(self.config, self.state, self.runtime)
+        self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
+
     def test_repeated_mode_switches_leave_the_latest_palette(self):
         for mode in ['light', 'dark', 'light']:
             self.mode = mode
@@ -127,6 +147,26 @@ class ThemeSyncTest(unittest.TestCase):
         self.assertEqual(ini['Settings']['gtk-cursor-theme-size'], '24')
         ini.read(self.config / 'gtk-4.0/settings.ini')
         self.assertEqual(ini['Settings']['gtk-icon-theme-name'], 'Papirus')
+
+    def test_toolkit_sync_preserves_leaf_symlinks_and_updates_their_targets(self):
+        for app in ('gtk-3.0', 'qt5ct'):
+            with self.subTest(app=app):
+                folder = self.config / app
+                folder.mkdir()
+                target = folder / 'user-settings.ini'
+                section = 'Settings' if app.startswith('gtk') else 'Appearance'
+                target.write_text(f'[{section}]\nuser-setting=keep\n')
+                target.chmod(0o640)
+                link = folder / ('settings.ini' if app.startswith('gtk') else 'qt5ct.conf')
+                link.symlink_to(target.name)
+                theme.sync_toolkit_settings(self.config, 'light')
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(os.readlink(link), target.name)
+                ini = configparser.ConfigParser()
+                ini.read(target)
+                self.assertEqual(ini[section]['user-setting'], 'keep')
+                self.assertEqual(ini[section]['gtk-icon-theme-name' if app.startswith('gtk') else 'icon_theme'], 'Papirus')
+                self.assertEqual(target.stat().st_mode & 0o777, 0o640)
 
     def test_failed_mode_event_restores_files_without_reverting_user_mode(self):
         self.fail_templates = True

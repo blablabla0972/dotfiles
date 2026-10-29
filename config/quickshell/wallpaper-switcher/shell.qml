@@ -310,10 +310,14 @@ PanelWindow {
         closeShell();
     }
 
+    function localFileUrl(path) {
+        return "file://" + path.split("/").map(encodeURIComponent).join("/");
+    }
+
     // Đọc ảnh từ thư mục ~/Ảnh/Wallpaper
     FolderListModel {
         id: folderModel
-        folder: "file://" + Quickshell.env("HOME") + "/Ảnh/Wallpaper"
+        folder: root.localFileUrl(Quickshell.env("HOME") + "/Ảnh/Wallpaper")
         nameFilters: ["*.png", "*.jpg", "*.jpeg", "*.webp"]
         caseSensitive: false
         showDirs: false
@@ -351,7 +355,7 @@ PanelWindow {
         var requiredItems = 7;
         var repeatCount = n < requiredItems ? Math.ceil(requiredItems / n) : 1;
         var cacheRoot = Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache");
-        var thumbBase = "file://" + cacheRoot + "/wallpaper-switcher-thumbs-v3/";
+        var thumbBase = localFileUrl(cacheRoot + "/wallpaper-switcher-thumbs-v3/");
 
         for (var r = 0; r < repeatCount; ++r) {
             for (var i = 0; i < n; ++i) {

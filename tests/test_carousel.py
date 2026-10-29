@@ -209,6 +209,32 @@ assert.equal(paletteHash.generation, 2); assert.equal(paletteHash.running, true)
 assert.deepEqual(paletteHash.command, ['sha256sum', '--zero', '--', paletteFile.path]);
 """)
 
+    def test_folder_and_thumbnail_urls_preserve_reserved_directory_characters(self):
+        qml = (CAROUSEL / 'shell.qml').read_text()
+        functions = '\n'.join(re.findall(
+            r'    function (?:localFileUrl|updateDisplayModel|syncSelection)\([^\n]*\) \{.*?\n    \}',
+            qml, re.S))
+        folder_url = re.search(r'        folder: (.+)', qml).group(1)
+        self.js(functions + r"""
+const home = '/tmp/home # %23 ? Ảnh';
+const cache = '/tmp/cache # %23 ? Ảnh';
+const Quickshell = {env: key => ({HOME: home, XDG_CACHE_HOME: cache})[key]};
+const Qt = {md5: () => 'a'.repeat(32)};
+let applyState = s;
+const folderModel = {count: 1, get: (i, role) => ({fileName: 'picture.png',
+    filePath: home + '/Ảnh/Wallpaper/picture.png', fileUrl: 'file:///picture.png'})[role]};
+const items = [];
+const displayModel = {get count() {return items.length;}, clear: () => {items.length = 0;},
+    append: item => items.push(item), get: i => items[i]};
+const carousel = {currentIndex: 0};
+const transition = event => {applyState = api.reduce(applyState, event);};
+const root = {localFileUrl};
+const decode = url => decodeURIComponent(new URL(url).pathname);
+""" + 'assert.equal(decode(' + folder_url + "), home + '/Ảnh/Wallpaper');\n" + r"""
+updateDisplayModel();
+assert.equal(decode(items[0].thumbUrl), cache + '/wallpaper-switcher-thumbs-v3/' + 'a'.repeat(32) + '.jpg');
+""")
+
     def test_preview_latest_selection_and_mode_reject_late_or_failed_results(self):
         self.js(r"""
 let preview = api.createPreview('preview');
