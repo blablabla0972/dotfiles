@@ -493,7 +493,7 @@ def apply(wallpaper, config_dir, state_dir, runtime):
     previous_revision = hashlib.sha256(palette_path.read_bytes()).hexdigest() if palette_path.is_file() else None
     try:
         # Start the wallpaper transition while palette and theme files are prepared.
-        duration_sec = 0.8
+        duration_sec = 1.8
         changed_backend = True
         command(['swww', 'img', str(wallpaper), '--transition-type', 'grow', '--transition-pos', 'center',
                  '--transition-fps', '144', '--transition-duration', str(duration_sec), '--transition-bezier', '.54,0,.34,.99'])
