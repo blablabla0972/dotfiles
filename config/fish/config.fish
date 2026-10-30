@@ -1,16 +1,20 @@
-source /usr/share/cachyos-fish-config/cachyos-config.fish
+if status is-interactive
+    source /usr/share/cachyos-fish-config/cachyos-config.fish
+else
+    # Keep the distro environment for scripts without loading terminal UI setup.
+    set -gx MANROFFOPT "-c"
+    set -gx MANPAGER "sh -c 'col -bx | bat -l man -p'"
+    if test -f ~/.fish_profile
+        source ~/.fish_profile
+    end
+    fish_add_path ~/.local/bin ~/.cargo/bin ~/Applications/depot_tools
+end
 
 # overwrite greeting
 # potentially disabling fastfetch
 #function fish_greeting
 #    # smth smth
 #end
-
-
-# Added by Antigravity CLI installer
-if not contains -- "$HOME/.local/bin" $PATH
-    set -gx PATH "$HOME/.local/bin" $PATH
-end
 
 # Starship prompt
 if status is-interactive

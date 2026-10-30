@@ -40,11 +40,13 @@ def get_matugen_identity():
 
 
 def compute_image_sha256(path: Path) -> str:
-    hasher = hashlib.sha256()
     with open(path, 'rb') as f:
+        if hasattr(hashlib, 'file_digest'):
+            return hashlib.file_digest(f, 'sha256').hexdigest()
+        hasher = hashlib.sha256()
         while chunk := f.read(65536):
             hasher.update(chunk)
-    return hasher.hexdigest()
+        return hasher.hexdigest()
 
 
 def compute_cache_key(image_hash: str, mode: str, real_path: str, stat_id: str) -> str:

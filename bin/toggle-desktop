@@ -9,7 +9,7 @@ set -euo pipefail
 
 # Ensure only one instance runs at a time to serialize intentional calls
 LOCKFILE="${XDG_RUNTIME_DIR:-/tmp}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/toggle-desktop.lock"
-mkdir -p "$(dirname "$LOCKFILE")" 2>/dev/null || true
+mkdir -p "${LOCKFILE%/*}" 2>/dev/null || true
 exec 200>"$LOCKFILE"
 flock 200
 
@@ -18,20 +18,24 @@ STATE="${XDG_RUNTIME_DIR:-/tmp}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/toggle-des
 
 mon_info="$(hyprctl monitors -j 2>/dev/null || echo '[]')"
 
-# Use jq with mapfile to properly extract variables and ensure exactly ONE focused monitor
-if ! focused_data=$(jq -e -c 'map(select(.focused == true)) | if length == 1 then .[0] | [(.activeWorkspace.name // "1"), (.specialWorkspace.id // 0), (.specialWorkspace.name // "")] else error("Expected exactly 1 focused monitor") end' <<< "$mon_info"); then
-    # Invalid, malformed, or no focused monitor data
-    exit 1
-fi
-
-# NUL framing preserves workspace names containing newlines or pipe characters.
-mapfile -d '' -t vals < <(jq -j '.[] | tostring + "\u0000"' <<< "$focused_data")
+# Validate and extract in one jq process; NUL framing preserves workspace names.
+mapfile -d '' -t vals < <(jq -e -j 'map(select(.focused == true)) |
+    if length == 1 then .[0] |
+        [(.activeWorkspace.name // "1"), (.specialWorkspace.id // 0), (.specialWorkspace.name // "")] |
+        .[] | tostring + "\u0000"
+    else error("Expected exactly 1 focused monitor") end' <<< "$mon_info")
+monitor_parser_pid=$!
+wait "$monitor_parser_pid" || exit 1
 cur_ws="${vals[0]:-1}"
 special_id="${vals[1]:-0}"
 special_name="${vals[2]:-}"
 
 # Quote Lua strings, including semicolons consumed by hyprctl's batch parser.
 lua_string() {
+    if [[ "$1" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+        printf '"%s"' "$1"
+        return
+    fi
     jq -nr --arg value "$1" '$value | explode | map(
         if . < 32 or . == 34 or . == 59 or . == 92 or . == 127 then
             "\\" + ((. + 1000) | tostring | .[1:])
@@ -53,7 +57,7 @@ dispatch_and_validate() {
     local batch_cmds="$1"
     local batch_out
     # hyprctl dispatch can return 0 but output "error:" with the lua bridge
-    if ! batch_out=$(hyprctl --batch "$batch_cmds" 2>&1) || echo "$batch_out" | grep -qi "error"; then
+    if ! batch_out=$(hyprctl --batch "$batch_cmds" 2>&1) || [[ "${batch_out,,}" == *error* ]]; then
         echo "Dispatch error: $batch_out" >&2
         return 1
     fi

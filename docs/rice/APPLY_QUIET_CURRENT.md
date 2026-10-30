@@ -1,5 +1,7 @@
 # Quiet Current: finish the desktop rollout
 
+> **Historical handoff.** Quiet Current was approved, merged into `main`, and pushed after this preview was written. The helper below checks the original base commit and intentionally refuses after `main` advances. Follow the current installer workflow in `README.md` and `docs/DEVELOPMENT.md` for later changes. These pre-merge preview/rollback commands are no longer the current rollback procedure.
+
 Source is on `feat/quiet-current` in `/home/admin/Projects/dotfiles/.worktrees/quiet-current`.
 The desktop now previews this worktree, after access permissions were opened and
 the controller applied/verified the native UI. Main merge awaits visual acceptance.

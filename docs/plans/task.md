@@ -23,3 +23,9 @@
 | Round 4.3: Automatic cleanup of orphaned bin symlinks in install.sh | done | install.sh cleans deleted bin script links |
 | Round 4.4: Documentation updates in README.md and AGENTS.md | done | README.md & AGENTS.md updated |
 | Round 4.5: Verification, install and Git push (Round 4) | done | 22 tests pass, hyprctl 0 errors, pushed to GitHub |
+| Audit 2026-10-30: Explore repository, live links, runtime, and checks | in progress | Live Noctalia/quickshell resolve to perf-panel-20261029; preserve existing work |
+| Audit 2026-10-30: Clarify optimization constraints | done | User requests unchanged structure, appearance, effects, and keybindings |
+| Audit 2026-10-30: Compare 2–3 scoped optimization approaches | pending | Base recommendations on reproduced faults and measured costs |
+| Audit 2026-10-30: Present design and obtain approval | pending | Review before changing desktop behavior |
+| Audit 2026-10-30: Record approved design | pending | docs/plans/2026-10-30-rice-audit-design.md |
+| Audit 2026-10-30: Create implementation plan | pending | Transition after design approval |

@@ -37,12 +37,20 @@ def adaptive_path(state_dir):
     return state_dir / 'desktop-wallpaper/adaptive-theme.json'
 
 
+_DERIVE_TOKENS_MODULE = None
+
+
 def stage_adaptive_theme(wallpaper, config_dir, mode):
-    # Resolve source beside this script, including when ~/.config/hypr is a symlink.
-    source = Path(__file__).resolve().parents[2] / 'rice/theme/derive_tokens.py'
-    spec = importlib.util.spec_from_file_location('rice_derive_tokens', source)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    global _DERIVE_TOKENS_MODULE
+    if _DERIVE_TOKENS_MODULE is None:
+        # Resolve source beside this script, including when ~/.config/hypr is a symlink.
+        source = Path(__file__).resolve().parents[2] / 'rice/theme/derive_tokens.py'
+        spec = importlib.util.spec_from_file_location('rice_derive_tokens', source)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _DERIVE_TOKENS_MODULE = module
+    else:
+        module = _DERIVE_TOKENS_MODULE
     palette = (config_dir / 'noctalia/palettes/matugen.json').read_bytes()
     revision = hashlib.sha256(palette).hexdigest()
     with wallpaper.open('rb') as stream:
@@ -64,6 +72,20 @@ def command(argv, timeout=30):
     return output
 
 
+def acquire_request_lock(lock, timeout=15):
+    """Fail before starting a transaction if its existing owner stays busy."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('Another wallpaper transaction still owns the lock')
+            time.sleep(min(0.05, remaining))
+
+
 def atomic_write(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix='.' + path.name + '-', dir=path.parent)
@@ -73,7 +95,7 @@ def atomic_write(path, data):
         os.chmod(name, path.stat().st_mode & 0o777 if path.exists() else 0o600)
         os.replace(name, path)
     finally:
-        if os.path.exists(name): os.unlink(name)
+        if os.path.lexists(name): os.unlink(name)
 
 
 class Snapshot:
@@ -90,7 +112,6 @@ class Snapshot:
             elif path.is_file():
                 copy = self.directory / str(index)
                 shutil.copy2(path, copy)
-                assert path.read_bytes() == copy.read_bytes()
                 self.entries[str(path)] = {'copy': str(copy), 'mode': path.stat().st_mode & 0o777}
             elif path.exists():
                 raise RuntimeError(f'Expected file, found directory: {path}')
@@ -342,7 +363,14 @@ def sync_toolkit_settings(config_dir, mode):
             ini[section]['gtk-icon-theme-name' if app.startswith('gtk') else 'icon_theme'] = icons
         output = io.StringIO()
         ini.write(output, space_around_delimiters=False)
-        atomic_write(path.resolve(), (output.getvalue().rstrip() + '\n').encode())
+        target = path.resolve()
+        contents = (output.getvalue().rstrip() + '\n').encode()
+        try:
+            unchanged = target.read_bytes() == contents
+        except OSError:
+            unchanged = False
+        if not unchanged:
+            atomic_write(target, contents)
     if shutil.which('gsettings') and icon_available:
         try:
             command(['gsettings', 'set', 'org.gnome.desktop.interface', 'icon-theme', icons])
@@ -671,7 +699,9 @@ def main():
             raise ValueError('Wallpaper must be a regular image file with a single-line path')
         runtime.mkdir(parents=True, exist_ok=True)
         with (runtime / 'noctalia-wallpaper-apply.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            if args.apply_wallpaper:
+                record['error_code'] = 'transaction_busy'
+            acquire_request_lock(lock)
             record['error_code'] = 'apply_failed'
             if args.apply_wallpaper:
                 with contextlib.redirect_stdout(sys.stderr) if args.json else contextlib.nullcontext():

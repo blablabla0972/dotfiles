@@ -1,0 +1,297 @@
+{
+  ".claude/settings.json": {
+    "mtime": 1793361485.175587,
+    "seen": 1793361532.9344256,
+    "ast_hash": "3b541b9935fcf0831355da956f897645",
+    "semantic_hash": "3b541b9935fcf0831355da956f897645",
+    "ast_empty": true
+  },
+  "bin/toggle-desktop": {
+    "mtime": 1793359191.825451,
+    "seen": 1793361532.934432,
+    "ast_hash": "2e0451168497f6eaf9de613fe433a5e0",
+    "semantic_hash": "2e0451168497f6eaf9de613fe433a5e0"
+  },
+  "config/cachyos/cachyos-pi/pkglist.yaml": {
+    "mtime": 1791116638.589001,
+    "seen": 1793361532.934508,
+    "ast_hash": "be3b06b78400fbb64f0248dc9c852419",
+    "semantic_hash": "be3b06b78400fbb64f0248dc9c852419",
+    "ast_empty": true
+  },
+  "config/hypr/config/animations.lua": {
+    "mtime": 1793102280.9312599,
+    "seen": 1793361532.9345098,
+    "ast_hash": "025182304015e0152187366291e86658",
+    "semantic_hash": "025182304015e0152187366291e86658"
+  },
+  "config/hypr/config/autostart.lua": {
+    "mtime": 1793098810.5792425,
+    "seen": 1793361532.9345496,
+    "ast_hash": "c9ea24cb68ce8e29d80fd8a22212ae05",
+    "semantic_hash": "c9ea24cb68ce8e29d80fd8a22212ae05"
+  },
+  "config/hypr/config/binds.lua": {
+    "mtime": 1793104506.7911518,
+    "seen": 1793361532.9345822,
+    "ast_hash": "3df0366cfab3de7c9b040334fb7fa182",
+    "semantic_hash": "3df0366cfab3de7c9b040334fb7fa182"
+  },
+  "config/hypr/config/colors.lua": {
+    "mtime": 1792683078.3979304,
+    "seen": 1793361532.9346108,
+    "ast_hash": "8914ac003081badaf7f97756508c9d54",
+    "semantic_hash": "8914ac003081badaf7f97756508c9d54"
+  },
+  "config/hypr/config/decorations.lua": {
+    "mtime": 1793098810.5792425,
+    "seen": 1793361532.9346392,
+    "ast_hash": "a383c31dd52d1b85a7baa1a4d421d786",
+    "semantic_hash": "a383c31dd52d1b85a7baa1a4d421d786"
+  },
+  "config/hypr/config/inputs.lua": {
+    "mtime": 1791111989.9685977,
+    "seen": 1793361532.9346664,
+    "ast_hash": "871537a0ab530a1a06f481b6b39244f7",
+    "semantic_hash": "871537a0ab530a1a06f481b6b39244f7"
+  },
+  "config/hypr/config/misc.lua": {
+    "mtime": 1792220391.1352174,
+    "seen": 1793361532.934694,
+    "ast_hash": "f29aa53f44419af10d45793b8fe62c84",
+    "semantic_hash": "f29aa53f44419af10d45793b8fe62c84"
+  },
+  "config/hypr/config/monitors.lua": {
+    "mtime": 1791087395.6552315,
+    "seen": 1793361532.9347212,
+    "ast_hash": "e778bf76999edd178217af829e2930f3",
+    "semantic_hash": "e778bf76999edd178217af829e2930f3"
+  },
+  "config/hypr/config/variables.lua": {
+    "mtime": 1792680006.2086055,
+    "seen": 1793361532.934751,
+    "ast_hash": "8c24eeeb0c4c51e206c2bd58ae5c4fe4",
+    "semantic_hash": "8c24eeeb0c4c51e206c2bd58ae5c4fe4"
+  },
+  "config/hypr/config/windowrules.lua": {
+    "mtime": 1793104513.3841374,
+    "seen": 1793361532.9347792,
+    "ast_hash": "e4779b625d3fe5af8b87799cbecf7e3d",
+    "semantic_hash": "e4779b625d3fe5af8b87799cbecf7e3d"
+  },
+  "config/hypr/config/workspaces.lua": {
+    "mtime": 1792293217.0238745,
+    "seen": 1793361532.9348047,
+    "ast_hash": "f69215c4d5fdd33dbf822b28c936b930",
+    "semantic_hash": "f69215c4d5fdd33dbf822b28c936b930"
+  },
+  "config/hypr/hyprland.lua": {
+    "mtime": 1793359653.061413,
+    "seen": 1793361532.9348295,
+    "ast_hash": "15e10bd8ad2aabbb067c992bead45ce5",
+    "semantic_hash": "15e10bd8ad2aabbb067c992bead45ce5"
+  },
+  "config/hypr/noctalia.lua": {
+    "mtime": 1793361525.0172207,
+    "seen": 1793361532.9348874,
+    "ast_hash": "860e5ae743bd523742e9efb72bdc745f",
+    "semantic_hash": "860e5ae743bd523742e9efb72bdc745f"
+  },
+  "config/hypr/scripts/generate-theme.py": {
+    "mtime": 1793359434.1911926,
+    "seen": 1793361532.9349163,
+    "ast_hash": "62252fc305652a287257e34cb90d7581",
+    "semantic_hash": "62252fc305652a287257e34cb90d7581"
+  },
+  "config/matugen/templates/noctalia-palette.json": {
+    "mtime": 1793098810.5802424,
+    "seen": 1793361532.9349453,
+    "ast_hash": "6f9b22f5bf65a505120e0eb0608e57a9",
+    "semantic_hash": "6f9b22f5bf65a505120e0eb0608e57a9",
+    "ast_empty": true
+  },
+  "config/micro/settings.json": {
+    "mtime": 1793098810.5802424,
+    "seen": 1793361532.9349465,
+    "ast_hash": "10077a924ae5e4cedc0b35f2a9cf461d",
+    "semantic_hash": "10077a924ae5e4cedc0b35f2a9cf461d",
+    "ast_empty": true
+  },
+  "config/noctalia/palettes/dynamic.json": {
+    "mtime": 1791298120.1856396,
+    "seen": 1793361532.9349475,
+    "ast_hash": "7739875a1b3a4a3ba6aec341e2b86b63",
+    "semantic_hash": "7739875a1b3a4a3ba6aec341e2b86b63",
+    "ast_empty": true
+  },
+  "config/noctalia/palettes/matugen.json": {
+    "mtime": 1793359653.0634992,
+    "seen": 1793361532.934949,
+    "ast_hash": "ad7622e66801908bdf725ac53a206742",
+    "semantic_hash": "ad7622e66801908bdf725ac53a206742",
+    "ast_empty": true
+  },
+  "config/noctalia/palettes/tranquil-balcony-breeze-in-anime-backiee-hd-sft.json": {
+    "mtime": 1791381742.985667,
+    "seen": 1793361532.93495,
+    "ast_hash": "7c89529973b9232d6edc7a3e0d696887",
+    "semantic_hash": "7c89529973b9232d6edc7a3e0d696887",
+    "ast_empty": true
+  },
+  "config/quickshell/wallpaper-switcher/ApplyState.js": {
+    "mtime": 1793182191.287547,
+    "seen": 1793361532.9349518,
+    "ast_hash": "03adba6bc42420ebb00e5f31515a3f3a",
+    "semantic_hash": "03adba6bc42420ebb00e5f31515a3f3a"
+  },
+  "config/quickshell/wallpaper-switcher/apply-wallpaper.sh": {
+    "mtime": 1793182191.287547,
+    "seen": 1793361532.9349804,
+    "ast_hash": "c518de82996dcfa421c87218681c2e92",
+    "semantic_hash": "c518de82996dcfa421c87218681c2e92"
+  },
+  "config/quickshell/wallpaper-switcher/generate-thumbs.sh": {
+    "mtime": 1793273735.2296793,
+    "seen": 1793361532.9350061,
+    "ast_hash": "fc676c20e361151e0c4b6b0744c52bdf",
+    "semantic_hash": "fc676c20e361151e0c4b6b0744c52bdf"
+  },
+  "config/quickshell/wallpaper-switcher/preview-palette.py": {
+    "mtime": 1793359446.796179,
+    "seen": 1793361532.9350297,
+    "ast_hash": "eec86d29a1b3f95963cf9ad41c17c915",
+    "semantic_hash": "eec86d29a1b3f95963cf9ad41c17c915"
+  },
+  "config/rice/theme/derive_tokens.py": {
+    "mtime": 1793182191.2884228,
+    "seen": 1793361532.935053,
+    "ast_hash": "377a8da55b18739f24d464e024a9128c",
+    "semantic_hash": "377a8da55b18739f24d464e024a9128c"
+  },
+  "docs/rice/preview-quiet-current.sh": {
+    "mtime": 1793182191.289547,
+    "seen": 1793361532.935079,
+    "ast_hash": "31464c36469a7da1dbae3581d90992c4",
+    "semantic_hash": "31464c36469a7da1dbae3581d90992c4"
+  },
+  "install.sh": {
+    "mtime": 1793359228.556412,
+    "seen": 1793361532.935103,
+    "ast_hash": "c6b253e39cb6dad7bc042ee344bd769d",
+    "semantic_hash": "c6b253e39cb6dad7bc042ee344bd769d"
+  },
+  "tests/check_palette_matrix.py": {
+    "mtime": 1793182191.290025,
+    "seen": 1793361532.935123,
+    "ast_hash": "8e9d39073e03a745b51f4e7c5cdf2602",
+    "semantic_hash": "8e9d39073e03a745b51f4e7c5cdf2602"
+  },
+  "tests/test_adaptive_tokens.py": {
+    "mtime": 1793182191.290025,
+    "seen": 1793361532.9351466,
+    "ast_hash": "a36a962055a8faaf9571c2066d3c1909",
+    "semantic_hash": "a36a962055a8faaf9571c2066d3c1909"
+  },
+  "tests/test_adaptive_transaction.py": {
+    "mtime": 1793273735.2296793,
+    "seen": 1793361532.9351678,
+    "ast_hash": "42fee366260e0950f2ebde41e6763415",
+    "semantic_hash": "42fee366260e0950f2ebde41e6763415"
+  },
+  "tests/test_carousel.py": {
+    "mtime": 1793273735.2306793,
+    "seen": 1793361532.935187,
+    "ast_hash": "b491d52acd4ce816cf9f436700ae1683",
+    "semantic_hash": "b491d52acd4ce816cf9f436700ae1683"
+  },
+  "tests/test_e2e_common.py": {
+    "mtime": 1793359775.7822874,
+    "seen": 1793361532.9352074,
+    "ast_hash": "47b93889dd6978a13477b685c8baf175",
+    "semantic_hash": "47b93889dd6978a13477b685c8baf175"
+  },
+  "tests/test_e2e_tier1_feature_coverage.py": {
+    "mtime": 1793359403.4402256,
+    "seen": 1793361532.9352276,
+    "ast_hash": "a1b14d2a8dad39a48db51272e5c1b1f3",
+    "semantic_hash": "a1b14d2a8dad39a48db51272e5c1b1f3"
+  },
+  "tests/test_e2e_tier2_boundary_corner.py": {
+    "mtime": 1793359557.1539996,
+    "seen": 1793361532.9352486,
+    "ast_hash": "c6b2249d0aeeac0c37977d10a0c8aeac",
+    "semantic_hash": "c6b2249d0aeeac0c37977d10a0c8aeac"
+  },
+  "tests/test_e2e_tier3_cross_feature.py": {
+    "mtime": 1793359848.2871068,
+    "seen": 1793361532.935269,
+    "ast_hash": "069ba445a5430a4c851d12bd6054b2b0",
+    "semantic_hash": "069ba445a5430a4c851d12bd6054b2b0"
+  },
+  "tests/test_e2e_tier4_real_world.py": {
+    "mtime": 1793359817.3447282,
+    "seen": 1793361532.9352934,
+    "ast_hash": "799a32124baeb041b849cbea6a1f4d21",
+    "semantic_hash": "799a32124baeb041b849cbea6a1f4d21"
+  },
+  "tests/test_installer.py": {
+    "mtime": 1793273735.2306793,
+    "seen": 1793361532.935313,
+    "ast_hash": "56ff1667cf4c556201ce6202fffcc0ab",
+    "semantic_hash": "56ff1667cf4c556201ce6202fffcc0ab"
+  },
+  "tests/test_matugen_cache.py": {
+    "mtime": 1793182191.2905471,
+    "seen": 1793361532.9353325,
+    "ast_hash": "5ec1eeb963c75b36ffc7f70dcf3006bf",
+    "semantic_hash": "5ec1eeb963c75b36ffc7f70dcf3006bf"
+  },
+  "tests/test_palette_surfaces.py": {
+    "mtime": 1793098810.5812423,
+    "seen": 1793361532.9353523,
+    "ast_hash": "ad3e6f4b0ee3ff3b1e742e9bbdfcbfb4",
+    "semantic_hash": "ad3e6f4b0ee3ff3b1e742e9bbdfcbfb4"
+  },
+  "tests/test_preview_cache.py": {
+    "mtime": 1793182191.2905471,
+    "seen": 1793361532.935372,
+    "ast_hash": "e6ff80101102971c708f3268e0bb3093",
+    "semantic_hash": "e6ff80101102971c708f3268e0bb3093"
+  },
+  "tests/test_rice_install.py": {
+    "mtime": 1793182191.2905471,
+    "seen": 1793361532.9353912,
+    "ast_hash": "441741ea92b37b483a1d0d4171a3c45b",
+    "semantic_hash": "441741ea92b37b483a1d0d4171a3c45b"
+  },
+  "tests/test_theme_safety.py": {
+    "mtime": 1793273735.2306793,
+    "seen": 1793361532.935413,
+    "ast_hash": "5b6af53f6c6920f5848e2280ec06c714",
+    "semantic_hash": "5b6af53f6c6920f5848e2280ec06c714"
+  },
+  "tests/test_theme_sync.py": {
+    "mtime": 1793273735.2306793,
+    "seen": 1793361532.9354331,
+    "ast_hash": "82807606de1db488f5912267fb6a5324",
+    "semantic_hash": "82807606de1db488f5912267fb6a5324"
+  },
+  "tests/test_toggle_desktop.py": {
+    "mtime": 1793273735.2306793,
+    "seen": 1793361532.935453,
+    "ast_hash": "678aaa0d0055193a57a47a8d60d60b1b",
+    "semantic_hash": "678aaa0d0055193a57a47a8d60d60b1b"
+  },
+  "tests/test_wallpaper_helpers.py": {
+    "mtime": 1793273735.2306793,
+    "seen": 1793361532.9354725,
+    "ast_hash": "87225d801b6f679f2589b0bece43452a",
+    "semantic_hash": "87225d801b6f679f2589b0bece43452a"
+  },
+  "wt-prep.sh": {
+    "mtime": 1793107028.4859521,
+    "seen": 1793361532.9354923,
+    "ast_hash": "7c471b116ed20c4fbecabe7b7433a181",
+    "semantic_hash": "7c471b116ed20c4fbecabe7b7433a181"
+  }
+}

@@ -20,7 +20,7 @@ STATE_TARGET="$HOME/.local/state"
 BIN_TARGET="$HOME/.local/bin"
 
 # Core live desktop targets (mặc định chỉ cài những mục này để đảm bảo tính an toàn & khả chuyển)
-CORE_CONFIGS=(hypr noctalia quickshell matugen rice kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop starship.toml)
+CORE_CONFIGS=(hypr noctalia quickshell matugen rice kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop micro starship.toml)
 CORE_ROOTS=(kdeglobals)
 CORE_STATES=()
 
@@ -59,7 +59,7 @@ ACTUAL_BACKUP_DIR=""
 ensure_backup_dir() {
     if [ -z "$ACTUAL_BACKUP_DIR" ]; then
         local timestamp
-        timestamp="$(date +%Y%m%d-%H%M%S)"
+        printf -v timestamp '%(%Y%m%d-%H%M%S)T' -1
         if [ "$DRY_RUN" -eq 1 ]; then
             ACTUAL_BACKUP_DIR="$TARGET/backups/dotfiles-$timestamp-dryrun"
         else
@@ -224,6 +224,7 @@ if [ -d "$BIN_SRC" ]; then
     # Dọn các symlink mồ côi trong ~/.local/bin từng trỏ vào repo bin/ nhưng file nguồn đã bị xóa
     if [ -d "$BIN_TARGET" ]; then
         for dst in "$BIN_TARGET"/*; do
+            [ -e "$dst" ] || [ -L "$dst" ] || continue
             if [ "${#ONLY[@]}" -gt 0 ]; then
                 name="${dst##*/}"
                 [ -e "$BIN_SRC/$name" ] && should_install "bin" "$name" || continue
@@ -245,7 +246,7 @@ fi
 
 # 5) Reload systemd daemon nếu cấu hình systemd được cài
 if [ "$DRY_RUN" -eq 0 ] && should_install "config" "systemd"; then
-    if [ -d "/run/user/$(id -u)/systemd" ] && command -v systemctl >/dev/null 2>&1; then
+    if [ -d "/run/user/$UID/systemd" ] && command -v systemctl >/dev/null 2>&1; then
         systemctl --user daemon-reload >/dev/null 2>&1 || true
         info "Đã reload systemd user daemon."
     fi

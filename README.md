@@ -30,7 +30,8 @@ dotfiles/
 ## Cài đặt trên máy mới
 
 ```bash
-git clone git@github.com:<user>/dotfiles.git ~/Projects/dotfiles
+# Replace OWNER with the GitHub owner of this repository.
+git clone https://github.com/OWNER/dotfiles.git ~/Projects/dotfiles
 cd ~/Projects/dotfiles
 ./install.sh --dry-run   # xem trước
 ./install.sh             # cài cấu hình desktop live mặc định (backup file cũ an toàn)
@@ -38,14 +39,23 @@ cd ~/Projects/dotfiles
 ./install.sh hypr noctalia   # chỉ cài vài mục
 ```
 
+`--all` and an explicit `noctalia` selector can install `state/noctalia/settings.toml`; add `--no-state` to preserve the destination machine's runtime session settings. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for test commands, file ownership, and task completion checks.
+
 ## Đồng bộ sau khi sửa cấu hình
+
+Chỉ đồng bộ các file đã chọn; tránh `rsync --delete` và `git add -A` trên snapshot có file runtime hoặc cấu hình riêng máy.
 
 ```bash
 cd ~/Projects/dotfiles
-rsync -a --delete --exclude={'*.bak','*.bak-*','*.bak.*','*.backup-*','__pycache__','*.pyc','current_wallpaper','gpu','backup','backup_baseline','wallpaper_thumb.jpg'} \
-  ~/.config/hypr/ config/hypr/
-git add -A && git commit -m "update: mô tả thay đổi"
+git status --short
+git diff -- config/hypr
+# Stage only the paths you reviewed, then inspect the staged diff.
+git add -- config/hypr/FILE
+git diff --cached --check
+git diff --cached
 ```
+
+Replace `FILE` with a specific reviewed path. Keep generated and machine-specific files out unless the task explicitly changes their source or ownership.
 
 ## Lưu ý khi dùng trên máy khác
 
@@ -73,32 +83,40 @@ Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục w
 
 ## Workflow rice với worktree (từ 2026-10-16)
 
-Các mục Core Desktop đã cài bằng `./install.sh` — **live là symlink vào repo** (nhánh `main`):
-`~/.config/{hypr,noctalia,quickshell,matugen,kitty,alacritty,gtk-3.0,gtk-4.0,qt5ct,qt6ct,btop,starship.toml}` → `config/*`.
+Các thành phần desktop đang dùng là symlink vào checkout live (nhánh `main`):
+`~/.config/{hypr,noctalia,quickshell,matugen,rice,micro,kitty,alacritty,gtk-3.0,gtk-4.0,qt5ct,qt6ct,btop}` → `config/*`; `~/.config/kdeglobals` → `root/kdeglobals`.
 `~/.local/bin/toggle-desktop` → `bin/toggle-desktop`.
 Sửa trong `config/` của repo = sửa luôn trên máy.
-Muốn áp dụng hoặc đồng bộ trạng thái Noctalia UI: `./install.sh noctalia` (hoặc `./install.sh --all`).
+Trên máy khác, cài riêng trạng thái Noctalia chỉ khi muốn thay trạng thái của máy đó: `./install.sh noctalia`. Dùng `--no-state` để giữ state hiện tại.
 
 ### Thử thay đổi cách ly bằng worktree
 
 ```bash
 cd ~/Projects/dotfiles
-git worktree add .worktrees/<tên> -b <tên>
-# sửa config trong .worktrees/<tên>/config/...
-./wt-prep.sh .worktrees/<tên>     # copy file máy-specific bị gitignore (gpu, current_wallpaper)
-cd .worktrees/<tên> && ./install.sh hypr noctalia quickshell matugen   # trỏ live vào worktree để xem trước
+worktree=.worktrees/rice-example
+branch=feat/rice-example
+components=(hypr quickshell matugen rice) # replace with the components actually changed
+git worktree add "$worktree" -b "$branch"
+./wt-prep.sh "$worktree" # only for a new worktree; copies host-specific wallpaper/GPU inputs
+cd "$worktree"
+./install.sh --dry-run --no-state "${components[@]}"
+./install.sh --no-state "${components[@]}" # preview the selected components
 
-# ưng → merge vào main rồi trỏ live về main (đã gồm thay đổi):
-cd ~/Projects/dotfiles && git merge <tên> && ./install.sh hypr noctalia quickshell matugen
-# không ưng → trỏ live về main như cũ:
-cd ~/Projects/dotfiles && ./install.sh hypr noctalia quickshell matugen
+# After review, fast-forward main and install the same selected components:
+cd ~/Projects/dotfiles
+git merge --ff-only "$branch"
+./install.sh --dry-run --no-state "${components[@]}"
+./install.sh --no-state "${components[@]}"
 ```
+
+To discard a preview before merging, restore the main symlinks for the same components and regenerate changed theme outputs with the theme owner. Inspect installer backups before restoring replaced paths. Do not reuse a feature-specific preview/rollback helper after its recorded base revision has advanced.
 
 ### Reload + rollback
 - Hyprland: `hyprctl reload` + `hyprctl configerrors`
 - Noctalia: `noctalia msg config-reload` (đổi palette: `noctalia msg color-palette-reload`)
 - Rollback: `git revert <commit-rice>` rồi cài lại các mục đã đổi và reload; backup mỗi lần cài symlink: `~/.config/backups/dotfiles-<timestamp>/`.
 - Quy tắc cho agent (opencode/codex): xem `AGENTS.md` trong repo.
+- Build/test commands, generated-file ownership, and agent handoff criteria: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## Adaptive rice
 
@@ -123,7 +141,7 @@ noctalia msg config-reload
 
 # Ma trận dựng template trong thư mục tạm; không thay đổi desktop
 python3 -m unittest discover -s tests -q
-python3 tests/check_palette_matrix.py
+python3 tests/check_palette_matrix.py --no-desktop
 ```
 
 Kế hoạch, quyết định thiết kế và kết quả nghiệm thu nằm trong `docs/rice/`. Ảnh preview và backup máy được giữ cục bộ, không đưa lên GitHub. Mỗi lần áp wallpaper đều có snapshot ở `~/.local/state/desktop-wallpaper/backups/`.

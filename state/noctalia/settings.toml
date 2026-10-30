@@ -92,3 +92,12 @@ wallpaper_scheme = "m3-content"
 [wallpaper]
 enabled = false
 fill_mode = "fit"
+
+    [wallpaper.default]
+    path = "/home/admin/Ảnh/Wallpaper/wallhaven-2166q9.jpg"
+
+    [wallpaper.last]
+    path = "/home/admin/Ảnh/Wallpaper/wallhaven-2166q9.jpg"
+
+    [wallpaper.monitors.eDP-1]
+    path = "/home/admin/Ảnh/Wallpaper/wallhaven-2166q9.jpg"
