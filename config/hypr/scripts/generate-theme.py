@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -70,6 +71,20 @@ def command(argv, timeout=30):
     if output.lower().startswith('error:'):
         raise RuntimeError(output)
     return output
+
+
+def transition_fps():
+    """Use the fastest active output; IPC failure must not abort a transaction."""
+    try:
+        monitors = json.loads(command(['hyprctl', 'monitors', '-j'], timeout=2))
+        rates = [monitor.get('refreshRate') for monitor in monitors
+                 if isinstance(monitor, dict) and not monitor.get('disabled', False)
+                 and monitor.get('dpmsStatus', True)]
+        rates = [rate for rate in rates if isinstance(rate, (int, float))
+                 and not isinstance(rate, bool) and math.isfinite(rate) and rate > 0]
+        return max(1, min(65535, round(max(rates, default=60))))
+    except (RuntimeError, OSError, TypeError, ValueError, subprocess.TimeoutExpired):
+        return 60
 
 
 def acquire_request_lock(lock, timeout=15):
@@ -496,7 +511,7 @@ def apply(wallpaper, config_dir, state_dir, runtime):
         duration_sec = 1.8
         changed_backend = True
         command(['swww', 'img', str(wallpaper), '--transition-type', 'grow', '--transition-pos', 'center',
-                 '--transition-fps', '144', '--transition-duration', str(duration_sec), '--transition-bezier', '.54,0,.34,.99'])
+                 '--transition-fps', str(transition_fps()), '--transition-duration', str(duration_sec), '--transition-bezier', '.54,0,.34,.99'])
         deadline = time.monotonic() + duration_sec + 0.05
 
         _, config, theme_command, palette_changed, mode = palette_for(wallpaper, config_dir)

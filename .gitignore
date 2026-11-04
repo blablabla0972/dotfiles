@@ -32,6 +32,6 @@ Thumbs.db
 # CodeGraph (local index, không commit)
 .codegraph/
 
-# Graphify cache
-graphify-out/cache/
+# Generated Graphify reports and caches stay local
+/graphify-out/
 

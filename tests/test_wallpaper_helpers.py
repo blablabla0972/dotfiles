@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import shutil
 import subprocess
 import sys
@@ -136,6 +137,45 @@ print("ok")
         self.assertEqual(self.state.read_text(), "3|special:special:notes")
 
 
+@unittest.skipUnless(shutil.which("node"), "Node required to execute QML image selection")
+class ThumbnailSourceTests(unittest.TestCase):
+    def test_originals_wait_for_generation_and_ready_keys_stream_incrementally(self):
+        qml = (SWITCHER / 'shell.qml').read_text()
+        functions = '\n'.join(re.search(r'    function ' + name + r'\([^\n]*\) \{.*?\n    \}',
+                                        qml, re.S).group()
+                              for name in ('updateThumbnailKeys', 'thumbnailSource'))
+        binding = re.search(r'source: (root\.thumbnailSource\([^\n]+\))', qml).group(1)
+        script = r'''
+const vm = require('vm'), assert = require('assert/strict');
+const context = vm.createContext({thumbnailKeys: {}, thumbnailsComplete: false,
+    thumbKey: 'a'.repeat(32), thumbUrl: 'file:///thumb.jpg', fileUrl: 'file:///original.jpg', thumbnailFailed: false});
+context.root = context;
+context.cardItem = context;
+vm.runInContext(process.argv[1], context);
+const source = () => vm.runInContext(process.argv[2], context);
+assert.equal(source(), '');
+context.updateThumbnailKeys('noise\n' + 'a'.repeat(16));
+assert.equal(source(), '');
+context.updateThumbnailKeys('a'.repeat(32) + '\n' + 'invalid\n');
+assert.equal(source(), 'file:///thumb.jpg');
+context.thumbnailFailed = true;
+assert.equal(source(), '');
+context.thumbnailsComplete = true;
+assert.equal(source(), 'file:///original.jpg');
+context.thumbnailFailed = false;
+context.thumbnailsComplete = false;
+context.thumbKey = 'b'.repeat(32);
+assert.equal(source(), '');
+context.thumbnailsComplete = true;
+assert.equal(source(), 'file:///original.jpg');
+context.thumbKey = 'a'.repeat(32);
+assert.equal(source(), 'file:///thumb.jpg');
+'''
+        result = subprocess.run(['node', '-e', script, functions, binding],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 @unittest.skipUnless(shutil.which("magick") and shutil.which("md5sum"),
                      "ImageMagick and md5sum required")
 class ThumbnailTests(IsolatedHome):
@@ -153,6 +193,37 @@ class ThumbnailTests(IsolatedHome):
 
     def thumb(self, image):
         return self.cache / (hashlib.md5(image.name.encode()).hexdigest() + ".jpg")
+
+    def test_notifications_include_valid_cold_and_cached_thumbnails(self):
+        image = self.image('Ảnh\nready.png')
+        (self.wallpapers / 'broken.png').write_bytes(b'not an image')
+        command = ['bash', str(SWITCHER / 'generate-thumbs.sh'), '--notify']
+        result = subprocess.run(command, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout.splitlines(), [self.thumb(image).stem])
+        modified = self.thumb(image).stat().st_mtime_ns
+        result = subprocess.run(command, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.stdout.splitlines(), [self.thumb(image).stem])
+        self.assertEqual(self.thumb(image).stat().st_mtime_ns, modified)
+
+    def test_notifying_reader_waits_for_existing_cache_writer(self):
+        image = self.image('locked.png')
+        self.cache.mkdir(parents=True)
+        with (self.cache / 'generate.lock').open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            process = subprocess.Popen(['bash', str(SWITCHER / 'generate-thumbs.sh'), '--notify'],
+                                       env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(select.select([process.stdout], [], [], 0.1)[0], [])
+                self.assertIsNone(process.poll())
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                stdout, stderr = process.communicate(timeout=20)
+                self.assertEqual(process.returncode, 0, stderr)
+                self.assertEqual(stdout.splitlines(), [self.thumb(image).stem])
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.communicate()
 
     def test_spaces_unicode_long_names_and_qml_keys(self):
         images = [self.image(name) for name in

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
@@ -23,6 +25,8 @@ PanelWindow {
     WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     property bool closing: false
+    property var thumbnailKeys: ({})
+    property bool thumbnailsComplete: false
     property var applyState: ApplyState.create(Date.now().toString(36) + "-" + Math.random().toString(36).slice(2))
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")
@@ -232,7 +236,7 @@ PanelWindow {
         if (!active) {
             ackTimeout.stop();
             startWatch.stop();
-            if (applyState.closed && !visible && !previewProcess.running) Qt.quit();
+            if (applyState.closed && !visible && !previewProcess.running && !thumbnailProcess.running) Qt.quit();
             return;
         }
         if (applyProcess.running || applyProcess.requestId === active.requestId) return;
@@ -343,6 +347,35 @@ PanelWindow {
         id: displayModel
     }
 
+    function updateThumbnailKeys(text) {
+        var lines = text.split("\n");
+        var keys = {};
+        for (var i = 0; i < lines.length - 1; ++i) {
+            if (/^[0-9a-f]{32}$/.test(lines[i])) keys[lines[i]] = true;
+        }
+        thumbnailKeys = keys;
+    }
+
+    function thumbnailSource(key, thumbnail, original, failed) {
+        return thumbnailKeys[key] && !failed ? thumbnail : (thumbnailsComplete ? original : "");
+    }
+
+    Process {
+        id: thumbnailProcess
+        command: ["bash", Quickshell.shellDir + "/generate-thumbs.sh", "--notify"]
+        running: true
+        stdout: StdioCollector {
+            waitForEnd: false
+            onTextChanged: root.updateThumbnailKeys(text)
+            onStreamFinished: {
+                root.updateThumbnailKeys(text);
+                root.thumbnailsComplete = true;
+            }
+        }
+        stderr: StdioCollector {}
+        onExited: root.pumpApply()
+    }
+
     function updateDisplayModel() {
         var selectedPath = applyState.selection;
         displayModel.clear();
@@ -360,11 +393,13 @@ PanelWindow {
         for (var r = 0; r < repeatCount; ++r) {
             for (var i = 0; i < n; ++i) {
                 var name = folderModel.get(i, "fileName");
+                var key = Qt.md5(name);
                 displayModel.append({
                     "fileName": name,
                     "filePath": folderModel.get(i, "filePath"),
                     "fileUrl": folderModel.get(i, "fileUrl"),
-                    "thumbUrl": thumbBase + Qt.md5(name) + ".jpg",
+                    "thumbKey": key,
+                    "thumbUrl": thumbBase + key + ".jpg",
                     "originalIndex": i
                 });
             }
@@ -454,6 +489,12 @@ PanelWindow {
 
             delegate: Item {
                 id: cardItem
+                required property int index
+                required property string thumbKey
+                required property string thumbUrl
+                required property string fileUrl
+                property bool thumbnailFailed: false
+                onThumbKeyChanged: thumbnailFailed = false
                 width: PathView.itemWidth !== undefined ? PathView.itemWidth : root.sideWidth
                 height: PathView.itemHeight !== undefined ? PathView.itemHeight : root.sideHeight
                 z: PathView.itemZ !== undefined ? PathView.itemZ : 0
@@ -465,7 +506,7 @@ PanelWindow {
                 Image {
                     id: cardImg
                     anchors.fill: parent
-                    source: thumbUrl
+                    source: root.thumbnailSource(cardItem.thumbKey, cardItem.thumbUrl, cardItem.fileUrl, cardItem.thumbnailFailed)
                     sourceSize: Qt.size(Math.ceil(root.selectedWidth * (Screen.devicePixelRatio || 1)),
                                         Math.ceil(root.selectedHeight * (Screen.devicePixelRatio || 1)))
                     fillMode: Image.PreserveAspectCrop
@@ -475,7 +516,7 @@ PanelWindow {
                     retainWhileLoading: true
                     visible: false
                     onStatusChanged: {
-                        if (status === Image.Error && source !== fileUrl) source = fileUrl;
+                        if (status === Image.Error && source.toString() !== cardItem.fileUrl) cardItem.thumbnailFailed = true;
                     }
                 }
 
@@ -533,8 +574,8 @@ PanelWindow {
                     }
                     onClicked: {
                         contentContainer.forceActiveFocus();
-                        if (carousel.currentIndex === index) root.applyCurrent();
-                        else carousel.currentIndex = index;
+                        if (carousel.currentIndex === cardItem.index) root.applyCurrent();
+                        else carousel.currentIndex = cardItem.index;
                     }
                 }
             }
@@ -657,28 +698,11 @@ PanelWindow {
             easing.type: Easing.OutBack
             easing.overshoot: 1.05
         }
-        // Trì hoãn sinh thumbnail ngầm khi UI đã hoàn toàn ổn định và idle
-        onFinished: {
-            thumbTimer.restart();
-        }
-    }
-
-    Timer {
-        id: thumbTimer
-        interval: 800
-        running: false
-        repeat: false
-        onTriggered: {
-            Quickshell.execDetached([
-                Quickshell.shellDir + "/generate-thumbs.sh"
-            ]);
-        }
     }
 
     // Hoạt ảnh biến mất (Exit)
     SequentialAnimation {
         id: exitAnimation
-        onStarted: thumbTimer.stop()
         ParallelAnimation {
             OpacityAnimator {
                 target: contentContainer

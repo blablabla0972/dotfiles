@@ -7,7 +7,11 @@ WALL_DIR="$HOME/Ảnh/Wallpaper"
 install -d -m 700 "$CACHE_DIR"
 [[ -d "$WALL_DIR" ]] || exit 0
 exec 9>"$CACHE_DIR/generate.lock"
-flock -n 9 || exit 0
+if [[ "${1:-}" == --notify ]]; then
+    flock 9
+else
+    flock -n 9 || exit 0
+fi
 
 # Lower CPU and I/O priority so background thumbnailing never starves compositor or UI
 renice -n 19 -p $$ >/dev/null 2>&1 || true
@@ -26,12 +30,16 @@ while IFS= read -r -d '' image; do
         if magick '-[0]' -auto-orient -thumbnail '1000x700>' -quality 85 "$temporary" < "$image" \
                 && [[ -s "$temporary" ]] && magick identify -quiet "$temporary" >/dev/null 2>&1 \
                 && mv -f -- "$temporary" "$thumb"; then
-            continue
+            :
         else
             rm -f -- "$temporary"
             printf 'Không tạo được thumbnail: %s\n' "$image" >&2
             status=1
+            continue
         fi
+    fi
+    if [[ "${1:-}" == --notify ]]; then
+        printf '%s\n' "${key%% *}"
     fi
 done <&8
 wait "$enumeration_pid" || status=1

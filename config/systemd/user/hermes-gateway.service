@@ -1,5 +1,6 @@
 [Unit]
 Description=Hermes Agent Gateway - Messaging Platform Integration
+ConditionFileIsExecutable=%h/.hermes/hermes-agent/.hermes/bin/hermes
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=0

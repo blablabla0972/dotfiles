@@ -75,17 +75,22 @@ Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục w
 | Thành phần | Vai trò |
 |---|---|
 | Hyprland 0.56.2 | Compositor, config backend **Lua** (`hyprland.lua` load 11 module trong `config/`) |
-| Noctalia | Bar + notification + control center (thay waybar/dunst/swaync) |
+| Noctalia | Bar + notification + control center + khóa màn hình và idle |
 | swww | Wallpaper daemon (chạy qua systemd user unit) |
 | matugen | Sinh màu từ wallpaper → `hypr/colors.conf` |
-| hyprlock | Màn hình khóa |
+| hyprlock / hypridle | Cấu hình dự phòng; không tự chạy cùng Noctalia |
 | fcitx5 + Bamboo | Nhập tiếng Việt |
+
+Noctalia quản lý một lịch idle: giảm sáng sau 3 phút, khóa sau 5 phút, tắt màn hình sau 6 phút và khóa/suspend sau 30 phút; hoạt động trở lại sẽ khôi phục độ sáng. `Super+L` và hook `started` cùng gọi bộ khóa Noctalia; hook chạy khi khởi động/restart shell, không chạy khi reload config. Không bật hypridle đồng thời vì Noctalia đã sở hữu D-Bus screensaver và xử lý yêu cầu chặn idle. Hermes là service tùy chọn: `--all` không tự bật gateway; chỉ bật thủ công trên máy đã cài Hermes. Unit sẽ bỏ qua khởi động nếu thiếu executable.
+
+Service swww dùng `ExecSearchPath` của systemd ≥250 để tìm daemon trong `~/.local/bin` hoặc `/usr/bin`. Carousel tạo thumbnail ngay khi mở và nạp dần từ cache; chuyển wallpaper lấy FPS từ màn hình đang bật (mặc định 60 khi không đọc được IPC). GTK4 dùng CSS semantic cho cả dark/light, và Brave không còn ép dark mode. Artifact `graphify-out/` được giữ cục bộ, không theo dõi trong Git.
 
 ## Workflow rice với worktree (từ 2026-10-16)
 
-Các thành phần desktop đang dùng là symlink vào checkout live (nhánh `main`):
+Các thành phần desktop dùng symlink vào checkout live (phần lớn trên nhánh `main`):
 `~/.config/{hypr,noctalia,quickshell,matugen,rice,micro,kitty,alacritty,gtk-3.0,gtk-4.0,qt5ct,qt6ct,btop}` → `config/*`; `~/.config/kdeglobals` → `root/kdeglobals`.
 `~/.local/bin/toggle-desktop` → `bin/toggle-desktop`.
+Hiện Noctalia trỏ vào `.worktrees/perf-panel-20261029/config/noctalia` và Quickshell trỏ vào `.worktrees/rice-audit-agy-20261030/config/quickshell`; các bản sửa kiểm toán được áp dụng ở cả checkout chính và hai preview này, giữ thay đổi giao diện riêng của chúng.
 Sửa trong `config/` của repo = sửa luôn trên máy.
 Trên máy khác, cài riêng trạng thái Noctalia chỉ khi muốn thay trạng thái của máy đó: `./install.sh noctalia`. Dùng `--no-state` để giữ state hiện tại.
 

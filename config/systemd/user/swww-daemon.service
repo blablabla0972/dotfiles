@@ -5,7 +5,8 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/swww-daemon --layer bottom
+ExecSearchPath=%h/.local/bin:/usr/bin
+ExecStart=swww-daemon --layer bottom
 Restart=on-failure
 RestartSec=1
 

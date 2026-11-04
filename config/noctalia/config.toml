@@ -332,6 +332,32 @@ tint_intensity = 0.34
 transition = [ "fade", "zoom" ]
 transition_duration = 1000
 
+[idle]
+behavior_order = [ "dim", "lock", "screen-off", "lock-and-suspend" ]
+pre_action_fade_seconds = 0
+
+    [idle.behavior.dim]
+    enabled = true
+    timeout = 180
+    action = "command"
+    command = "brightnessctl -s set 20%"
+    resume_command = "brightnessctl -r"
+
+    [idle.behavior.lock]
+    enabled = true
+    timeout = 300
+    action = "lock"
+
+    [idle.behavior.screen-off]
+    enabled = true
+    timeout = 360
+    action = "screen_off"
+
+    [idle.behavior.lock-and-suspend]
+    enabled = true
+    timeout = 1800
+    action = "lock_and_suspend"
+
     [[control_center.shortcuts]]
     type = "wifi"
 
@@ -356,6 +382,7 @@ type = "battery"
 color = "on_surface_variant"
 
 [hooks]
+started = ["noctalia msg session lock"]
 wallpaper_changed = ["python3 $HOME/.config/hypr/scripts/generate-theme.py --wallpaper-changed"]
 theme_mode_changed = ["python3 $HOME/.config/hypr/scripts/generate-theme.py --theme-mode-changed"]
 

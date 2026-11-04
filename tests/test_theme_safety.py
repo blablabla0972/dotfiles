@@ -20,6 +20,29 @@ theme = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(theme)
 
 
+class TransitionFpsTest(unittest.TestCase):
+    def test_uses_highest_active_refresh_and_handles_unavailable_ipc(self):
+        cases = [
+            ([{'refreshRate': 59.94}], 60),
+            ([{'refreshRate': 60}, {'refreshRate': 143.97}], 144),
+            ([{'refreshRate': 359.98}], 360),
+            ([{'refreshRate': 60}, {'refreshRate': 240, 'disabled': True}], 60),
+            ([{'refreshRate': 60}, {'refreshRate': 240, 'dpmsStatus': False}], 60),
+            ([{'refreshRate': None}, {'refreshRate': 165}], 165),
+            ([{'refreshRate': float('inf')}, {'refreshRate': -1}], 60),
+            ([{'refreshRate': 100000}], 65535),
+            ([], 60), ({'error': 'unavailable'}, 60),
+        ]
+        for monitors, expected in cases:
+            with self.subTest(monitors=monitors), patch.object(theme, 'command', return_value=json.dumps(monitors)):
+                self.assertEqual(theme.transition_fps(), expected)
+        for error in (RuntimeError('IPC unavailable'), FileNotFoundError(), subprocess.TimeoutExpired('hyprctl', 2)):
+            with self.subTest(error=error), patch.object(theme, 'command', side_effect=error):
+                self.assertEqual(theme.transition_fps(), 60)
+        with patch.object(theme, 'command', return_value='invalid JSON'):
+            self.assertEqual(theme.transition_fps(), 60)
+
+
 class SnapshotSafetyTest(unittest.TestCase):
     def test_restore_preserves_symlink_and_target_contents_and_mode(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(theme.shutil, 'which', return_value=None):

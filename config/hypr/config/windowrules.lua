@@ -2,7 +2,7 @@
 
 -- Generic floating position
 local persistentFloatApps = "^(org\\.kde\\.dolphin|org\\.kde\\.ark|org\\.pulseaudio\\.pavucontrol)$"
-hl.window_rule({ match = { class = persistentFloatApps, float = true }, persistent_size = true })
+hl.window_rule({ match = { class = persistentFloatApps }, float = true, persistent_size = true })
 
 -- Fast-path for modal dialogs
 hl.window_rule({ match = { modal = true }, float = true, center = true })

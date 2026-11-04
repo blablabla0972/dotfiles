@@ -235,6 +235,8 @@ def check(desktop=True):
                     assert native[mode][role] == colors[key], (name, mode, role)
                 rendered = scratch / f'{name}-{mode}'
                 rendered.mkdir()
+                # Native GTK templates import this companion, with no extensions enabled here.
+                (rendered / 'noctalia-extensions.css').write_text('/* No community GTK extensions. */\n')
                 with patch.object(theme, 'command', lambda args: run(args, env).strip()):
                     expected = theme.stage_native(native_command, catalog, config, data, rendered)
                 # stage_native renders only into scratch and must never deploy or execute hooks.
