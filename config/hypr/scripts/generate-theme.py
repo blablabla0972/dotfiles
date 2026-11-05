@@ -394,7 +394,19 @@ def sync_toolkit_settings(config_dir, mode):
 
 
 def stage_native(theme_command, config, config_dir, data_dir, directory):
-    base = Path('/usr/share/noctalia/assets/templates')
+    # The running shell may use a different asset bundle from the system package.
+    try:
+        pids = command(['pgrep', '-u', str(os.getuid()), '-x', 'noctalia']).split()
+        roots = set()
+        for pid in pids:
+            for item in Path('/proc', pid, 'environ').read_bytes().split(b'\0'):
+                if item.startswith(b'NOCTALIA_ASSETS_DIR='):
+                    roots.add(os.fsdecode(item.split(b'=', 1)[1]))
+        if len(roots) > 1:
+            raise RuntimeError('Running Noctalia processes use different asset bundles')
+        base = Path(next(iter(roots), '/usr/share/noctalia/assets')) / 'templates'
+    except (OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError('Could not identify the running Noctalia asset bundle') from error
     catalog = tomllib.loads((base / 'builtin.toml').read_text())['templates']
     specs, expected = [], {}
     ids = config['theme'].get('templates', {}).get('builtin_ids', [])
