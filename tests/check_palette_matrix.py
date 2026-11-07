@@ -22,7 +22,8 @@ spec.loader.exec_module(theme)
 def run(args, env):
     result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=45)
     if result.returncode:
-        raise RuntimeError(f'{args[0]} exited {result.returncode}: {result.stderr[-1500:]}')
+        raise RuntimeError(f'{args[0]} exited {result.returncode}: {result.stderr[-1500:]}') from subprocess.CalledProcessError(
+            result.returncode, args, output=result.stdout, stderr=result.stderr)
     return result.stdout
 
 

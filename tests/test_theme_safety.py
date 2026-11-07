@@ -43,6 +43,44 @@ class TransitionFpsTest(unittest.TestCase):
             self.assertEqual(theme.transition_fps(), 60)
 
 
+class NativeAssetDiscoveryTest(unittest.TestCase):
+    def test_no_running_shell_uses_installed_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = root / 'assets'
+            (assets / 'templates/hyprland').mkdir(parents=True)
+            (assets / 'templates/builtin.toml').write_text('[templates.hyprland]\n')
+            (assets / 'templates/hyprland/hyprland.lua').write_text('-- source\n')
+            config = root / 'config'
+            (config / 'hypr').mkdir(parents=True)
+            lookup_error = subprocess.CalledProcessError(1, ['pgrep'])
+
+            def command(argv):
+                if argv[0] == 'pgrep':
+                    raise RuntimeError('no processes') from lookup_error
+                self.assertEqual(argv[0], 'noctalia')
+                Path(argv[-1].split(':', 1)[1]).write_text('-- rendered\n')
+
+            def path(value, *parts):
+                return assets if value == '/usr/share/noctalia/assets' else Path(value, *parts)
+
+            with patch.object(theme, 'command', side_effect=command), patch.object(theme, 'Path', side_effect=path):
+                expected = theme.stage_native(['noctalia', 'theme'],
+                                              {'theme': {'templates': {'builtin_ids': ['hyprland']}}},
+                                              config, root / 'data', root)
+            self.assertEqual(list(expected), [str(config / 'hypr/noctalia.lua')])
+
+    def test_process_lookup_errors_are_not_treated_as_an_absent_shell(self):
+        error = subprocess.CalledProcessError(2, ['pgrep'], stderr='lookup failed')
+
+        def command(argv):
+            raise RuntimeError('lookup failed') from error
+
+        with patch.object(theme, 'command', side_effect=command):
+            with self.assertRaisesRegex(RuntimeError, 'lookup failed'):
+                theme.stage_native([], {}, Path('/unused'), Path('/unused'), Path('/unused'))
+
+
 class SnapshotSafetyTest(unittest.TestCase):
     def test_restore_preserves_symlink_and_target_contents_and_mode(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(theme.shutil, 'which', return_value=None):

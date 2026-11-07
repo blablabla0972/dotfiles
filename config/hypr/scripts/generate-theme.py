@@ -397,6 +397,11 @@ def stage_native(theme_command, config, config_dir, data_dir, directory):
     # The running shell may use a different asset bundle from the system package.
     try:
         pids = command(['pgrep', '-u', str(os.getuid()), '-x', 'noctalia']).split()
+    except RuntimeError as error:
+        if not isinstance(error.__cause__, subprocess.CalledProcessError) or error.__cause__.returncode != 1:
+            raise
+        pids = []  # No running shell: use the installed asset bundle below.
+    try:
         roots = set()
         for pid in pids:
             for item in Path('/proc', pid, 'environ').read_bytes().split(b'\0'):

@@ -29,6 +29,16 @@ class E2EEnvironment:
         for p in (self.home, self.bin, self.config, self.state, self.cache, self.runtime):
             p.mkdir(parents=True, exist_ok=True)
 
+        templates = self.root / "noctalia-assets/templates"
+        (templates / "hyprland").mkdir(parents=True, exist_ok=True)
+        (templates / "builtin.toml").write_text(
+            '[templates.hyprland]\n'
+            'input_path = "hyprland/hyprland.lua"\n'
+            'output_path = "$XDG_CONFIG_HOME/hypr/noctalia.lua"\n',
+            encoding="utf-8",
+        )
+        (templates / "hyprland/hyprland.lua").write_text("-- rendered template\n", encoding="utf-8")
+
         self.env = os.environ.copy()
         self.env.update({
             "HOME": str(self.home),
@@ -39,6 +49,7 @@ class E2EEnvironment:
             "PATH": f"{self.bin}:{os.environ.get('PATH', '')}",
             "HYPRLAND_INSTANCE_SIGNATURE": "e2e_test_instance",
             "DOTFILES_REPO": str(REPO_ROOT),
+            "NOCTALIA_ASSETS_DIR": str(templates.parent),
         })
 
         self._setup_stubs()
@@ -140,6 +151,16 @@ if cmd[:2] == ["config", "validate"]:
 sys.exit(0)
 '''
         self.make_executable("noctalia", noctalia_script)
+
+        # Report the generator's PID so /proc exposes its fixture asset environment.
+        self.make_executable(
+            "pgrep",
+            "#!/usr/bin/env python3\n"
+            "import os, sys\n"
+            "if sys.argv[1:] != ['-u', str(os.getuid()), '-x', 'noctalia']:\n"
+            "    sys.exit(1)\n"
+            "print(os.getppid())\n",
+        )
 
         # 4. hyprctl stub
         hyprctl_script = r'''#!/usr/bin/env python3

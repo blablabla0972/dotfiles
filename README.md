@@ -72,6 +72,24 @@ Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục w
 
 ## Hệ sinh thái đang dùng
 
+Noctalia cần bản native C++23 v5.2.1 đã patch, có `theme.matugen_palette`;
+gói upstream chưa patch không đủ cho pipeline này. Mã nguồn được quản lý ở
+[noctalia-dashboard-source](https://github.com/blablabla0972/noctalia-dashboard-source),
+còn patch, hướng dẫn build và launcher nằm trong
+[noctalia-dashboard-redesign](https://github.com/blablabla0972/noctalia-dashboard-redesign)
+(`README.md`, `DELIVERY.md`). Installer dotfiles chỉ tạo symlink cấu hình, không
+build hoặc cài binary này; chuẩn bị binary và assets cùng revision trước khi cài.
+Launcher `~/.local/bin/noctalia` phải export `NOCTALIA_ASSETS_DIR` tới thư mục assets
+của bản build rồi `exec` binary với `"$@"`; thay đường dẫn home của máy cũ khi dựng lại.
+Trên máy hiện tại, `run-noctalia.sh` dùng `build-bar-background-20261030/noctalia`
+và `worktrees/bar-background-20261030/assets` trong `~/noctalia-dashboard-redesign`;
+kiểm tra launcher thực tế vì các tài liệu build cũ có thể ghi thư mục khác.
+Kiểm tra bằng `noctalia config validate` trước khi bật autostart.
+Revision source của preview hiện tại là `ade8aa6c17d72ee571d08d0f1b765e8894c07eb5`;
+GitHub chưa tìm thấy commit này khi kiểm tra ngày 2026-11-07, nên chưa thể khẳng định
+clone hai repo trên tái dựng chính xác binary đang chạy. Giữ source/build cục bộ
+cho tới khi revision tương ứng được công bố và kiểm chứng.
+
 | Thành phần | Vai trò |
 |---|---|
 | Hyprland 0.56.2 | Compositor, config backend **Lua** (`hyprland.lua` load 11 module trong `config/`) |

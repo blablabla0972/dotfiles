@@ -1,5 +1,22 @@
 # Development guide
 
+## Verification checkpoint (2026-11-07)
+
+Rechecking `a86a7fd` found three E2E failures: native template staging treated
+`pgrep` exit 1 (no running shell) as fatal, and E2E asset discovery used host
+processes. The fix falls back to installed assets only for exit 1, preserves
+other lookup errors, and gives E2E tests a scratch asset catalog. The palette
+matrix command adapter now preserves subprocess error causes as production does.
+Regression tests were observed failing before the fix and passing afterward.
+All 166 unittests and 24 dark/light palette cases pass, with no unittest skips;
+shell syntax, selected Hyprland installer dry-run and diff checks pass.
+Noctalia config validates; compositor IPC is unavailable in this sandbox, so no
+live reload, wallpaper transition, lock/suspend or visual acceptance is claimed.
+Existing main and preview symlinks, generated files and unrelated Micro/MIME
+edits are preserved. README documents the patched native Noctalia prerequisite
+and its current source publication gap. AGY cannot start here (localhost socket
+denied); GPT-6.1 Sol agents handled independent review and the E2E fixture.
+
 ## Audit verification checkpoint (2026-11-04)
 
 All audit source fixes are implemented and applied to the running desktop; scope and evidence are in [AUDIT_FIXES_2026-11-04.md](rice/AUDIT_FIXES_2026-11-04.md). The reviewed changes are based on `70df281`; the user requested publication to `origin/main` on 2026-11-04. Unrelated Micro edits and local Graphify data are preserved; nine generated Graphify files are untracked/ignored, retained on disk.
