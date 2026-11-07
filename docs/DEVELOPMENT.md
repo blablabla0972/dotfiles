@@ -1,5 +1,33 @@
 # Development guide
 
+## Full-access follow-up (2026-11-07)
+
+Full access resolved the earlier sandbox limits: Hyprland `reload config-only`
+returns `ok` with no config errors; Noctalia config validates, mode is dark,
+the eDP-1 output is 1920x1080 at 144.005 Hz, `swww-daemon.service` is active and
+no user units are failed. Reapplying the current wallpaper returned JSON
+`status=applied` for `dotfiles-verify-20261107`, without dirtying generated files.
+
+Main now includes three previously preview-only source changes: Noctalia
+`card_borders=false`, symlink-aware thumbnail enumeration, and the carousel's
+initial selection, stable delegate geometry and selected border fixes.
+The newer main palette hash fast path is retained. Focused tests cover linked
+images and library roots; all 167 unittests pass with no skips, and all 24
+palette cases pass against the running native shell's assets.
+The candidate picker loads without QML runtime errors; the screenshot attempt
+stalled in `grim` and was terminated, so visual acceptance is not inferred.
+The portal app-ID registration warning remains; live links and user state are
+unchanged, and only the temporary picker instance was stopped.
+
+Native source `ade8aa6c` (VERSION 5.3.0) is published on
+`noctalia-dashboard-source:dotfiles-runtime-20261107` and verified by ls-remote.
+The native target rebuilt successfully; the launcher points to that build and
+its matching assets. See [RESTORE.md](RESTORE.md) for prerequisites and the
+portable launcher. Fresh OS installation and forced lock/suspend remain untested.
+AGY Gemini 3.8 High completed an installer audit; its separate implementation
+worktree is `.worktrees/installer-completion-20261107`, job
+`implement-mw6belih-f33e536d` (collect via the AGY companion from that worktree).
+
 ## Verification checkpoint (2026-11-07)
 
 Rechecking `a86a7fd` found three E2E failures: native template staging treated

@@ -246,12 +246,15 @@ const ApplyState = vm.createContext({});
 vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), ApplyState);
 const names = JSON.parse(process.argv[1]);
 let applyState = ApplyState.create("thumbnail-fixture");
+let initialWallpaperLoaded = true, initialWallpaper = "", rebuildingModel = false;
 applyState = ApplyState.reduce(applyState, {type: "select", wallpaper: names[1]});
 const transition = event => { applyState = ApplyState.reduce(applyState, event); };
 const carousel = {currentIndex: 0};
 const Qt = {md5: name => crypto.createHash("md5").update(name, "utf8").digest("hex")};
 const Quickshell = {env: key => process.env[key]};
-const folderModel = {count: names.length, get: (i, role) => role === "fileName" ? names[i] : names[i]};
+const FolderListModel = {Ready: 1};
+const folderModel = {status: FolderListModel.Ready, count: names.length,
+    get: (i, role) => role === "fileName" ? names[i] : names[i]};
 const items = [];
 const displayModel = {get count() { return items.length; }, clear: () => { items.length = 0; },
     append: item => items.push(item), get: i => items[i]};

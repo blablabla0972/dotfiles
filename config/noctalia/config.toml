@@ -58,7 +58,7 @@ capsule_border_width = 1.0
 
 [shell]
 button_borders = true
-card_borders = true
+card_borders = false
 clipboard_image_action_command = "swash --stdin --name \"swash-$(date +'%Y-%m-%d_%H:%M:%S').png\""
 corner_radius_scale = 1.00
 font_family = "Adwaita Sans"

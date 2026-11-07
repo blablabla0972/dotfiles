@@ -221,7 +221,9 @@ const cache = '/tmp/cache # %23 ? Ảnh';
 const Quickshell = {env: key => ({HOME: home, XDG_CACHE_HOME: cache})[key]};
 const Qt = {md5: () => 'a'.repeat(32)};
 let applyState = s;
-const folderModel = {count: 1, get: (i, role) => ({fileName: 'picture.png',
+let initialWallpaperLoaded = true, initialWallpaper = '', rebuildingModel = false;
+const FolderListModel = {Ready: 1};
+const folderModel = {status: FolderListModel.Ready, count: 1, get: (i, role) => ({fileName: 'picture.png',
     filePath: home + '/Ảnh/Wallpaper/picture.png', fileUrl: 'file:///picture.png'})[role]};
 const items = [];
 const displayModel = {get count() {return items.length;}, clear: () => {items.length = 0;},
@@ -260,6 +262,35 @@ for (const raw of ['bad json', envelope(dark), envelope(preview).replace('#12345
 const failed = api.finishPreview(preview, preview.requestId, envelope(preview), 1, 0);
 assert.equal(failed.phase, 'failed'); assert.equal(failed.swatches.length, 0);
 """)
+
+
+@unittest.skipUnless(shutil.which('magick') and shutil.which('md5sum'),
+                     'ImageMagick and md5sum required')
+class ThumbnailEnumerationTests(unittest.TestCase):
+    def test_symlinked_wallpaper_and_library_root(self):
+        for linked_root in (False, True):
+            with self.subTest(linked_root=linked_root), tempfile.TemporaryDirectory() as temp:
+                base = Path(temp)
+                home = base / 'home'
+                wallpapers = home / 'Ảnh/Wallpaper'
+                wallpapers.parent.mkdir(parents=True)
+                if linked_root:
+                    library = base / 'library'
+                    library.mkdir()
+                    wallpapers.symlink_to(library, target_is_directory=True)
+                else:
+                    wallpapers.mkdir()
+                image = base / 'source.ppm'
+                image.write_bytes(b'P6\n1 1\n255\n' + bytes([69, 103, 137]))
+                (wallpapers / 'linked.png').symlink_to(image)
+                cache = base / 'cache'
+                env = dict(os.environ, HOME=str(home), XDG_CACHE_HOME=str(cache))
+                result = subprocess.run(['bash', str(CAROUSEL / 'generate-thumbs.sh'), '--notify'],
+                                        env=env, capture_output=True, text=True, timeout=20)
+                key = hashlib.md5(b'linked.png').hexdigest()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), [key])
+                self.assertTrue((cache / 'wallpaper-switcher-thumbs-v3' / (key + '.jpg')).is_file())
 
 
 class PreviewHelperTests(unittest.TestCase):

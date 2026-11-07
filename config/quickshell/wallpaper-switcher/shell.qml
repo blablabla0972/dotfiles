@@ -30,6 +30,9 @@ PanelWindow {
     property var applyState: ApplyState.create(Date.now().toString(36) + "-" + Math.random().toString(36).slice(2))
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")
+    property string initialWallpaper: ""
+    property bool initialWallpaperLoaded: false
+    property bool rebuildingModel: false
     property string themeMode: "dark"
     property var paletteData: ({})
     property string adaptiveText: ""
@@ -318,6 +321,31 @@ PanelWindow {
         return "file://" + path.split("/").map(encodeURIComponent).join("/");
     }
 
+    function finishInitialWallpaper(text) {
+        if (initialWallpaperLoaded) return;
+        initialWallpaper = text.endsWith("\0") ? text.slice(0, -1) : "";
+        initialWallpaperLoaded = true;
+        rebuildTimer.restart();
+    }
+
+    // A missing or stalled optional lookup must not prevent opening the picker.
+    Timer {
+        id: initialWallpaperTimeout
+        interval: 1000
+        running: !root.initialWallpaperLoaded
+        onTriggered: root.finishInitialWallpaper("")
+    }
+
+    // Resolve once before building the model; NUL preserves whitespace in filenames.
+    Process {
+        id: currentWallpaperQuery
+        command: ["readlink", "--canonicalize-existing", "--zero", "--", root.configHome + "/hypr/current_wallpaper"]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: root.finishInitialWallpaper(text)
+        }
+    }
+
     // Đọc ảnh từ thư mục ~/Ảnh/Wallpaper
     FolderListModel {
         id: folderModel
@@ -377,10 +405,13 @@ PanelWindow {
     }
 
     function updateDisplayModel() {
-        var selectedPath = applyState.selection;
+        if (!initialWallpaperLoaded || folderModel.status !== FolderListModel.Ready) return;
+        var selectedPath = applyState.selection || initialWallpaper;
+        rebuildingModel = true;
         displayModel.clear();
         var n = folderModel.count;
         if (n === 0) {
+            rebuildingModel = false;
             transition({type: "select", wallpaper: ""});
             return;
         }
@@ -410,10 +441,12 @@ PanelWindow {
                 break;
             }
         }
+        rebuildingModel = false;
         syncSelection();
     }
 
     function syncSelection() {
+        if (rebuildingModel) return;
         var item = displayModel.get(carousel.currentIndex);
         transition({type: "select", wallpaper: item ? item.filePath : ""});
     }
@@ -488,94 +521,117 @@ PanelWindow {
             onCurrentIndexChanged: root.syncSelection()
 
             delegate: Item {
-                id: cardItem
+                id: cardDelegate
                 required property int index
                 required property string thumbKey
                 required property string thumbUrl
                 required property string fileUrl
-                property bool thumbnailFailed: false
-                onThumbKeyChanged: thumbnailFailed = false
-                width: PathView.itemWidth !== undefined ? PathView.itemWidth : root.sideWidth
-                height: PathView.itemHeight !== undefined ? PathView.itemHeight : root.sideHeight
+                // PathView positions this fixed footprint. Resizing its delegate from
+                // interpolated path attributes feeds back into refill() and can hang Qt.
+                // These IDs intentionally refer to the enclosing shell component.
+                // qmllint disable unqualified
+                width: root.selectedWidth
+                height: root.selectedHeight
+                // qmllint enable unqualified
                 z: PathView.itemZ !== undefined ? PathView.itemZ : 0
                 opacity: PathView.itemOpacity !== undefined ? PathView.itemOpacity : 1
-                readonly property real slant: height * 0.34
-                readonly property bool selected: PathView.isCurrentItem
-                readonly property bool effectsActive: root.visible && contentContainer.visible && PathView.onPath && opacity > 0
 
-                Image {
-                    id: cardImg
-                    anchors.fill: parent
-                    source: root.thumbnailSource(cardItem.thumbKey, cardItem.thumbUrl, cardItem.fileUrl, cardItem.thumbnailFailed)
-                    sourceSize: Qt.size(Math.ceil(root.selectedWidth * (Screen.devicePixelRatio || 1)),
-                                        Math.ceil(root.selectedHeight * (Screen.devicePixelRatio || 1)))
-                    fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
-                    cache: true
-                    smooth: true
-                    retainWhileLoading: true
-                    visible: false
-                    onStatusChanged: {
-                        if (status === Image.Error && source.toString() !== cardItem.fileUrl) cardItem.thumbnailFailed = true;
+                Item {
+                    id: cardItem
+                    readonly property int index: cardDelegate.index
+                    readonly property string thumbKey: cardDelegate.thumbKey
+                    readonly property string thumbUrl: cardDelegate.thumbUrl
+                    readonly property string fileUrl: cardDelegate.fileUrl
+                    property bool thumbnailFailed: false
+                    onThumbKeyChanged: thumbnailFailed = false
+                    anchors.centerIn: parent
+                    width: cardDelegate.PathView.itemWidth !== undefined ? cardDelegate.PathView.itemWidth : root.sideWidth
+                    height: cardDelegate.PathView.itemHeight !== undefined ? cardDelegate.PathView.itemHeight : root.sideHeight
+                    readonly property real slant: height * 0.34
+                    readonly property bool selected: cardDelegate.PathView.isCurrentItem
+                    readonly property bool effectsActive: root.visible && contentContainer.visible && cardDelegate.PathView.onPath && cardDelegate.opacity > 0
+
+                    Image {
+                        id: cardImg
+                        anchors.fill: parent
+                        source: root.thumbnailSource(cardItem.thumbKey, cardItem.thumbUrl, cardItem.fileUrl, cardItem.thumbnailFailed)
+                        sourceSize: Qt.size(Math.ceil(root.selectedWidth * (Screen.devicePixelRatio || 1)),
+                                            Math.ceil(root.selectedHeight * (Screen.devicePixelRatio || 1)))
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        cache: true
+                        smooth: true
+                        retainWhileLoading: true
+                        visible: false
+                        onStatusChanged: {
+                            if (status === Image.Error && source.toString() !== cardItem.fileUrl) cardItem.thumbnailFailed = true;
+                        }
                     }
-                }
 
-                // Clip the frame, not the image: straight features stay undistorted.
-                Shape {
-                    id: cardMask
-                    anchors.fill: parent
-                    visible: false
-                    layer.enabled: cardItem.effectsActive
-                    layer.smooth: true
-                    ShapePath {
-                        strokeWidth: 0
-                        fillColor: "white"
-                        startX: cardItem.slant; startY: 0
-                        PathLine { x: cardItem.width; y: 0 }
-                        PathLine { x: cardItem.width - cardItem.slant; y: cardItem.height }
-                        PathLine { x: 0; y: cardItem.height }
-                        PathLine { x: cardItem.slant; y: 0 }
+                    // Clip the frame, not the image: straight features stay undistorted.
+                    Shape {
+                        id: cardMask
+                        anchors.fill: parent
+                        visible: false
+                        layer.enabled: cardItem.effectsActive
+                        layer.smooth: true
+                        ShapePath {
+                            strokeWidth: 0
+                            fillColor: "white"
+                            startX: cardItem.slant; startY: 0
+                            PathLine { x: cardItem.width; y: 0 }
+                            PathLine { x: cardItem.width - cardItem.slant; y: cardItem.height }
+                            PathLine { x: 0; y: cardItem.height }
+                            PathLine { x: cardItem.slant; y: 0 }
+                        }
                     }
-                }
 
-                MultiEffect {
-                    anchors.fill: parent
-                    visible: cardItem.effectsActive
-                    source: cardItem.effectsActive ? cardImg : null
-                    maskEnabled: cardItem.effectsActive
-                    maskSource: cardItem.effectsActive ? cardMask : null
-                    autoPaddingEnabled: false
-                }
-
-                Shape {
-                    anchors.fill: parent
-                    ShapePath {
-                        strokeWidth: cardItem.selected ? 3 : 2
-                        strokeColor: cardItem.selected ? (root.palette.mFocusRing || root.palette.mPrimary || "transparent") : (root.palette.mOutline || "transparent")
-                        fillColor: cardItem.selected || !root.palette.mSurfaceVariant ? "transparent" : Qt.alpha(root.palette.mSurfaceVariant, 0.26)
-                        joinStyle: ShapePath.MiterJoin
-                        startX: cardItem.slant + 1.5; startY: 1.5
-                        PathLine { x: cardItem.width - 1.5; y: 1.5 }
-                        PathLine { x: cardItem.width - cardItem.slant - 1.5; y: cardItem.height - 1.5 }
-                        PathLine { x: 1.5; y: cardItem.height - 1.5 }
-                        PathLine { x: cardItem.slant + 1.5; y: 1.5 }
+                    MultiEffect {
+                        anchors.fill: parent
+                        visible: cardItem.effectsActive
+                        source: cardItem.effectsActive ? cardImg : null
+                        maskEnabled: cardItem.effectsActive
+                        maskSource: cardItem.effectsActive ? cardMask : null
+                        autoPaddingEnabled: false
                     }
-                }
 
-                MouseArea {
-                    anchors.fill: parent
-                    enabled: !root.closing
-                    cursorShape: Qt.PointingHandCursor
-                    // Let clicks in a card's transparent corners reach cards behind it.
-                    onPressed: (mouse) => {
-                        var left = cardItem.slant * (1 - mouse.y / cardItem.height);
-                        if (mouse.x < left || mouse.x > left + cardItem.width - cardItem.slant)
-                            mouse.accepted = false;
+                    Shape {
+                        id: cardBorder
+                        anchors.fill: parent
+                        readonly property real strokeW: cardItem.selected ? 4 : 2
+                        readonly property real insetY: strokeW / 2
+                        readonly property real diag: Math.sqrt(cardItem.height * cardItem.height + cardItem.slant * cardItem.slant)
+                        readonly property real insetObtuse: cardItem.height > 0 ? (insetY * (diag - cardItem.slant) / cardItem.height) : 0
+                        readonly property real insetAcute: cardItem.height > 0 ? (insetY * (diag + cardItem.slant) / cardItem.height) : 0
+
+                        ShapePath {
+                            strokeWidth: cardBorder.strokeW
+                            strokeColor: cardItem.selected ? (root.palette.mFocusRing || root.palette.mPrimary || "transparent") : (root.palette.mOutline || "transparent")
+                            fillColor: cardItem.selected || !root.palette.mSurfaceVariant ? "transparent" : Qt.alpha(root.palette.mSurfaceVariant, 0.26)
+                            joinStyle: ShapePath.MiterJoin
+                            startX: cardItem.slant + cardBorder.insetObtuse; startY: cardBorder.insetY
+                            PathLine { x: cardItem.width - cardBorder.insetAcute; y: cardBorder.insetY }
+                            PathLine { x: cardItem.width - cardItem.slant - cardBorder.insetObtuse; y: cardItem.height - cardBorder.insetY }
+                            PathLine { x: cardBorder.insetAcute; y: cardItem.height - cardBorder.insetY }
+                            PathLine { x: cardItem.slant + cardBorder.insetObtuse; y: cardBorder.insetY }
+                        }
                     }
-                    onClicked: {
-                        contentContainer.forceActiveFocus();
-                        if (carousel.currentIndex === cardItem.index) root.applyCurrent();
-                        else carousel.currentIndex = cardItem.index;
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: !root.closing
+                        cursorShape: Qt.PointingHandCursor
+                        // Let clicks in a card's transparent corners reach cards behind it.
+                        onPressed: (mouse) => {
+                            var left = cardItem.slant * (1 - mouse.y / cardItem.height);
+                            if (mouse.x < left || mouse.x > left + cardItem.width - cardItem.slant)
+                                mouse.accepted = false;
+                        }
+                        onClicked: {
+                            contentContainer.forceActiveFocus();
+                            if (carousel.currentIndex === cardItem.index) root.applyCurrent();
+                            else carousel.currentIndex = cardItem.index;
+                        }
                     }
                 }
             }

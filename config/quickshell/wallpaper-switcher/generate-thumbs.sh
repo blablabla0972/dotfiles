@@ -18,7 +18,8 @@ renice -n 19 -p $$ >/dev/null 2>&1 || true
 ionice -c 3 -p $$ >/dev/null 2>&1 || true
 
 status=0
-exec 8< <(find "$WALL_DIR" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print0)
+# Follow file links and a linked library root, but never linked subdirectories.
+exec 8< <(find -H "$WALL_DIR" -maxdepth 1 -xtype f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print0)
 enumeration_pid=$!
 while IFS= read -r -d '' image; do
     name="${image##*/}"

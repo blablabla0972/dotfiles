@@ -72,7 +72,7 @@ Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục w
 
 ## Hệ sinh thái đang dùng
 
-Noctalia cần bản native C++23 v5.2.1 đã patch, có `theme.matugen_palette`;
+Noctalia hiện dùng bản native C++23 v5.3.0 đã patch, có `theme.matugen_palette`;
 gói upstream chưa patch không đủ cho pipeline này. Mã nguồn được quản lý ở
 [noctalia-dashboard-source](https://github.com/blablabla0972/noctalia-dashboard-source),
 còn patch, hướng dẫn build và launcher nằm trong
@@ -85,10 +85,10 @@ Trên máy hiện tại, `run-noctalia.sh` dùng `build-bar-background-20261030/
 và `worktrees/bar-background-20261030/assets` trong `~/noctalia-dashboard-redesign`;
 kiểm tra launcher thực tế vì các tài liệu build cũ có thể ghi thư mục khác.
 Kiểm tra bằng `noctalia config validate` trước khi bật autostart.
-Revision source của preview hiện tại là `ade8aa6c17d72ee571d08d0f1b765e8894c07eb5`;
-GitHub chưa tìm thấy commit này khi kiểm tra ngày 2026-11-07, nên chưa thể khẳng định
-clone hai repo trên tái dựng chính xác binary đang chạy. Giữ source/build cục bộ
-cho tới khi revision tương ứng được công bố và kiểm chứng.
+Revision source `ade8aa6c17d72ee571d08d0f1b765e8894c07eb5` đã được lưu trên nhánh
+[`dotfiles-runtime-20261107`](https://github.com/blablabla0972/noctalia-dashboard-source/tree/dotfiles-runtime-20261107).
+Dùng [hướng dẫn khôi phục](docs/RESTORE.md) để lấy đúng source, build và chuẩn bị launcher;
+các tài liệu v5.2.1 trong repo redesign là lịch sử, không phải phiên bản hiện chạy.
 
 | Thành phần | Vai trò |
 |---|---|
