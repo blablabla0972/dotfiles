@@ -35,10 +35,11 @@ for arg in "$@"; do
         --no-state) INSTALL_STATE=0 ;;
         -h|--help)
             echo "Cách dùng: $0 [--dry-run] [--all] [--no-state] [mục1 mục2 ...]"
-            echo "  Mặc định: Chỉ cài các cấu hình desktop live (${CORE_CONFIGS[*]} kdeglobals noctalia bin)."
+            echo "  Mặc định: Chỉ cài các cấu hình desktop live (${CORE_CONFIGS[*]} ${CORE_ROOTS[*]})."
             echo "  --all:    Cài toàn bộ cấu hình, bao gồm cả systemd và cấu hình riêng máy (snapshot)."
             echo "  --dry-run: Chỉ in thao tác dự kiến, không thay đổi file."
             echo "  --no-state: Giữ nguyên session/lock settings, kể cả khi chọn noctalia hoặc --all."
+            echo "  Mục chọn: Tên component (config/, root/, state/) hoặc tên script trong bin/ (không truyền 'bin')."
             exit 0
             ;;
         *) ONLY+=("$arg") ;;
@@ -83,18 +84,28 @@ link() {
     if [ -e "$dst" ] || [ -L "$dst" ]; then
         ensure_backup_dir
         local bdir="$ACTUAL_BACKUP_DIR"
-        run mkdir -p "$bdir"
-        backup "$dst → $bdir/"
-        local bdst="$bdir/${dst##*/}"
+        local rel_dst
+        if [[ "$dst" == "$HOME/"* ]]; then
+            rel_dst="${dst#"$HOME"/}"
+        else
+            rel_dst="${dst#/}"
+        fi
+        local bdst="$bdir/$rel_dst"
+        run mkdir -p "${bdst%/*}"
+        backup "$dst → $bdst"
         if [ -e "$bdst" ] || [ -L "$bdst" ]; then
-            bdst="$(mktemp -u "${bdir}/${dst##*/}-XXXXXX")"
+            bdst="$(mktemp -u "${bdst}-XXXXXX")"
         fi
         run mv -T "$dst" "$bdst"
     fi
 
     run mkdir -p "${dst%/*}"
     run ln -sT "$src" "$dst"
-    ok "linked: $dst → $src"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        info "DRY: link dự kiến: $dst → $src"
+    else
+        ok "linked: $dst → $src"
+    fi
 }
 
 # --- kiểm tra tham số ONLY ------------------------------------------------
@@ -165,10 +176,10 @@ should_install() {
 # --- main ------------------------------------------------------------------
 info "Repo: $REPO"
 info "Target: $TARGET"
-if [ "$INSTALL_ALL" -eq 1 ]; then
-    info "Chế độ: Toàn bộ (bao gồm cả systemd và snapshot máy)"
-elif [ "${#ONLY[@]}" -gt 0 ]; then
+if [ "${#ONLY[@]}" -gt 0 ]; then
     info "Chế độ: Chọn lọc (${ONLY[*]})"
+elif [ "$INSTALL_ALL" -eq 1 ]; then
+    info "Chế độ: Toàn bộ (bao gồm cả systemd và snapshot máy)"
 else
     info "Chế độ: Desktop Live mặc định (chạy './install.sh --all' nếu muốn liên kết cả systemd/snapshot)"
 fi
@@ -253,10 +264,18 @@ if [ "$DRY_RUN" -eq 0 ] && should_install "config" "systemd"; then
 fi
 
 echo
-if [ -n "$ACTUAL_BACKUP_DIR" ] && [ -d "$ACTUAL_BACKUP_DIR" ]; then
-    ok "Xong. Backup nằm trong: $ACTUAL_BACKUP_DIR"
+if [ "$DRY_RUN" -eq 1 ]; then
+    if [ -n "$ACTUAL_BACKUP_DIR" ]; then
+        ok "Xem trước hoàn tất (preview only). Thư mục backup dự kiến: $ACTUAL_BACKUP_DIR"
+    else
+        ok "Xem trước hoàn tất (preview only). Không có thay đổi nào được thực hiện."
+    fi
 else
-    ok "Xong. Tất cả symlink đã được đồng bộ."
+    if [ -n "$ACTUAL_BACKUP_DIR" ] && [ -d "$ACTUAL_BACKUP_DIR" ]; then
+        ok "Xong. Backup nằm trong: $ACTUAL_BACKUP_DIR"
+    else
+        ok "Xong. Tất cả symlink đã được đồng bộ."
+    fi
 fi
 echo
 info "Các symlink KHÔNG hoạt động trên máy khác cần tạo lại thủ công:"

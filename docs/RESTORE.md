@@ -57,6 +57,13 @@ noctalia config validate
 `--no-state` giữ session/lock settings hiện có. Cài riêng `noctalia` không có
 cờ đó chỉ khi muốn lấy state của snapshot. Các file bị thay được backup trong
 `~/.config/backups/`; giữ backup cho tới khi desktop mới được kiểm tra.
+Backup mới giữ nguyên đường dẫn tương đối trong HOME: ví dụ
+`dotfiles-<timestamp>-<id>/.config/kitty`, `.local/bin/<script>` hoặc
+`.local/state/noctalia/settings.toml`; các backup cũ không bị chuyển đổi.
+Khi khôi phục, kiểm tra đúng bản backup và đường dẫn đích, bỏ riêng symlink do
+installer tạo ở đích đó rồi chuyển mục backup về vị trí ban đầu. Không copy
+đệ quy lên các symlink còn trỏ vào repo, vì thao tác đó có thể sửa source thay
+vì khôi phục file riêng của máy.
 Pipeline gọi tên tương thích `swww`/`swww-daemon`. Nếu máy mới cài `awww`,
 chuẩn bị alias executable mà không ghi đè command sẵn có:
 

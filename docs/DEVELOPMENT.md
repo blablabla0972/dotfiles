@@ -24,9 +24,17 @@ Native source `ade8aa6c` (VERSION 5.3.0) is published on
 The native target rebuilt successfully; the launcher points to that build and
 its matching assets. See [RESTORE.md](RESTORE.md) for prerequisites and the
 portable launcher. Fresh OS installation and forced lock/suspend remain untested.
-AGY Gemini 3.8 High completed an installer audit; its separate implementation
-worktree is `.worktrees/installer-completion-20261107`, job
-`implement-mw6belih-f33e536d` (collect via the AGY companion from that worktree).
+AGY Gemini 3.8 High completed the installer audit and implementation (job
+`implement-mw6belih-f33e536d`). Backups now mirror HOME-relative destinations
+under one per-run root, dry-runs report preview-only status, help distinguishes
+script selectors, and explicit selectors take precedence over `--all` in both
+behavior and reporting. Host review additionally fixed quoted HOME-prefix
+matching, with an observed failing regression for spaces and literal brackets.
+Rollback coverage unlinks installed destinations before restoring backups and
+checks that repository sources remain unchanged; config, state and bin paths
+are covered. Historical backup directories are preserved. The integrated suite
+passes 171 tests with no skips and all 24 palette cases; shell syntax, selected
+dry-run and diff checks pass. Backup layout and safe recovery are in RESTORE.md.
 
 ## Verification checkpoint (2026-11-07)
 

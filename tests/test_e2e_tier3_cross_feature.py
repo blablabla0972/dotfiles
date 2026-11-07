@@ -104,7 +104,7 @@ output_path = "~/.config/micro/colorschemes/adaptive.micro"
         # Verify installer backup was created in ~/.config/backups/
         installer_backups_dir = self.e2e.config / "backups"
         self.assertTrue(installer_backups_dir.is_dir(), "Installer backup dir must exist")
-        backed_up_items = list(installer_backups_dir.glob("dotfiles-*/*"))
+        backed_up_items = list(installer_backups_dir.glob("dotfiles-*/**/*"))
         self.assertTrue(
             any("starship.toml" in str(p) for p in backed_up_items),
             f"Modified starship.toml must be backed up, found: {backed_up_items}",
