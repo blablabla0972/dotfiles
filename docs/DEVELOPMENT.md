@@ -35,6 +35,12 @@ checks that repository sources remain unchanged; config, state and bin paths
 are covered. Historical backup directories are preserved. The integrated suite
 passes 171 tests with no skips and all 24 palette cases; shell syntax, selected
 dry-run and diff checks pass. Backup layout and safe recovery are in RESTORE.md.
+Final publication `1625e3c` was verified equal on local main and GitHub main;
+a fresh HTTPS clone of that commit independently passed all 171 tests and all
+24 palette cases. Independent GPT review found no remaining blocker after the
+per-item dry-run correction. Existing MIME/Micro edits, runtime state, generated
+outputs and active preview links remain preserved. The visual/fresh-OS/power
+action limits above are reported as coverage limits, not additional completed tests.
 
 ## Verification checkpoint (2026-11-07)
 
