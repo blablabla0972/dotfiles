@@ -181,6 +181,59 @@ class ThemeSyncTest(unittest.TestCase):
         self.assertEqual(self.run_mode_event(), 1)
         self.assertFalse(micro.exists())
 
+    def test_event_rollback_reloads_restored_compositor_and_preserves_failure(self):
+        for recovery_error in (None, 'reload', 'configerrors'):
+            with self.subTest(recovery_error=recovery_error):
+                loaded, checks = ['dark'], []
+                failure = RuntimeError('original compositor failure')
+
+                def command(argv):
+                    if argv[:2] == ['hyprctl', 'reload']:
+                        loaded.append(self.outputs[0].read_text())
+                        if len(loaded) == 3 and recovery_error == 'reload':
+                            raise OSError('recovery reload failed')
+                    if argv[:2] == ['hyprctl', 'configerrors']:
+                        checks.append(loaded[-1])
+                        if len(checks) == 1:
+                            raise failure
+                        return 'recovery configerrors failed' if recovery_error == 'configerrors' else ''
+                    return self.command(argv)
+
+                diagnostics = io.StringIO()
+                with patch.object(theme, 'command', side_effect=command), \
+                     patch.object(theme, 'quiesce_shell', return_value=True), \
+                     patch.object(theme.subprocess, 'Popen') as restart, \
+                     contextlib.redirect_stderr(diagnostics):
+                    with self.assertRaises(RuntimeError) as caught:
+                        theme.wallpaper_changed(self.config, self.state, self.runtime, mode_changed=True)
+                self.assertIs(caught.exception, failure)
+                self.assertEqual(loaded, ['dark', 'light', 'dark'])
+                self.assertEqual(checks, ['light'] if recovery_error == 'reload' else ['light', 'dark'])
+                self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
+                restart.assert_called_once()
+                if recovery_error:
+                    self.assertIn(f'recovery {recovery_error} failed', diagnostics.getvalue())
+
+    def test_event_rollback_without_compositor_session_does_not_reload(self):
+        self.fail_templates = True
+        with patch.dict(os.environ), patch.object(theme, 'command', side_effect=self.command) as command:
+            os.environ.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
+            with self.assertRaisesRegex(RuntimeError, 'injected template failure'):
+                theme.wallpaper_changed(self.config, self.state, self.runtime, mode_changed=True)
+        self.assertFalse(any(call.args[0][0] == 'hyprctl' for call in command.call_args_list))
+        self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
+
+    def test_failed_snapshot_restore_skips_reload_but_still_restarts_shell(self):
+        self.fail_templates = True
+        with patch.object(theme, 'command', side_effect=self.command) as command, \
+             patch.object(theme, 'quiesce_shell', return_value=True), \
+             patch.object(theme.Snapshot, 'restore', side_effect=OSError('restore failed')), \
+             patch.object(theme.subprocess, 'Popen') as restart:
+            with self.assertRaisesRegex(OSError, 'restore failed'):
+                theme.wallpaper_changed(self.config, self.state, self.runtime, mode_changed=True)
+        self.assertFalse(any(call.args[0][0] == 'hyprctl' for call in command.call_args_list))
+        restart.assert_called_once()
+
     def test_wallpaper_rollback_preserves_a_newer_user_mode(self):
         self.mode = 'dark'
         self.settings.write_text('mode = "dark"\n')

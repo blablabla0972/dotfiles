@@ -340,6 +340,97 @@ console.log(JSON.stringify(items.map(item => item.thumbUrl)));
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotEqual(thumb.read_bytes(), first)
 
+    def test_source_change_with_preserved_mtime_refreshes_thumbnail(self):
+        image = self.image("preserved%\ntime.png")
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        thumb = self.thumb(image)
+        first = thumb.read_bytes()
+        stamp = image.stat()
+        self.image(image.name, "blue")
+        os.utime(image, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        result = self.run_helper(SWITCHER / "generate-thumbs.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotEqual(thumb.read_bytes(), first)
+
+    def test_directory_at_thumbnail_path_is_not_announced_or_written_into(self):
+        image = self.image('directory-cache.png')
+        thumb = self.thumb(image)
+        thumb.mkdir(parents=True)
+        result = subprocess.run(['bash', str(SWITCHER / 'generate-thumbs.sh'), '--notify'],
+                                env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, '')
+        self.assertEqual(list(thumb.iterdir()), [])
+
+    def test_nonempty_corrupt_cache_with_preserved_mtime_is_regenerated(self):
+        image = self.image("corrupt-cache.png")
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        thumb = self.thumb(image)
+        first = thumb.read_bytes()
+        stamp = thumb.stat()
+        thumb.write_bytes(b"x" * len(first))
+        os.utime(thumb, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        result = subprocess.run(["bash", str(SWITCHER / "generate-thumbs.sh"), "--notify"],
+                                env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [thumb.stem])
+        self.assertEqual(thumb.read_bytes(), first)
+
+    def test_validated_warm_cache_needs_no_magick_but_legacy_cache_does(self):
+        image = self.image("warm.png")
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        self.executable("magick", "#!/bin/sh\nexit 99\n")
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        Path(str(self.thumb(image)) + ".stat").unlink()
+        result = subprocess.run(["bash", str(SWITCHER / "generate-thumbs.sh"), "--notify"],
+                                env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+
+    def test_sidecar_update_failure_does_not_notify_or_keep_old_record(self):
+        image = self.image("record-failure.png")
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        self.image(image.name, "blue")
+        real_mv = shutil.which("mv")
+        self.executable("mv", f"#!{sys.executable}\nimport os, sys\n"
+                        "if sys.argv[-1].endswith('.stat'): sys.exit(1)\n"
+                        f"os.execv({real_mv!r}, [{real_mv!r}] + sys.argv[1:])\n")
+        result = subprocess.run(["bash", str(SWITCHER / "generate-thumbs.sh"), "--notify"],
+                                env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertFalse(Path(str(self.thumb(image)) + ".stat").exists())
+        self.assertEqual(list(self.cache.glob(".thumbnail-*")), [])
+        (self.bin / "mv").unlink()
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+
+    def test_source_changed_during_render_is_refreshed_next_run(self):
+        image = self.image("during-render.png")
+        blue = self.image("blue.png", "blue").read_bytes()
+        (self.wallpapers / "blue.png").unlink()
+        real_magick = shutil.which("magick")
+        self.executable("magick", f"#!{sys.executable}\nimport pathlib, subprocess, sys\n"
+                        f"result = subprocess.run([{real_magick!r}] + sys.argv[1:])\n"
+                        f"if sys.argv[1] == '-[0]': pathlib.Path({str(image)!r}).write_bytes({blue!r})\n"
+                        "sys.exit(result.returncode)\n")
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        first = self.thumb(image).read_bytes()
+        (self.bin / "magick").unlink()
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        self.assertNotEqual(self.thumb(image).read_bytes(), first)
+
+    def test_symlink_target_change_with_preserved_mtime_refreshes_thumbnail(self):
+        source = self.image("source.png")
+        link = self.wallpapers / "linked%\nimage.png"
+        link.symlink_to(source)
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        first = self.thumb(link).read_bytes()
+        stamp = source.stat()
+        self.image(source.name, "blue")
+        os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        self.assertEqual(self.run_helper(SWITCHER / "generate-thumbs.sh").returncode, 0)
+        self.assertNotEqual(self.thumb(link).read_bytes(), first)
+
     def test_failed_refresh_keeps_old_thumbnail_and_removes_temporary(self):
         image = self.image("refresh.png")
         self.cache.mkdir(parents=True)

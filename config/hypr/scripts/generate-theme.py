@@ -689,6 +689,13 @@ def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
                         command(['swww', 'img', str(old_wallpaper), '--transition-type', 'none'])
                     except Exception as error:
                         print('Wallpaper recovery needs attention:', error, file=sys.stderr)
+                if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE'):
+                    try:
+                        command(['hyprctl', 'reload', 'config-only'])
+                        errors = command(['hyprctl', 'configerrors'])
+                        if errors: raise RuntimeError(errors)
+                    except Exception as error:
+                        print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
             finally:
                 if stopped:
                     subprocess.Popen(['noctalia', '-d'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)

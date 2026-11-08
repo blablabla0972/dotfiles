@@ -25,15 +25,27 @@ while IFS= read -r -d '' image; do
     name="${image##*/}"
     key=$(printf '%s' "$name" | md5sum)
     thumb="$CACHE_DIR/${key%% *}.jpg"
-    if [[ ! -f "$thumb" || ! -s "$thumb" || "$image" -nt "$thumb" ]]; then
+    record="$thumb.stat"
+    # No filenames in the record: stat follows links and preserves nanosecond times.
+    fingerprint=$(LC_ALL=C stat -L --printf '%d:%i:%s:%y:%z\n' -- "$image" "$thumb" 2>/dev/null) || fingerprint=""
+    if [[ ! -f "$thumb" || ! -s "$thumb" || ! -f "$record" || -z "$fingerprint" ]] \
+            || [[ "$(<"$record")" != "$fingerprint" ]]; then
+        if ! source_stat=$(LC_ALL=C stat -L --printf '%d:%i:%s:%y:%z' -- "$image"); then
+            status=1
+            continue
+        fi
         temporary=$(mktemp "$CACHE_DIR/.thumbnail-XXXXXX.jpg")
         # Read literal filenames; ImageMagick otherwise expands '%' and wildcard patterns.
         if magick '-[0]' -auto-orient -thumbnail '1000x700>' -quality 85 "$temporary" < "$image" \
                 && [[ -s "$temporary" ]] && magick identify -quiet "$temporary" >/dev/null 2>&1 \
-                && mv -f -- "$temporary" "$thumb"; then
+                && rm -f -- "$record" \
+                && mv -fT -- "$temporary" "$thumb" \
+                && output_stat=$(LC_ALL=C stat -L --printf '%d:%i:%s:%y:%z' -- "$thumb") \
+                && printf '%s\n%s\n' "$source_stat" "$output_stat" > "$temporary.stat" \
+                && mv -f -- "$temporary.stat" "$record"; then
             :
         else
-            rm -f -- "$temporary"
+            rm -f -- "$temporary" "$temporary.stat"
             printf 'Không tạo được thumbnail: %s\n' "$image" >&2
             status=1
             continue

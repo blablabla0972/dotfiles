@@ -1,5 +1,26 @@
 # Development guide
 
+## Additional bug audit (2026-11-08)
+
+Four reproduced defects fixed: stale thumbnails after source replacement with
+preserved mtime; nonempty corrupt JPEG caches announced as ready; a directory
+at the cache JPEG path receiving output and a false ready notification; and
+theme-event rollback restoring files without reloading Hyprland's configuration.
+Thumbnail cache records now fingerprint source and validated output metadata
+(device/inode/size/nanosecond mtime/ctime); legacy records regenerate once.
+Source metadata is captured before rendering, sidecars publish atomically, and
+failed publication emits no ready key. Warm 40-image median was 0.091s versus
+0.061s baseline (+30ms); these are helper timings, not GUI frame rates.
+
+Event rollback reloads/checks compositor configuration only after a successful
+restore and only with a compositor session. Recovery errors retain the original
+failure and the existing shell-restart finally path. Quiesce failures still
+retain snapshots rather than restoring while native writers may be active.
+Regressions were observed failing before fixes; 181 unittests pass without
+skips, all 24 palette cases pass, and shell syntax/diff checks pass. The fixes
+were developed in `.worktrees/bughunt-20261108`, without generated-output edits
+or forced desktop failures. Existing private MIME/Micro changes are preserved.
+
 ## Full-access follow-up (2026-11-07)
 
 Full access resolved the earlier sandbox limits: Hyprland `reload config-only`
