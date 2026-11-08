@@ -1,5 +1,14 @@
 # Development guide
 
+## Sequential host audit (2026-11-08)
+
+Native asset discovery now tolerates Noctalia CLI processes exiting between
+`pgrep` and `/proc/<pid>/environ` reads, while retaining live asset selection,
+permission errors and conflicting-bundle checks. A deterministic regression
+failed before the fix for ENOENT/ESRCH, then passed alongside the permission-error
+case. All 207 tests pass without skips, all 24 palette cases pass, and diff checks
+pass. Work was done directly by the host in `.worktrees/sequential-audit-20261108`.
+
 ## Eight-agent audit follow-up (2026-11-08)
 
 Eight GPT-6.1 Sol max agents audited independent domains, with cross-review and

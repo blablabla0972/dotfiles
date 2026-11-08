@@ -404,7 +404,11 @@ def stage_native(theme_command, config, config_dir, data_dir, directory):
     try:
         roots = set()
         for pid in pids:
-            for item in Path('/proc', pid, 'environ').read_bytes().split(b'\0'):
+            try:
+                environment = Path('/proc', pid, 'environ').read_bytes()
+            except (FileNotFoundError, ProcessLookupError):
+                continue  # Short-lived CLI processes may exit after pgrep.
+            for item in environment.split(b'\0'):
                 if item.startswith(b'NOCTALIA_ASSETS_DIR='):
                     roots.add(os.fsdecode(item.split(b'=', 1)[1]))
         if len(roots) > 1:

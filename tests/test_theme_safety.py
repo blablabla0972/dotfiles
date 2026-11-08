@@ -45,6 +45,43 @@ class TransitionFpsTest(unittest.TestCase):
 
 
 class NativeAssetDiscoveryTest(unittest.TestCase):
+    def test_exited_process_does_not_hide_live_assets_but_permission_errors_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = root / 'assets'
+            (assets / 'templates/hyprland').mkdir(parents=True)
+            (assets / 'templates/builtin.toml').write_text('[templates.hyprland]\n')
+            (assets / 'templates/hyprland/hyprland.lua').write_text('-- source\n')
+            config = root / 'config'
+            (config / 'hypr').mkdir(parents=True)
+            real_read = Path.read_bytes
+
+            def command(argv):
+                if argv[0] == 'pgrep':
+                    return '101 102'
+                Path(argv[-1].split(':', 1)[1]).write_text('-- rendered\n')
+                return ''
+
+            for failure in (FileNotFoundError(), ProcessLookupError(), PermissionError()):
+                def read_bytes(path):
+                    if path == Path('/proc/101/environ'):
+                        raise failure
+                    if path == Path('/proc/102/environ'):
+                        return b'NOCTALIA_ASSETS_DIR=' + os.fsencode(assets) + b'\0'
+                    return real_read(path)
+
+                with self.subTest(failure=type(failure).__name__), \
+                     patch.object(theme, 'command', side_effect=command), \
+                     patch.object(Path, 'read_bytes', read_bytes):
+                    if isinstance(failure, PermissionError):
+                        with self.assertRaisesRegex(RuntimeError, 'Could not identify'):
+                            theme.stage_native([], {}, config, root / 'data', root)
+                    else:
+                        expected = theme.stage_native(['noctalia', 'theme'],
+                            {'theme': {'templates': {'builtin_ids': ['hyprland']}}},
+                            config, root / 'data', root)
+                        self.assertEqual(list(expected), [str(config / 'hypr/noctalia.lua')])
+
     def test_no_running_shell_uses_installed_assets(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
