@@ -9,7 +9,7 @@
 # =============================================================================
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CONFIG_SRC="$REPO/config"
 ROOT_SRC="$REPO/root"
 STATE_SRC="$REPO/state"
@@ -73,6 +73,7 @@ ensure_backup_dir() {
 # --- symlink một mục -------------------------------------------------------
 link() {
     local src="$1" dst="$2"
+    local saved=""
 
     # Bỏ qua cùng file, kể cả khi thư mục cha là symlink
     if [ "$src" -ef "$dst" ]; then
@@ -82,6 +83,15 @@ link() {
 
     # Nếu target đã tồn tại thì backup trước khi ghi đè
     if [ -e "$dst" ] || [ -L "$dst" ]; then
+        if [ -d "$dst" ] && [ ! -L "$dst" ]; then
+            local destination_dir repository_dir
+            destination_dir="$(realpath -- "$dst")"
+            repository_dir="$(realpath -- "$REPO")"
+            if [[ "$repository_dir/" == "$destination_dir/"* ]]; then
+                err "Không thể thay thế thư mục chứa repo: $dst"
+                return 1
+            fi
+        fi
         ensure_backup_dir
         local bdir="$ACTUAL_BACKUP_DIR"
         local rel_dst
@@ -97,10 +107,21 @@ link() {
             bdst="$(mktemp -u "${bdst}-XXXXXX")"
         fi
         run mv -T "$dst" "$bdst"
+        saved="$bdst"
     fi
 
     run mkdir -p "${dst%/*}"
-    run ln -sT "$src" "$dst"
+    if run ln -sT "$src" "$dst"; then
+        :
+    else
+        local result=$?
+        if [ -n "$saved" ]; then
+            if ! mv -nT -- "$saved" "$dst" || [ -e "$saved" ] || [ -L "$saved" ]; then
+                err "Không khôi phục được $dst; giữ backup: $saved"
+            fi
+        fi
+        return "$result"
+    fi
     if [ "$DRY_RUN" -eq 1 ]; then
         info "DRY: link dự kiến: $dst → $src"
     else

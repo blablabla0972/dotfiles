@@ -39,6 +39,70 @@ class InstallerSafetyTest(unittest.TestCase):
         shutil.copy2(self.install_script, repo / 'install.sh')
         return repo
 
+    def test_destination_containing_checkout_is_rejected_before_backup(self):
+        repo = self.make_installer_repo(str(self.home / '.config/btop/dotfiles'))
+        original = repo / 'config/btop/btop.conf'
+        result = subprocess.run(['bash', str(repo / 'install.sh'), 'btop'],
+                                env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(original.read_text(), 'BTOP_CONFIG')
+        self.assertFalse((self.home / '.config/btop').is_symlink())
+        self.assertFalse((self.home / '.config/backups').exists())
+
+    def test_failed_link_restores_original_destination(self):
+        repo = self.make_installer_repo('failed-link')
+        target = self.home / '.config/btop'
+        target.mkdir(parents=True)
+        (target / 'user.conf').write_text('USER_CONFIG')
+        stub = Path(self.temp_dir) / 'stub/ln'
+        stub.write_text('#!/bin/sh\nexit 42\n')
+        stub.chmod(0o700)
+        result = subprocess.run(['bash', str(repo / 'install.sh'), 'btop'],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 42)
+        self.assertFalse(target.is_symlink())
+        self.assertEqual((target / 'user.conf').read_text(), 'USER_CONFIG')
+        self.assertEqual((repo / 'config/btop/btop.conf').read_text(), 'BTOP_CONFIG')
+
+    def test_checkout_reached_through_destination_alias_keeps_valid_source(self):
+        repo = self.make_installer_repo('checkout-parent/dotfiles')
+        target = self.home / '.config/btop'
+        target.parent.mkdir(parents=True)
+        target.symlink_to(repo.parent, target_is_directory=True)
+        result = subprocess.run(['bash', str(target / 'dotfiles/install.sh'), 'btop'],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((target / 'btop.conf').read_text(), 'BTOP_CONFIG')
+        self.assertEqual(target.resolve(), repo / 'config/btop')
+
+    def test_failed_link_preserves_destination_appearing_during_restore(self):
+        repo = self.make_installer_repo('restore-race')
+        target = self.home / '.config/starship.toml'
+        target.parent.mkdir(parents=True)
+        target.write_text('USER_CONFIG')
+        stub = Path(self.temp_dir) / 'stub'
+        (stub / 'ln').write_text('#!/bin/sh\nexit 42\n')
+        (stub / 'ln').chmod(0o700)
+        # Insert a concurrent destination after any absence check, just before mv.
+        (stub / 'mv').write_text(
+            '#!/bin/sh\n'
+            'if [ "$2" = "--" ]; then\n'
+            '    printf %s CONCURRENT_CONFIG > "$4"\n'
+            'fi\n'
+            'exec "$INSTALLER_TEST_REAL_MV" "$@"\n')
+        (stub / 'mv').chmod(0o700)
+        result = subprocess.run(
+            ['bash', str(repo / 'install.sh'), 'starship.toml'],
+            env={**self.env, 'INSTALLER_TEST_REAL_MV': shutil.which('mv')},
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 42)
+        self.assertEqual(target.read_text(), 'CONCURRENT_CONFIG')
+        saved = list((self.home / '.config/backups').glob(
+            'dotfiles-*/.config/starship.toml'))
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0].read_text(), 'USER_CONFIG')
+        self.assertIn(str(saved[0]), result.stderr)
+
     def test_symlinked_destination_parents_preserve_sources(self):
         for category, destination, selectors, payload in (
             ('config', '.config', ['btop', 'starship.toml'], 'btop/btop.conf'),
