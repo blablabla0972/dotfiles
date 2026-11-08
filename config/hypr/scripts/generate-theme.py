@@ -429,7 +429,7 @@ def stage_native(theme_command, config, config_dir, data_dir, directory):
             # Match native templates' installed-client gate, without creating new apps' configs.
             if target.is_relative_to(config_dir) and not (config_dir / target.relative_to(config_dir).parts[0]).is_dir():
                 continue
-            staged = directory / ('expected-' + str(len(expected)))
+            staged = directory / ('expected-' + str(len(specs) // 2))
             expected[str(target)] = staged
             specs += ['-r', str(source) + ':' + str(staged)]
     if not expected:
@@ -625,7 +625,12 @@ def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
                 and type(data.get('expires')) in (int, float) and data['expires'] > time.time()
                 and data.get('mode') == command(['noctalia', 'msg', 'theme-mode-get'])
                 and data.get('palette') == hashlib.sha256(palette_path.read_bytes()).hexdigest()):
-            return
+            # A leftover marker cannot promise that its transaction will finish.
+            with (runtime / 'noctalia-wallpaper-apply.lock').open('a') as owner:
+                try:
+                    fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return
     except (OSError, ValueError):
         pass
 
@@ -667,7 +672,7 @@ def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False):
             wait_for_templates(wallpaper, expected, mode)
             check_selection()
             sync_toolkit_settings(config_dir, mode)
-            if not mode_changed and old_wallpaper != wallpaper:
+            if old_wallpaper != wallpaper:
                 if not config.get('wallpaper', {}).get('enabled', True):
                     changed_backend = True
                     command(['swww', 'img', str(wallpaper), '--transition-type', 'fade', '--transition-duration', '0.3'])

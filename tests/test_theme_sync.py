@@ -125,8 +125,53 @@ class ThemeSyncTest(unittest.TestCase):
         request = {'wallpaper': str(self.wallpaper), 'mode': self.mode, 'expires': theme.time.time() + 45,
                    'palette': hashlib.sha256(self.outputs[-2].read_bytes()).hexdigest()}
         (self.runtime / 'noctalia-matugen-request.json').write_text(json.dumps(request))
-        theme.wallpaper_changed(self.config, self.state, self.runtime)
+        with (self.runtime / 'noctalia-wallpaper-apply.lock').open('a') as owner:
+            theme.fcntl.flock(owner, theme.fcntl.LOCK_EX)
+            theme.wallpaper_changed(self.config, self.state, self.runtime)
         self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
+
+    def test_orphan_wallpaper_marker_does_not_skip_sync(self):
+        # An interrupted apply prepared the palette but never applied templates.
+        self.palette_for(self.wallpaper, self.config)
+        request = {'wallpaper': str(self.wallpaper), 'mode': self.mode,
+                   'expires': theme.time.time() + 45,
+                   'palette': hashlib.sha256(self.outputs[-2].read_bytes()).hexdigest()}
+        (self.runtime / 'noctalia-matugen-request.json').write_text(json.dumps(request))
+        theme.wallpaper_changed(self.config, self.state, self.runtime)
+        self.assertEqual([p.read_text() for p in self.outputs], ['light'] * len(self.outputs))
+
+    def test_queued_mode_event_reconciles_a_different_native_wallpaper(self):
+        newer = self.wallpaper.parent / 'newer.png'
+        newer.write_bytes(b'new selection')
+        self.selected = str(newer)
+        # A superseded apply restored the old backend/link, preserving native intent.
+        for native_enabled in (True, False):
+            with self.subTest(native_enabled=native_enabled):
+                link = self.config / 'hypr/current_wallpaper'
+                theme.atomic_link(link, str(self.wallpaper))
+                backend = []
+
+                def command(argv):
+                    if argv[:2] == ['swww', 'img']:
+                        backend.append(argv[2])
+                        return ''
+                    return self.command(argv)
+
+                def palette_for(*args):
+                    palette, config, argv, changed, mode = self.palette_for(*args)
+                    config['wallpaper'] = {'enabled': native_enabled}
+                    return palette, config, argv, changed, mode
+
+                with patch.object(theme, 'command', side_effect=command), \
+                     patch.object(theme, 'palette_for', side_effect=palette_for):
+                    self.assertEqual(self.run_mode_event(), 0)
+                    self.assertEqual(backend, [] if native_enabled else [str(newer)])
+                    backend.clear()
+                    self.assertEqual(self.run_mode_event(), 0)
+                self.assertEqual(link.resolve(), newer)
+                self.assertEqual(backend, [])
+                self.assertEqual(self.selected, str(newer))
+                self.assertEqual(self.settings.read_text(), 'mode = "light"\n')
 
     def test_repeated_mode_switches_leave_the_latest_palette(self):
         for mode in ['light', 'dark', 'light']:

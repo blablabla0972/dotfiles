@@ -319,12 +319,17 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.assertFalse(self.calls)
 
     def test_mode_hook_publishes_matching_tokens_without_changing_wallpaper(self):
-        self.selected, self.mode = str(self.wallpaper), 'light'
+        self.selected, self.mode = str(self.old), 'light'
         with patch('sys.argv', [str(theme.__file__), '--theme-mode-changed']):
             self.assertEqual(theme.main(), 0)
-        self.assertEqual(json.loads(self.tokens.read_text())['mode'], 'light')
+        tokens = json.loads(self.tokens.read_text())
+        self.assertEqual(tokens['mode'], 'light')
+        self.assertEqual(tokens['wallpaper_sha256'], hashlib.sha256(self.old.read_bytes()).hexdigest())
+        self.assertEqual(tokens['source_palette_sha256'], hashlib.sha256(self.raw.read_bytes()).hexdigest())
         self.assertEqual(self.link.resolve(), self.old)
+        self.assertEqual(self.selected, str(self.old))
         self.assertFalse(any(args[0] == 'swww' for args in self.calls))
+        self.assertFalse(any(args[:3] == ['noctalia', 'msg', 'wallpaper-set'] for args in self.calls))
 
     def test_failure_removes_a_new_artifact_instead_of_leaving_partial_state(self):
         self.tokens.unlink()

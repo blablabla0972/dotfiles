@@ -1,5 +1,6 @@
 """Exercise Matugen isolation and rollback with real rendering in a temporary HOME."""
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -69,6 +70,49 @@ class NativeAssetDiscoveryTest(unittest.TestCase):
                                               {'theme': {'templates': {'builtin_ids': ['hyprland']}}},
                                               config, root / 'data', root)
             self.assertEqual(list(expected), [str(config / 'hypr/noctalia.lua')])
+
+    def test_duplicate_builtin_ids_preserve_staged_outputs_and_hashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = root / 'assets'
+            (assets / 'templates/hyprland').mkdir(parents=True)
+            (assets / 'templates/builtin.toml').write_text(
+                '[templates.hyprland]\n[templates.kitty]\n'
+                'input_path="kitty.conf"\n'
+                'output_path="$XDG_CONFIG_HOME/kitty/theme.conf"\n')
+            hyprland, kitty = b'-- hyprland\n', b'# kitty\n'
+            (assets / 'templates/hyprland/hyprland.lua').write_bytes(hyprland)
+            (assets / 'templates/kitty.conf').write_bytes(kitty)
+            config = root / 'config'
+            (config / 'hypr').mkdir(parents=True)
+            (config / 'kitty').mkdir()
+            staged_names = []
+
+            def command(argv):
+                if argv[0] == 'pgrep':
+                    raise RuntimeError('no processes') from subprocess.CalledProcessError(1, argv)
+                self.assertEqual(argv[:2], ['noctalia', 'theme'])
+                for index in range(2, len(argv), 2):
+                    self.assertEqual(argv[index], '-r')
+                    source, target = map(Path, argv[index + 1].split(':', 1))
+                    staged_names.append(target.name)
+                    target.write_bytes(source.read_bytes())
+
+            def path(value, *parts):
+                return assets if value == '/usr/share/noctalia/assets' else Path(value, *parts)
+
+            for ids in (['hyprland', 'kitty'], ['hyprland', 'hyprland', 'kitty']):
+                with self.subTest(builtin_ids=ids), patch.object(theme, 'command', side_effect=command), \
+                        patch.object(theme, 'Path', side_effect=path):
+                    staged_names.clear()
+                    expected = theme.stage_native(
+                        ['noctalia', 'theme'], {'theme': {'templates': {'builtin_ids': ids}}},
+                        config, root / 'data', root)
+                    self.assertEqual(expected, {
+                        str(config / 'hypr/noctalia.lua'): hashlib.sha256(hyprland).hexdigest(),
+                        str(config / 'kitty/theme.conf'): hashlib.sha256(kitty).hexdigest(),
+                    })
+                    self.assertEqual(staged_names, [f'expected-{index}' for index in range(len(ids))])
 
     def test_process_lookup_errors_are_not_treated_as_an_absent_shell(self):
         error = subprocess.CalledProcessError(2, ['pgrep'], stderr='lookup failed')
