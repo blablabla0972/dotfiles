@@ -1,5 +1,16 @@
 # Development guide
 
+## Matugen wallpaper ownership guard (2026-11-08)
+
+A real Matugen scratch reproduction invoked a stub wallpaper setter when its
+wallpaper table used `set=true` or omitted `set` (enabled by default for that
+table). Rendering now rejects both before any command, output write or cache
+lookup, keeping backend changes within the transaction owner. The checked-in
+`set=false` configuration is unchanged. Red/green tests use an isolated HOME,
+verify no setter call and preserved output sentinels; 209 tests and all 24
+palette cases pass without skips. This was a sequential host-only change in
+`.worktrees/sequential-wallpaper-guard-20261108`.
+
 ## Sequential Matugen cache audit (2026-11-08)
 
 Matugen render-cache identity now includes each opened input's device, inode,

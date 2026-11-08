@@ -278,6 +278,27 @@ class MatugenSafetyTest(unittest.TestCase):
         self.assertEqual(outside.read_bytes(), b'PRESERVE')
         self.assertFalse((self.config / 'noctalia/palettes/matugen.json').exists())
 
+    def test_matugen_wallpaper_setter_is_rejected_before_rendering(self):
+        config_file = self.config / 'matugen/config.toml'
+        original_config = config_file.read_text()
+        stub = self.root / 'bin'
+        stub.mkdir()
+        setter = stub / 'swww'
+        setter.write_text('#!/bin/sh\nprintf SET > "$HOME/wallpaper-side-effect"\n')
+        setter.chmod(0o700)
+        for setting in ('set = true', ''):
+            with self.subTest(setting=setting):
+                self.write_sentinels(self.config)
+                config_file.write_text(original_config.replace('set = false', setting))
+                with patch.dict(os.environ, PATH=str(stub) + os.pathsep + os.environ['PATH']), \
+                     patch.object(theme, 'command', side_effect=self.command) as command:
+                    with self.assertRaisesRegex(RuntimeError, 'wallpaper.*transaction'):
+                        theme.render_matugen(self.image, self.config, 'dark')
+                command.assert_not_called()
+                self.assertFalse((self.home / 'wallpaper-side-effect').exists())
+                for relative in self.outputs:
+                    self.assertEqual((self.config / relative).read_bytes(), b'PRESERVE')
+
     def test_unprotected_template_hooks_are_rejected_before_matugen_writes(self):
         config_file = self.config / 'matugen/config.toml'
         original = config_file.read_text()

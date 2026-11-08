@@ -231,6 +231,9 @@ def cached_matugen_outputs(cache, names):
 def render_matugen(wallpaper, config_dir, mode):
     source = config_dir / 'matugen/config.toml'
     settings = tomllib.loads(source.read_text())
+    wallpaper_options = settings.get('config', {}).get('wallpaper')
+    if wallpaper_options is not None and wallpaper_options.get('set', True):
+        raise RuntimeError('Matugen wallpaper changes bypass the transaction; set config.wallpaper.set=false')
     home_config = Path.home() / '.config'
     outputs = {config_dir / name for name in MATUGEN_OUTPUTS}
     for template in settings.get('templates', {}).values():
