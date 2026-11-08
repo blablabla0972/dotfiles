@@ -20,6 +20,11 @@ Regressions were observed failing before fixes; 181 unittests pass without
 skips, all 24 palette cases pass, and shell syntax/diff checks pass. The fixes
 were developed in `.worktrees/bughunt-20261108`, without generated-output edits
 or forced desktop failures. Existing private MIME/Micro changes are preserved.
+The active Quickshell preview received only the verified thumbnail helper
+change (previous helper saved at `/tmp/dotfiles-thumbs-before-20261108.sh`);
+its layout and selected live checkout are unchanged. Applying the current
+wallpaper returned `status=applied` for `bughunt-20261108`; Hyprland has no config
+errors, Noctalia validates, and generated tracked files remain unchanged.
 
 ## Full-access follow-up (2026-11-07)
 
