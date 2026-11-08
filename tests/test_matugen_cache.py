@@ -117,6 +117,36 @@ class MatugenCacheTest(unittest.TestCase):
             self.render()
         self.assertEqual(list(self.cache.rglob('*.json')), [])
 
+    def test_aba_input_replacement_does_not_poison_cache(self):
+        for path in (self.image, self.template, self.source):
+            with self.subTest(path=path.name):
+                for record in self.cache.rglob('*.json'):
+                    record.unlink()
+                original = path.read_bytes()
+                previous_records = set(self.cache.rglob('*.json'))
+                previous_calls = self.calls
+
+                def replace_and_restore(argv):
+                    stamp = path.stat()
+                    path.write_bytes(original + b'changed during rendering')
+                    self.generate(argv)
+                    for name in theme.MATUGEN_OUTPUTS:
+                        (self.config / name).write_bytes(b'palette for ' + path.read_bytes())
+                    path.write_bytes(original)
+                    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+
+                with patch.object(theme, 'command', side_effect=replace_and_restore):
+                    self.render()
+                self.assertEqual(path.read_bytes(), original)
+                self.assertEqual(set(self.cache.rglob('*.json')), previous_records)
+                self.render()
+                self.assertEqual(self.calls, previous_calls + 2)
+                for name in theme.MATUGEN_OUTPUTS:
+                    self.assertEqual((self.config / name).read_bytes(),
+                                     f'{name}: render {self.calls}\r\n'.encode())
+                self.render()
+                self.assertEqual(self.calls, previous_calls + 2, 'Stable inputs must still hit cache')
+
 
 if __name__ == '__main__':
     unittest.main()

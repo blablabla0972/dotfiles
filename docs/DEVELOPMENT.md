@@ -1,5 +1,17 @@
 # Development guide
 
+## Sequential Matugen cache audit (2026-11-08)
+
+Matugen render-cache identity now includes each opened input's device, inode,
+size, nanosecond mtime and ctime alongside its content hash. Replacing an image,
+template or config A→B→A during generation, even restoring mtime, no longer
+publishes intermediate output under A's reusable cache key. The regression
+failed for all three input classes before the fix and passes afterward; stable
+inputs still hit the cache. Key identity revision 2 leaves record schema 1
+unchanged; existing entries regenerate once. All 208 tests and 24 palette cases
+pass, with no skips; changes were made directly by the host in
+`.worktrees/sequential-cache-20261108`.
+
 ## Sequential host audit (2026-11-08)
 
 Native asset discovery now tolerates Noctalia CLI processes exiting between

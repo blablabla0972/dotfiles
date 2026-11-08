@@ -198,8 +198,12 @@ def matugen_cache_path(wallpaper, source, settings, mode):
     hashes = []
     for path in dict.fromkeys(inputs):
         with path.open('rb') as stream:
-            hashes.append((str(path), hashlib.file_digest(stream, 'sha256').hexdigest()))
-    identity = [1, mode, MATUGEN_FLAGS,
+            # Detect edits restored to the same bytes and mtime before rendering ends.
+            stamp = os.fstat(stream.fileno())
+            hashes.append((str(path), stamp.st_dev, stamp.st_ino, stamp.st_size,
+                           stamp.st_mtime_ns, stamp.st_ctime_ns,
+                           hashlib.file_digest(stream, 'sha256').hexdigest()))
+    identity = [2, mode, MATUGEN_FLAGS,
                 str(binary), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
                 stat.st_ctime_ns, hashes, settings]
     key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
