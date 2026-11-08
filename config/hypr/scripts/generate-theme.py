@@ -247,6 +247,8 @@ def render_matugen(wallpaper, config_dir, mode):
             elif not path.is_absolute():
                 path = source.parent / path
             path = Path(os.path.abspath(path))
+            if key == 'input_path':
+                path = path.resolve()
             if key == 'output_path' and path not in outputs:
                 raise RuntimeError('Additional Matugen outputs need backup paths before theme generation')
             template[key] = str(path)

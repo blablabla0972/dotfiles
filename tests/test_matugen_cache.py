@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -146,6 +147,45 @@ class MatugenCacheTest(unittest.TestCase):
                                      f'{name}: render {self.calls}\r\n'.encode())
                 self.render()
                 self.assertEqual(self.calls, previous_calls + 2, 'Stable inputs must still hit cache')
+
+    def test_template_alias_retarget_does_not_change_the_hashed_render_input(self):
+        original_config = self.source.read_text()
+        for kind in ('file', 'directory'):
+            with self.subTest(kind=kind):
+                for record in self.cache.rglob('*.json'):
+                    record.unlink()
+                first, second = self.root / (kind + '-A'), self.root / (kind + '-B')
+                first.mkdir()
+                second.mkdir()
+                (first / 'template').write_bytes(b'palette-A')
+                (second / 'template').write_bytes(b'palette-B')
+                targets = (first, second) if kind == 'directory' else (first / 'template', second / 'template')
+                alias = self.config / 'matugen' / (kind + '-alias')
+                alias.symlink_to(targets[0], target_is_directory=kind == 'directory')
+                input_path = alias / 'template' if kind == 'directory' else alias
+                self.source.write_text(original_config.replace(str(self.template), str(input_path)))
+                previous_calls = self.calls
+
+                def retarget_during_render(argv):
+                    self.calls += 1
+                    alias.unlink()
+                    alias.symlink_to(targets[1], target_is_directory=kind == 'directory')
+                    rendered_config = tomllib.loads(Path(argv[argv.index('--config') + 1]).read_text())
+                    template = Path(next(iter(rendered_config['templates'].values()))['input_path'])
+                    for name in theme.MATUGEN_OUTPUTS:
+                        output = self.config / name
+                        output.parent.mkdir(parents=True, exist_ok=True)
+                        output.write_bytes(template.read_bytes())
+                    alias.unlink()
+                    alias.symlink_to(targets[0], target_is_directory=kind == 'directory')
+
+                with patch.object(theme, 'command', side_effect=retarget_during_render):
+                    self.render()
+                    self.assertEqual({(self.config / name).read_bytes() for name in theme.MATUGEN_OUTPUTS},
+                                     {b'palette-A'})
+                    self.render()
+                self.assertEqual(self.calls, previous_calls + 1, 'Stable resolved inputs must hit cache')
+                self.assertEqual(alias.resolve(), targets[0])
 
 
 if __name__ == '__main__':

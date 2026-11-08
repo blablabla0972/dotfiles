@@ -1,5 +1,16 @@
 # Development guide
 
+## Sequential template alias audit (2026-11-08)
+
+Matugen input template paths are resolved once before hashing and rendering.
+An alias retargeted A→B→A during the subprocess can no longer hash template A
+but render/cache B. Regressions cover both a file symlink and a linked template
+directory, retained alias targets and stable cache hits. A real Matugen scratch
+comparison rendered the wrong-template marker before the fix and not afterward.
+Missing-file validation remains Matugen's responsibility; output paths are
+unchanged. All 210 tests and 24 palette cases pass without skips. This was a
+host-only change in `.worktrees/sequential-template-20261108`.
+
 ## Matugen wallpaper ownership guard (2026-11-08)
 
 A real Matugen scratch reproduction invoked a stub wallpaper setter when its
