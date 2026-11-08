@@ -264,6 +264,33 @@ assert.equal(failed.phase, 'failed'); assert.equal(failed.swatches.length, 0);
 """)
 
 
+    def test_failed_preview_retries_without_same_selection_churn(self):
+        self.js(r"""
+let preview = api.createPreview('retry');
+assert.equal(api.selectPreview(preview, '', 'dark'), preview);
+preview = api.selectPreview(preview, '/A.png', 'dark');
+assert.equal(api.selectPreview(preview, '/A.png', 'dark'), preview);
+const first = preview;
+preview = api.finishPreview(preview, first.requestId, '', 1, 0);
+assert.equal(preview.phase, 'failed');
+preview = api.selectPreview(preview, '/A.png', 'dark');
+assert.equal(preview.phase, 'pending');
+assert.notEqual(preview.requestId, first.requestId);
+assert.equal(preview.serial, first.serial + 1);
+assert.equal(preview.swatches.length, 0);
+assert.equal(api.selectPreview(preview, '/A.png', 'dark'), preview);
+const envelope = p => JSON.stringify({schema_version: 1, request_id: p.requestId,
+    wallpaper: p.wallpaper, mode: p.mode, swatches: Array(5).fill('#123456')});
+assert.equal(api.finishPreview(preview, first.requestId, envelope(first), 0, 0), preview);
+assert.equal(api.finishPreview(preview, first.requestId, '', 1, 0), preview);
+preview = api.finishPreview(preview, preview.requestId, envelope(preview), 0, 0);
+assert.equal(preview.phase, 'ready');
+assert.equal(preview.swatches.length, 5);
+assert.equal(api.selectPreview(preview, '/A.png', 'dark'), preview);
+assert.equal(api.finishPreview(preview, first.requestId, '', 1, 0), preview);
+""")
+
+
 @unittest.skipUnless(shutil.which('magick') and shutil.which('md5sum'),
                      'ImageMagick and md5sum required')
 class ThumbnailEnumerationTests(unittest.TestCase):
@@ -336,7 +363,11 @@ sys.exit(int(os.environ['PREVIEW_STATUS']))
     def test_isolated_command_and_current_matugen_json(self):
         result, record, wallpaper = self.run_preview()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(record['args'], ['image', wallpaper, '--config', record['config_path'],
+        snapshot = Path(record['args'][1])
+        self.assertEqual(snapshot.parent, Path(record['config_path']).parent)
+        self.assertEqual(snapshot.suffix, Path(wallpaper).suffix)
+        self.assertNotEqual(str(snapshot), wallpaper)
+        self.assertEqual(record['args'], ['image', str(snapshot), '--config', record['config_path'],
                          '--dry-run', '--json', 'hex', '--mode', 'dark', '--prefer',
                          'less-saturation', '--source-color-index', '0', '--quiet'])
         config = tomllib.loads(record['config'])

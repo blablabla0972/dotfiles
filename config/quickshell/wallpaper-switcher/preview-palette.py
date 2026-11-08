@@ -116,26 +116,30 @@ def preview(wallpaper, mode, request_id):
 
     matugen_info = get_matugen_identity()
     cache_path = None
-    if matugen_info is not None:
-        real_path, stat_id = matugen_info
-        try:
-            image_hash = compute_image_sha256(Path(wallpaper))
-            cache_key = compute_cache_key(image_hash, mode, real_path, stat_id)
-            cache_path = get_cache_dir() / f'{cache_key}.json'
-            cached = read_cached_swatches(cache_path)
-            if cached is not None:
-                return dict(schema_version=1, request_id=request_id, wallpaper=wallpaper,
-                            mode=mode, swatches=cached)
-        except OSError:
-            cache_path = None
-
     with TemporaryDirectory(prefix='wallpaper-preview-') as directory:
+        # Hash and render the same private bytes even if the source is replaced.
+        snapshot = Path(directory) / ('source' + Path(wallpaper).suffix)
+        shutil.copyfile(wallpaper, snapshot)
+        snapshot.chmod(0o400)
+        if matugen_info is not None:
+            real_path, stat_id = matugen_info
+            try:
+                image_hash = compute_image_sha256(snapshot)
+                cache_key = compute_cache_key(image_hash, mode, real_path, stat_id)
+                cache_path = get_cache_dir() / f'{cache_key}.json'
+                cached = read_cached_swatches(cache_path)
+                if cached is not None:
+                    return dict(schema_version=1, request_id=request_id, wallpaper=wallpaper,
+                                mode=mode, swatches=cached)
+            except OSError:
+                cache_path = None
+
         config = Path(directory) / 'config.toml'
         config.write_text(CONFIG_CONTENT)
         env = dict(os.environ, XDG_CONFIG_HOME=directory, XDG_CACHE_HOME=directory,
                    XDG_STATE_HOME=directory)
         result = subprocess.run(
-            ['matugen', 'image', wallpaper, '--config', str(config), *JSON_FLAGS,
+            ['matugen', 'image', str(snapshot), '--config', str(config), *JSON_FLAGS,
              '--mode', mode, *FIXED_FLAGS],
             capture_output=True, text=True, check=True, timeout=8, cwd=directory, env=env,
         )

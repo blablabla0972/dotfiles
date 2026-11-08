@@ -141,7 +141,7 @@ function createPreview(session) {
 }
 
 function selectPreview(previous, wallpaper, mode) {
-    if (previous.wallpaper === wallpaper && previous.mode === mode) return previous;
+    if (previous.wallpaper === wallpaper && previous.mode === mode && previous.phase !== "failed") return previous;
     var state = Object.assign({}, previous);
     state.serial += 1;
     state.requestId = state.session + "-" + state.serial;

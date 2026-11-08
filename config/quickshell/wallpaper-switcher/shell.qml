@@ -339,7 +339,10 @@ PanelWindow {
     // Resolve once before building the model; NUL preserves whitespace in filenames.
     Process {
         id: currentWallpaperQuery
-        command: ["readlink", "--canonicalize-existing", "--zero", "--", root.configHome + "/hypr/current_wallpaper"]
+        command: ["find", "-L", Quickshell.env("HOME") + "/Ảnh/Wallpaper", "-maxdepth", "1",
+            "-type", "f", "!", "-name", ".*", "-regextype", "posix-extended",
+            "-iregex", ".*\\.(png|jpg|jpeg|webp)", "-samefile", root.configHome + "/hypr/current_wallpaper",
+            "-print0", "-quit"]
         running: true
         stdout: StdioCollector {
             onStreamFinished: root.finishInitialWallpaper(text)
@@ -451,13 +454,6 @@ PanelWindow {
         transition({type: "select", wallpaper: item ? item.filePath : ""});
     }
 
-    // Bấm ra ngoài vùng trống để đóng
-    MouseArea {
-        anchors.fill: parent
-        z: -1
-        onClicked: root.closeShell()
-    }
-
     // Khung chứa nội dung chính với hiệu ứng hiển thị mượt mà trên Render Thread
     Item {
         id: contentContainer
@@ -520,12 +516,30 @@ PanelWindow {
             interactive: !root.closing
             onCurrentIndexChanged: root.syncSelection()
 
+            // Observe blank taps without taking the carousel's drag or card grabs.
+            TapHandler {
+                enabled: !root.closing
+                gesturePolicy: TapHandler.DragThreshold
+                onTapped: (point) => {
+                    for (var child of carousel.children)
+                        if (child.hitsCard && child.hitsCard(point.position)) return;
+                    root.closeShell();
+                }
+            }
+
             delegate: Item {
                 id: cardDelegate
                 required property int index
                 required property string thumbKey
                 required property string thumbUrl
                 required property string fileUrl
+                function hitsCard(point) {
+                    if (!cardDelegate.PathView.onPath || opacity <= 0) return false;
+                    var p = cardItem.mapFromItem(contentContainer, point.x, point.y);
+                    var left = cardItem.slant * (1 - p.y / cardItem.height);
+                    return p.y >= 0 && p.y <= cardItem.height && p.x >= left
+                        && p.x <= left + cardItem.width - cardItem.slant;
+                }
                 // PathView positions this fixed footprint. Resizing its delegate from
                 // interpolated path attributes feeds back into refill() and can hang Qt.
                 // These IDs intentionally refer to the enclosing shell component.
