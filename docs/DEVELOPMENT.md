@@ -1,5 +1,13 @@
 # Development guide
 
+## Eight-agent audit follow-up (2026-11-08)
+
+Eight GPT-6.1 Sol max agents audited independent domains, with cross-review and
+host integration; the unavailable Luna model was not impersonated. See
+[the audit report](rice/PARALLEL_AUDIT_2026-11-08.md) for scopes, reproduced
+defects, fixes and limits. Integrated checks pass 206 tests without skips and
+all 24 palette cases; temporary Qt tests cover pointer/key behavior offscreen.
+
 ## Additional bug audit (2026-11-08)
 
 Four reproduced defects fixed: stale thumbnails after source replacement with
