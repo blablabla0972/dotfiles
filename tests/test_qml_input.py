@@ -60,6 +60,7 @@ class QmlInputTests(unittest.TestCase):
         # Use the actual input handlers, card hit testing, geometry and delegates.
         content = source[source.index('    // Bấm ra ngoài'):source.index('    // Hoạt ảnh xuất hiện')] if '    // Bấm ra ngoài' in source else source[source.index('    // Khung chứa nội dung'):source.index('    // Hoạt ảnh xuất hiện')]
         props = source[source.index('    readonly property real rowWidth:'):source.index('    function transition(')]
+        rebuild = re.search(r'    Timer \{\n        id: rebuildTimer.*?\n    \}', source, re.S).group()
         qml = '''import QtQuick
 import QtQuick.Window
 import QtQuick.Effects
@@ -73,15 +74,20 @@ property var palette: ({})
 property real panelOpacity: 1
 property var previewSwatches: []
 property var applyState: ({phase: "idle"})
+property int modelUpdates: 0
+property int rebuildInterval: rebuildTimer.interval
 function closeShell() {closed++;}
 function applyCurrent() {applied++;}
 function syncSelection() {}
 function statusText() {return "";}
 function thumbnailSource() {return "";}
 function resetInput() {closed=0; applied=0; carousel.currentIndex=0; contentContainer.forceActiveFocus();}
+function updateDisplayModel() {modelUpdates++; displayModel.clear(); for(var i=0;i<8;i++) displayModel.append({thumbKey:String(i),thumbUrl:"",fileUrl:""});}
+function coldModel() {displayModel.clear(); rebuildTimer.restart();}
+function refreshModel() {rebuildTimer.restart(); rebuildTimer.restart(); rebuildTimer.restart();}
 QtObject {id: enterAnimation; function start() {contentContainer.opacity=1; contentContainer.scale=1;}}
 ListModel {id: displayModel; Component.onCompleted: {for(var i=0;i<8;i++) append({thumbKey:String(i),thumbUrl:"",fileUrl:""});}}
-''' + props + content + '\n}'
+''' + props + rebuild + content + '\n}'
         cpp = r'''
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -107,6 +113,14 @@ int main(int argc,char **argv) {
   for(int x=420;x<=600;x+=20)QTest::mouseMove(w,QPoint(x,300),20);
   QTest::mouseRelease(w,Qt::LeftButton,Qt::NoModifier,QPoint(600,300));QTest::qWait(200);save();
   reset();QTest::keyClick(w,Qt::Key_Escape);save();
+  QMetaObject::invokeMethod(w,"coldModel");
+  const int initialInterval=w->property("rebuildInterval").toInt();QTest::qWait(200);
+  const int initialBuilds=w->property("modelUpdates").toInt();
+  QMetaObject::invokeMethod(w,"refreshModel");QTest::qWait(200);
+  QJsonObject scheduling;scheduling["initialInterval"]=initialInterval;
+  scheduling["initialBuilds"]=initialBuilds;
+  scheduling["refillInterval"]=w->property("rebuildInterval").toInt();
+  scheduling["totalBuilds"]=w->property("modelUpdates").toInt();results.append(scheduling);
   fprintf(stdout,"%s\n",QJsonDocument(results).toJson(QJsonDocument::Compact).constData());app.quit();
  });return app.exec();
 }'''
@@ -126,3 +140,5 @@ int main(int argc,char **argv) {
             self.assertEqual((rows[2]['closed'], rows[2]['applied']), (0, 1), rows)
             self.assertEqual((rows[3]['closed'], rows[3]['applied']), (0, 0), rows)
             self.assertEqual(rows[4]['closed'], 1, rows)
+            self.assertEqual(rows[5], dict(initialInterval=0, initialBuilds=1,
+                                          refillInterval=80, totalBuilds=2), rows)

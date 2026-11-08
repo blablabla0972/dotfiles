@@ -369,7 +369,7 @@ PanelWindow {
     // Debounce rebuild model tránh giật lag khi đang quét thư mục
     Timer {
         id: rebuildTimer
-        interval: 80
+        interval: displayModel.count === 0 ? 0 : 80
         repeat: false
         onTriggered: root.updateDisplayModel()
     }
