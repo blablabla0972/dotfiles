@@ -50,3 +50,9 @@ Qt pointer/key coverage uses offscreen execution, not live visual acceptance.
 No forced lock, suspend or service restart was used. Existing MIME/Micro edits,
 generated files and preview styling are preserved; only reviewed helper/QML
 changes are applied to the existing active Quickshell preview.
+
+Delivery: a fresh HTTPS clone of `097b19f` passed all 206 tests and 24 palette
+cases. Live same-wallpaper apply returned `applied`, preview returned five
+swatches, Hyprland had no config errors and Noctalia validated. Preview patch
+backups are in `/tmp/dotfiles-eight-preview-before-20261108/`; all eight agents
+completed their assignments and were closed after review.
