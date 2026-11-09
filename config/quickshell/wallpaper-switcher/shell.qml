@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Effects
 import QtQuick.Shapes
 import Quickshell
 import Quickshell.Io
@@ -577,6 +576,9 @@ PanelWindow {
                         smooth: true
                         retainWhileLoading: true
                         visible: false
+                        // Give ShapePath the cropped image texture, including at fractional DPI.
+                        layer.enabled: cardItem.effectsActive
+                        layer.smooth: true
                         onStatusChanged: {
                             if (status === Image.Error && source.toString() !== cardItem.fileUrl) cardItem.thumbnailFailed = true;
                         }
@@ -584,29 +586,17 @@ PanelWindow {
 
                     // Clip the frame, not the image: straight features stay undistorted.
                     Shape {
-                        id: cardMask
                         anchors.fill: parent
-                        visible: false
-                        layer.enabled: cardItem.effectsActive
-                        layer.smooth: true
+                        visible: cardItem.effectsActive
                         ShapePath {
                             strokeWidth: 0
-                            fillColor: "white"
+                            fillItem: cardItem.effectsActive ? cardImg : null
                             startX: cardItem.slant; startY: 0
                             PathLine { x: cardItem.width; y: 0 }
                             PathLine { x: cardItem.width - cardItem.slant; y: cardItem.height }
                             PathLine { x: 0; y: cardItem.height }
                             PathLine { x: cardItem.slant; y: 0 }
                         }
-                    }
-
-                    MultiEffect {
-                        anchors.fill: parent
-                        visible: cardItem.effectsActive
-                        source: cardItem.effectsActive ? cardImg : null
-                        maskEnabled: cardItem.effectsActive
-                        maskSource: cardItem.effectsActive ? cardMask : null
-                        autoPaddingEnabled: false
                     }
 
                     Shape {
