@@ -27,10 +27,29 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install offline test tools
+      - name: Install Lua 5.4 for shell tests
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends jq lua5.4 nodejs
+          set -euo pipefail
+          apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+          for attempt in 1 2 3; do
+            if sudo apt-get "${apt_options[@]}" update && \
+              sudo apt-get "${apt_options[@]}" install -y --no-install-recommends lua5.4; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Could not install Lua after 3 attempts" >&2
+              exit 1
+            fi
+            delay=$((attempt * 5))
+            echo "apt-get failed; retrying in ${delay}s (attempt ${attempt}/3)" >&2
+            sleep "$delay"
+          done
+
+      - name: Verify unit test tools are available
+        run: |
+          command -v jq
+          command -v lua
+          command -v node
 
       - name: Validate tracked Bash, Python, TOML and JSON
         run: python3 tests/validate.py
