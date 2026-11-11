@@ -234,3 +234,31 @@ performed.
 - Live state remained on patched Noctalia 5.3.0; native config validation
   passed, Hyprland reported no config errors, eDP-1 remained 1920x1080 at
   144.005 Hz, and no user unit was failed.
+
+## Follow-up after the Noctalia v5.4.1 upgrade
+
+This follow-up supersedes the earlier live-version, security-backport, and
+"Decision" conclusions above; they describe the state before the upgrade.
+
+- The running process now uses
+  `~/noctalia-dashboard-redesign/worktrees/noctalia-upgrade-current/build-v5.4.1-matugen/noctalia`;
+  `noctalia --version` reports v5.4.1. The active checkout is commit
+  `c92541014f46b06afec83a7b4a2505ff271d35c2`, descended from the peeled
+  upstream v5.4.1 tag `815aebe1cfd79c9a18197441eea92f0b275035fc`.
+- Upstream security commit
+  `732e727c51e2d609263b413799577aa1a7e1de6e` is an ancestor of that tag. The
+  rice delta does not change its sender-validation files in `src/auth/` or
+  `src/dbus/`; its `panel_manager.cpp` changes cover control-center blur/rendering.
+  The earlier recommendation to backport that commit is superseded by the v5.4.1
+  base.
+- The matching source snapshot is published at
+  [`noctalia-dashboard-source:codex/noctalia-v5.4.1-current`](https://github.com/blablabla0972/noctalia-dashboard-source/tree/codex/noctalia-v5.4.1-current).
+  The config role migration, settings schema 16, release build, and removal of
+  the top-bar debug indicator are recorded in the updated README and RESTORE
+  guide. The custom branch compiled and config validation passed; its own test
+  suite was not run. The 177/177 result above applies to pristine upstream.
+
+The reported Actions run `43049456203` failed during apt downloads because the
+runner could not resolve Ubuntu archive hosts; validation and unit tests were
+skipped. The workflow now installs only Lua with bounded retries and checks
+that runner-provided `jq` and Node plus Lua are present before tests.
