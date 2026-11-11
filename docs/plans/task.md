@@ -29,3 +29,15 @@
 | Audit 2026-10-30: Present design and obtain approval | pending | Review before changing desktop behavior |
 | Audit 2026-10-30: Record approved design | pending | docs/plans/2026-10-30-rice-audit-design.md |
 | Audit 2026-10-30: Create implementation plan | pending | Transition after design approval |
+| Stabilization 2026-11-11: Explore current repositories, history and live links | done | main dd082cc; four pending files; all live config links resolve to main; native runtime ade8aa6c (5.3.0), system package 5.4.1 |
+| Stabilization 2026-11-11: Clarify scope and safety constraints | done | User requires Git + CI first; preserve running desktop, theme transaction owner, lock layout and WIP branches |
+| Stabilization 2026-11-11: Compare approaches | done | Approved minimal Git/CI plus isolated upgrade research instead of immediate migration or report-only work |
+| Stabilization 2026-11-11: Present design and obtain approval | done | User selected Duyet thiet ke (Recommended); local commits only; no launcher change, WIP deletion or push |
+| Stabilization 2026-11-11: Record approved design | done | docs/plans/2026-11-11-rice-stabilization-design.md |
+| Stabilization 2026-11-11: Create implementation plan | done | docs/plans/2026-11-11-rice-stabilization.md; isolated worktree baseline 210 tests, no skips |
+| Stabilization 2026-11-11: Review four pending files and finalize main | in progress | Fish installer PATH redundant; preserve TextEditor associations, runtime state and empty Micro bindings; stage only reviewed paths |
+| Stabilization 2026-11-11: Add CI and regression coverage | pending | Selected audit workflow checks; test-first reusable syntax validation; disclose missing native dependencies |
+| Stabilization 2026-11-11: Assess Noctalia patch and upgrade feasibility | pending | 27 changed files versus local v5.3.0; system 5.4.1 ignores matugen_palette and emits 16 migration warnings |
+| Stabilization 2026-11-11: Measure real RAM/CPU usage | pending | Read-only sample completed: Brave 2170.7 MiB PSS; Noctalia 99.3; Hyprland 98.2; save methodology and limits |
+| Stabilization 2026-11-11: Audit wallpaper/theme pipeline | pending | CodeGraph source review and regression evidence; preserve transaction ownership; record results |
+| Stabilization 2026-11-11: Refine dashboard only if justified | pending | No demonstrated need for redesign; record no-change decision and GUI acceptance limits |
