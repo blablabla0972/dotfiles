@@ -61,6 +61,23 @@ class E2EEnvironment:
         return path
 
     def _setup_stubs(self):
+        # Return valid schema values without touching the host GSettings database.
+        self.make_executable(
+            "gsettings",
+            "#!/bin/sh\n"
+            "case \"${1-}\" in\n"
+            "  get)\n"
+            "    case \"${3-}\" in\n"
+            "      color-scheme) printf \"'default'\\n\" ;;\n"
+            "      gtk-theme|icon-theme) printf \"'Adwaita'\\n\" ;;\n"
+            "      *) exit 1 ;;\n"
+            "    esac\n"
+            "    ;;\n"
+            "  set) exit 0 ;;\n"
+            "  *) exit 1 ;;\n"
+            "esac\n",
+        )
+
         # 1. systemctl stub
         self.make_executable(
             "systemctl",

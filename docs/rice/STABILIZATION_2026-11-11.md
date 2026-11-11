@@ -258,8 +258,13 @@ This follow-up supersedes the earlier live-version, security-backport, and
   guide. The custom branch compiled and config validation passed; its own test
   suite was not run. The 177/177 result above applies to pristine upstream.
 
-Actions runs `43049456203` and `43057316083` failed before validation because
-the hosted runner could not resolve Ubuntu archive hosts while installing Lua.
-The workflow now downloads pinned Lua 5.4.8 interpreter/compiler binaries from
-GitHub, verifies their SHA-256 digests, and checks that `jq`, Node, and Lua are
-available before tests.
+Actions runs `43049456203`, `43057316083`, and `43060755102` failed before
+validation because the hosted runner could not resolve Ubuntu archive hosts
+while installing Lua. The workflow now downloads pinned Lua 5.4.8
+interpreter/compiler binaries from GitHub, verifies their SHA-256 digests, and
+checks that `jq`, Node, and Lua are available before tests.
+
+Run `43061621126` then executed all 219 unit tests; three end-to-end tests
+failed because the isolated harness inherited the runner's `gsettings` binary
+without its GNOME schema. The shared fixture now provides valid appearance
+values through a no-side-effect `gsettings` stub.
