@@ -1,0 +1,68 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install offline test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends jq lua5.4 nodejs
+
+      - name: Validate tracked Bash, Python, TOML and JSON
+        run: python3 tests/validate.py
+
+      - name: Run isolated unit tests
+        run: |
+          mkdir -p "$RUNNER_TEMP/dotfiles-home" "$RUNNER_TEMP/dotfiles-bin"
+          cat > "$RUNNER_TEMP/dotfiles-bin/systemctl" <<'SH'
+          #!/bin/sh
+          exit 0
+          SH
+          chmod +x "$RUNNER_TEMP/dotfiles-bin/systemctl"
+          env -i \
+            CI=1 \
+            HOME="$RUNNER_TEMP/dotfiles-home" \
+            LANG=C.UTF-8 \
+            PATH="$RUNNER_TEMP/dotfiles-bin:$PATH" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            python3 -m unittest discover -s tests -v
+
+      - name: Run palette matrix when native dependencies are available
+        run: |
+          if command -v matugen >/dev/null && command -v magick >/dev/null && \
+             command -v noctalia >/dev/null && command -v lua >/dev/null && \
+             command -v luac >/dev/null && \
+             python3 -c 'import gi; gi.require_version("Gtk", "4.0")' 2>/dev/null; then
+            env -i \
+              HOME="$RUNNER_TEMP/dotfiles-home" \
+              LANG=C.UTF-8 \
+              PATH="$PATH" \
+              PYTHONDONTWRITEBYTECODE=1 \
+              python3 tests/check_palette_matrix.py --no-desktop
+          else
+            echo "SKIP palette matrix: Noctalia, Matugen, ImageMagick 7, Lua or GTK4 Python bindings unavailable"
+          fi

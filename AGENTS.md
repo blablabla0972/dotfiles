@@ -16,7 +16,7 @@ This is an installable CachyOS/Hyprland dotfiles snapshot. Read [README.md](READ
 - Noctalia writes `state/noctalia/settings.toml`; inspect and preserve existing user changes. `config/hypr/current_wallpaper`, GPU selections, input-method state, and cache files can be host-specific. Never stage unrelated `git status` entries.
 - Preserve the dark default and original lock-screen clock layout unless the user requests otherwise. Keep the existing wallpaper transaction owner and rollback/acknowledgment behavior when changing theme generation.
 - Check for a nearer `AGENTS.md` before editing within a subtree. Do not index CodeGraph yourself; when `.codegraph/` exists, use its available index before searching source for symbols.
-- There is no root build system, package manifest, CI workflow, or configured linter/formatter/type checker. Use the verified commands in `docs/DEVELOPMENT.md`; do not invent tooling.
+- There is no root build system, package manifest, linter, formatter, or type checker. CI runs the dependency-free tracked-file validator and isolated unit tests documented in `docs/DEVELOPMENT.md`; do not invent additional tooling.
 
 ## Done when
 

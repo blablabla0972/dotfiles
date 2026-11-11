@@ -184,6 +184,17 @@ The repository does not pin or bootstrap operating-system packages. Tests use Py
 
 ## Tests and checks
 
+Validate every tracked Bash, Python, TOML and JSON file with the same
+dependency-free command used by CI:
+
+```bash
+python3 tests/validate.py
+```
+
+The validator ignores symlinks rather than following repository links to
+machine-specific targets. It checks Bash syntax with `bash -n`; it is not a
+shell linter or formatter.
+
 Run the full suite from the repository root:
 
 ```bash
@@ -206,7 +217,16 @@ bash -n install.sh wt-prep.sh \
   config/quickshell/wallpaper-switcher/generate-thumbs.sh
 ```
 
-Before handing off a change, review `git diff --check`, `git diff`, and `git status --short`. No build, lint, format, typecheck, or CI command is configured in the repository. Do not report those checks as passing unless a project tool is added and actually run.
+Before handing off a change, review `git diff --check`, `git diff`, and `git status --short`. There is no root build, lint, format, or typecheck command. Do not report those checks as passing unless a project tool is added and actually run.
+
+GitHub Actions runs `.github/workflows/validate.yml` on pushes, pull requests
+and manual dispatch. The job uses a clean HOME, read-only repository
+permissions, Python 3.12, jq, Lua and Node. Hosted runners normally lack the
+patched Noctalia, Matugen, ImageMagick 7, Quickshell and Qt development stack,
+so tests that require those programs report skips. The palette matrix step also
+prints an explicit skip unless all native dependencies are present. Run the
+matrix on this configured host before handing off theme or template changes;
+CI success alone is not native or visual acceptance.
 
 On the configured desktop session, reload only the component you changed. Existing commands are `hyprctl reload config-only`, `noctalia msg config-reload`, and `noctalia msg color-palette-reload`; check compositor diagnostics with `hyprctl configerrors` and validate Noctalia configuration with `noctalia config validate`. Run relevant commands from the live session. A successful offline suite does not establish that a live theme, focus behavior, display scale, or lock screen was visually tested.
 
