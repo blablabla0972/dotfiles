@@ -11,6 +11,7 @@ application/x-extension-xhtml=brave-origin.desktop;
 application/x-extension-xht=brave-origin.desktop;
 x-scheme-handler/antigravity=antigravity.desktop;
 inode/directory=nemo.desktop;
+text/x-c++src=org.gnome.TextEditor.desktop;
 
 [Default Applications]
 inode/directory=org.gnome.Nautilus.desktop
@@ -26,7 +27,7 @@ application/xhtml+xml=brave-origin.desktop
 application/x-extension-xhtml=brave-origin.desktop
 application/x-extension-xht=brave-origin.desktop
 x-scheme-handler/antigravity=antigravity.desktop
-x-scheme-handler/t3code=com.t3tools.T3Code.desktop
 x-scheme-handler/codex=chatgpt.desktop
 x-scheme-handler/discord=vesktop.desktop
 x-scheme-handler/mailto=brave-origin.desktop
+text/x-c++src=org.gnome.TextEditor.desktop
