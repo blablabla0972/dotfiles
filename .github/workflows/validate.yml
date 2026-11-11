@@ -28,22 +28,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install Lua 5.4 for shell tests
+        timeout-minutes: 8
         run: |
           set -euo pipefail
-          apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
-          for attempt in 1 2 3; do
-            if sudo apt-get "${apt_options[@]}" update && \
-              sudo apt-get "${apt_options[@]}" install -y --no-install-recommends lua5.4; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "Could not install Lua after 3 attempts" >&2
-              exit 1
-            fi
-            delay=$((attempt * 5))
-            echo "apt-get failed; retrying in ${delay}s (attempt ${attempt}/3)" >&2
-            sleep "$delay"
-          done
+          sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list.d/ubuntu.sources
+          apt_options=(-o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends lua5.4
 
       - name: Verify unit test tools are available
         run: |

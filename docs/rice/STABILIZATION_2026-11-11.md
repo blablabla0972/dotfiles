@@ -260,5 +260,7 @@ This follow-up supersedes the earlier live-version, security-backport, and
 
 The reported Actions run `43049456203` failed during apt downloads because the
 runner could not resolve Ubuntu archive hosts; validation and unit tests were
-skipped. The workflow now installs only Lua with bounded retries and checks
-that runner-provided `jq` and Node plus Lua are present before tests.
+skipped. The workflow now switches the Azure archive hostname to Ubuntu's
+canonical archive, limits apt retries and the Lua installation step to eight
+minutes, and checks that runner-provided `jq` and Node plus Lua are present
+before tests.
