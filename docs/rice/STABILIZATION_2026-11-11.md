@@ -268,3 +268,8 @@ Run `43061621126` then executed all 219 unit tests; three end-to-end tests
 failed because the isolated harness inherited the runner's `gsettings` binary
 without its GNOME schema. The shared fixture now provides valid appearance
 values through a no-side-effect `gsettings` stub.
+
+The follow-up [Actions run `43062628925`](https://github.com/blablabla0972/dotfiles/actions/runs/43062628925)
+passed validation and all executed unit tests: 219 ran and 30 were skipped.
+The palette matrix remained skipped because its native-dependency gate was not
+met, so this run does not verify desktop rendering at runtime.
