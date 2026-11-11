@@ -12,7 +12,7 @@ tint_intensity = 0.34
  border_width = 0.0
 capsule = true
 capsule_fill = "surface_variant"
-capsule_opacity = 0.92
+capsule_opacity = 0.95
 capsule_padding = 11.0
 capsule_thickness = 0.86
 center = [ "workspaces" ]
@@ -43,7 +43,7 @@ capsule_border_width = 1.0
     fill = "surface_variant"
     id = "time"
         members = [ "clock", "calendar_date" ]
-    opacity = 0.92
+    opacity = 0.95
     padding = 11.0
     widget_spacing = 12
 
@@ -52,7 +52,7 @@ capsule_border_width = 1.0
     fill = "surface_variant"
     id = "status"
     members = [ "network", "volume", "battery" ]
-    opacity = 0.92
+    opacity = 0.95
     padding = 11.0
     widget_spacing = 12
 
@@ -327,6 +327,7 @@ hide_delay_ms = 1300
 border_width = 1.0
 
 [lockscreen]
+wallpaper = "~/.config/hypr/current_wallpaper"
 blur_intensity = 0.62
 tint_intensity = 0.34
 transition = [ "fade", "zoom" ]
@@ -382,7 +383,6 @@ type = "battery"
 color = "on_surface_variant"
 
 [hooks]
-started = ["noctalia msg session lock"]
 wallpaper_changed = ["python3 $HOME/.config/hypr/scripts/generate-theme.py --wallpaper-changed"]
 theme_mode_changed = ["python3 $HOME/.config/hypr/scripts/generate-theme.py --theme-mode-changed"]
 
@@ -401,6 +401,6 @@ id = "session_controls"
 members = [ "notifications", "session" ]
 fill = "surface_variant"
 border = "outline"
-opacity = 0.92
+opacity = 0.95
 padding = 11.0
 widget_spacing = 14
