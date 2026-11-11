@@ -8,10 +8,10 @@ tint_intensity = 0.34
 
 [bar.default]
  background_opacity = 0.0
- border = "outline"
+ border = "outline_variant"
  border_width = 0.0
 capsule = true
-capsule_fill = "surface_variant"
+capsule_fill = "surface_container"
 capsule_opacity = 0.95
 capsule_padding = 11.0
 capsule_thickness = 0.86
@@ -35,12 +35,12 @@ scale = 1.00
 start = [ "launcher", "group:time" ]
 thickness = 38
 widget_spacing = 10
-capsule_border = "outline"
+capsule_border = "outline_variant"
 capsule_border_width = 1.0
 
     [[bar.default.capsule_group]]
-    border = "outline"
-    fill = "surface_variant"
+    border = "outline_variant"
+    fill = "surface_container"
     id = "time"
         members = [ "clock", "calendar_date" ]
     opacity = 0.95
@@ -48,8 +48,8 @@ capsule_border_width = 1.0
     widget_spacing = 12
 
     [[bar.default.capsule_group]]
-    border = "outline"
-    fill = "surface_variant"
+    border = "outline_variant"
+    fill = "surface_container"
     id = "status"
     members = [ "network", "volume", "battery" ]
     opacity = 0.95
@@ -85,7 +85,7 @@ settings_show_advanced = true
 
     [shell.panel]
     borders = true
-    border_color = "outline"
+    border_color = "outline_variant"
     border_width = 1.0
     control_center_placement = "floating"
     control_center_position = "top_center"
@@ -156,7 +156,7 @@ main_axis_padding = 12
 cross_axis_padding = 7
 item_spacing = 6
 background_opacity = 0.92
-border = "outline"
+border = "outline_variant"
 border_width = 1.0
 radius = 24
 concave_edge_corners = false
@@ -278,7 +278,7 @@ type = "sysmon"
 
 [widget.tray]
 capsule = true
-capsule_fill = "surface_variant"
+capsule_fill = "surface_container"
 
 [widget.volume]
 color = "on_surface_variant"
@@ -306,7 +306,7 @@ show_shortcut_labels = true
 [notification]
 background_opacity = 0.96
 border = true
-border_color = "outline"
+border_color = "outline_variant"
 width = 380
 position = "top_right"
 offset_x = 12
@@ -319,7 +319,7 @@ border_width = 1.0
 [osd]
 background_opacity = 0.96
 border = true
-border_color = "outline"
+border_color = "outline_variant"
 position = "top_center"
 offset_y = 64
 orientation = "horizontal"
@@ -399,8 +399,8 @@ font_scale = 0.94
 [[bar.default.capsule_group]]
 id = "session_controls"
 members = [ "notifications", "session" ]
-fill = "surface_variant"
-border = "outline"
+fill = "surface_container"
+border = "outline_variant"
 opacity = 0.95
 padding = 11.0
 widget_spacing = 14

@@ -8,9 +8,9 @@ font/icon tương ứng. Installer không cài package hệ thống. Wallpaper v
 phải được chọn theo máy đích; xem README trước khi cài snapshot `--all`.
 
 Noctalia phải là bản native có patch `theme.matugen_palette`. Revision đã lưu:
-[`ade8aa6c17d72ee571d08d0f1b765e8894c07eb5`](https://github.com/blablabla0972/noctalia-dashboard-source/commit/ade8aa6c17d72ee571d08d0f1b765e8894c07eb5),
-trên nhánh `dotfiles-runtime-20261107`, VERSION 5.3.0.
-Theo [PACKAGING.md của revision này](https://github.com/blablabla0972/noctalia-dashboard-source/blob/ade8aa6c17d72ee571d08d0f1b765e8894c07eb5/PACKAGING.md),
+[`0cfb9f8dde4a7b36ebde4627f2d7274450d5c755`](https://github.com/blablabla0972/noctalia-dashboard-source/commit/0cfb9f8dde4a7b36ebde4627f2d7274450d5c755),
+trên nhánh `codex/noctalia-v5.4.1-current`, VERSION 5.4.1.
+Theo [PACKAGING.md của revision này](https://github.com/blablabla0972/noctalia-dashboard-source/blob/0cfb9f8dde4a7b36ebde4627f2d7274450d5c755/PACKAGING.md),
 cần C++23, Meson >=1.1, Ninja và các development dependencies của shell.
 Cài cả `nlohmann-json` và `stb` trên Arch/CachyOS: source cần
 `nlohmann/json.hpp`, `stb/stb_image_resize2.h`, `stb/stb_image_write.h`.
@@ -19,12 +19,13 @@ thư mục này không nằm trong clone source, nên đừng sao chép các đ�
 `-I/home/admin/...` hay file `.pc` có prefix tuyệt đối sang máy mới.
 
 ```sh
-git clone --branch dotfiles-runtime-20261107 \
+git clone --branch codex/noctalia-v5.4.1-current \
   https://github.com/blablabla0972/noctalia-dashboard-source.git \
   "$HOME/Projects/noctalia-runtime"
 cd "$HOME/Projects/noctalia-runtime"
-git checkout --detach ade8aa6c17d72ee571d08d0f1b765e8894c07eb5
-meson setup build --buildtype=release --wrap-mode=nofallback -Dtests=disabled
+git checkout --detach 0cfb9f8dde4a7b36ebde4627f2d7274450d5c755
+meson setup build --buildtype=release --wrap-mode=nofallback \
+  -Db_ndebug=if-release -Dtests=disabled
 meson compile -C build noctalia -j4
 ```
 

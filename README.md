@@ -72,7 +72,7 @@ Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục w
 
 ## Hệ sinh thái đang dùng
 
-Noctalia hiện dùng bản native C++23 v5.3.0 đã patch, có `theme.matugen_palette`;
+Noctalia hiện dùng bản native C++23 v5.4.1 đã patch, có `theme.matugen_palette`;
 gói upstream chưa patch không đủ cho pipeline này. Mã nguồn được quản lý ở
 [noctalia-dashboard-source](https://github.com/blablabla0972/noctalia-dashboard-source),
 còn patch, hướng dẫn build và launcher nằm trong
@@ -81,14 +81,15 @@ còn patch, hướng dẫn build và launcher nằm trong
 build hoặc cài binary này; chuẩn bị binary và assets cùng revision trước khi cài.
 Launcher `~/.local/bin/noctalia` phải export `NOCTALIA_ASSETS_DIR` tới thư mục assets
 của bản build rồi `exec` binary với `"$@"`; thay đường dẫn home của máy cũ khi dựng lại.
-Trên máy hiện tại, `run-noctalia.sh` dùng `build-bar-background-20261030/noctalia`
-và `worktrees/bar-background-20261030/assets` trong `~/noctalia-dashboard-redesign`;
-kiểm tra launcher thực tế vì các tài liệu build cũ có thể ghi thư mục khác.
+Trên máy hiện tại, `run-noctalia.sh` dùng
+`worktrees/noctalia-upgrade-current/build-v5.4.1-matugen/noctalia` và
+`worktrees/noctalia-upgrade-current/assets` trong `~/noctalia-dashboard-redesign`.
+Buildtype là `release`, nên không có debug indicator trên top bar.
 Kiểm tra bằng `noctalia config validate` trước khi bật autostart.
-Revision source `ade8aa6c17d72ee571d08d0f1b765e8894c07eb5` đã được lưu trên nhánh
-[`dotfiles-runtime-20261107`](https://github.com/blablabla0972/noctalia-dashboard-source/tree/dotfiles-runtime-20261107).
+Revision source `0cfb9f8dde4a7b36ebde4627f2d7274450d5c755` (VERSION 5.4.1) đã được lưu trên nhánh
+[`codex/noctalia-v5.4.1-current`](https://github.com/blablabla0972/noctalia-dashboard-source/tree/codex/noctalia-v5.4.1-current).
 Dùng [hướng dẫn khôi phục](docs/RESTORE.md) để lấy đúng source, build và chuẩn bị launcher;
-các tài liệu v5.2.1 trong repo redesign là lịch sử, không phải phiên bản hiện chạy.
+các tài liệu v5.2.1/v5.3.0 trong repo redesign là lịch sử, không phải phiên bản hiện chạy.
 
 | Thành phần | Vai trò |
 |---|---|
