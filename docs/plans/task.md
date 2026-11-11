@@ -37,7 +37,7 @@
 | Stabilization 2026-11-11: Create implementation plan | done | docs/plans/2026-11-11-rice-stabilization.md; isolated worktree baseline 210 tests, no skips |
 | Stabilization 2026-11-11: Review four pending files and finalize main | done | b2b70dc records MIME/Micro/Noctalia state; duplicate Fish PATH removed back to tracked config; backup in /tmp/opencode; config and format checks pass |
 | Stabilization 2026-11-11: Add CI and regression coverage | done | 9 validator tests passed red-to-green; actionlint 1.7.12 clean; host 219 tests pass; simulated hosted PATH passes with 30 explicit native skips |
-| Stabilization 2026-11-11: Assess Noctalia patch and upgrade feasibility | in progress | 27 changed files versus local v5.3.0; system 5.4.1 ignores matugen_palette and emits 16 migration warnings |
-| Stabilization 2026-11-11: Measure real RAM/CPU usage | pending | Read-only sample completed: Brave 2170.7 MiB PSS; Noctalia 99.3; Hyprland 98.2; save methodology and limits |
-| Stabilization 2026-11-11: Audit wallpaper/theme pipeline | pending | CodeGraph source review and regression evidence; preserve transaction ownership; record results |
-| Stabilization 2026-11-11: Refine dashboard only if justified | pending | No demonstrated need for redesign; record no-change decision and GUI acceptance limits |
+| Stabilization 2026-11-11: Assess Noctalia patch and upgrade feasibility | done | Pristine 5.4.1 built 1122 targets and passed 177/177 tests with matching assets; 24/27 patch files overlap upstream, 4 conflict areas, private Matugen API blocks safe switch |
+| Stabilization 2026-11-11: Measure real RAM/CPU usage | done | 16 snapshots/16.96s: Brave 2170.7 MiB PSS, Noctalia 99.3, Hyprland 98.2; pressure avg10 zero; uncontrolled-session limits documented |
+| Stabilization 2026-11-11: Audit wallpaper/theme pipeline | done | Single transaction owner, lock/ack/rollback/cache reviewed; 9/9 configured native outputs covered by 26 snapshot paths; no reproduced defect, no speculative refactor |
+| Stabilization 2026-11-11: Refine dashboard only if justified | done | No defect or measured benefit; dashboard/carousel/top bar/Show Desktop/WIP unchanged; no visual acceptance claimed |

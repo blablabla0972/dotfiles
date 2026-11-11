@@ -6,7 +6,7 @@ This is an installable CachyOS/Hyprland dotfiles snapshot. Read [README.md](READ
 
 - `config/` maps to `~/.config/<name>`; `root/` maps individual files there; `state/` maps app state under `~/.local/state`; `bin/` maps utilities to `~/.local/bin`.
 - The configured desktop is Lua-based: `config/hypr/hyprland.lua` loads `config/hypr/config/*.lua`. Noctalia and the Quickshell wallpaper picker are separate programs.
-- On this host, active components are symlinks into checkouts. Resolve the affected `~/.config/<name>` link before editing: Noctalia and Quickshell currently use preview worktrees documented in README.md; most other components use `main`. Editing the resolved source changes live configuration immediately. Other repository files are snapshots until installed.
+- On this host, active components are symlinks into checkouts. Resolve the affected `~/.config/<name>` link before editing; all managed live config links resolved to `main` at the 2026-11-11 stabilization checkpoint, but later previews may change that. Editing the resolved source changes live configuration immediately. Other repository files are snapshots until installed.
 - `install.sh --dry-run` previews link changes; selected installs create backups under `~/.config/backups/`. Selecting `noctalia` or `--all` can also install `state/noctalia/settings.toml`; pass `--no-state` when preserving the host's runtime state.
 - For configuration or behavior work, use an isolated Git worktree. `wt-prep.sh <new-worktree>` copies machine-specific `current_wallpaper` and GPU files and replaces those destinations there; use it only on a newly created worktree. Preview only the changed components and follow the documented rollback procedure.
 

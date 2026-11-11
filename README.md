@@ -108,7 +108,7 @@ Service swww dùng `ExecSearchPath` của systemd ≥250 để tìm daemon trong
 Các thành phần desktop dùng symlink vào checkout live (phần lớn trên nhánh `main`):
 `~/.config/{hypr,noctalia,quickshell,matugen,rice,micro,kitty,alacritty,gtk-3.0,gtk-4.0,qt5ct,qt6ct,btop}` → `config/*`; `~/.config/kdeglobals` → `root/kdeglobals`.
 `~/.local/bin/toggle-desktop` → `bin/toggle-desktop`.
-Hiện Noctalia trỏ vào `.worktrees/perf-panel-20261029/config/noctalia` và Quickshell trỏ vào `.worktrees/rice-audit-agy-20261030/config/quickshell`; các bản sửa kiểm toán được áp dụng ở cả checkout chính và hai preview này, giữ thay đổi giao diện riêng của chúng.
+Tại checkpoint 2026-11-11, toàn bộ liên kết cấu hình live được quản lý ở trên đều trỏ vào checkout `main`; các preview cũ không còn được cài. Luôn resolve liên kết thực tế trước khi sửa vì một lần preview sau có thể đổi checkout đích.
 Sửa trong `config/` của repo = sửa luôn trên máy.
 Trên máy khác, cài riêng trạng thái Noctalia chỉ khi muốn thay trạng thái của máy đó: `./install.sh noctalia`. Dùng `--no-state` để giữ state hiện tại.
 
