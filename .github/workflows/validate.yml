@@ -28,13 +28,25 @@ jobs:
           python-version: "3.12"
 
       - name: Install Lua 5.4 for shell tests
-        timeout-minutes: 8
+        timeout-minutes: 4
         run: |
           set -euo pipefail
-          sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list.d/ubuntu.sources
-          apt_options=(-o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
-          sudo apt-get "${apt_options[@]}" update
-          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends lua5.4
+          lua_bin="$RUNNER_TEMP/lua-bin"
+          mkdir -p "$lua_bin"
+          curl --fail --location --retry 2 --connect-timeout 10 --max-time 60 \
+            https://github.com/dyne/luabinaries/releases/download/54f813a/lua54 \
+            --output "$lua_bin/lua"
+          curl --fail --location --retry 2 --connect-timeout 10 --max-time 60 \
+            https://github.com/dyne/luabinaries/releases/download/54f813a/luac54 \
+            --output "$lua_bin/luac"
+          sha256sum --check <<EOF
+          c726db1b3edf907af6763082b2c47cdb995fb87e5456f477ba051fe1a839892c  $lua_bin/lua
+          c04fcc4c97afe90047c2706dd63c4432b3efc326747627ae9311d9d85ab88af8  $lua_bin/luac
+          EOF
+          chmod +x "$lua_bin/lua" "$lua_bin/luac"
+          echo "$lua_bin" >> "$GITHUB_PATH"
+          "$lua_bin/lua" -v
+          "$lua_bin/luac" -v
 
       - name: Verify unit test tools are available
         run: |

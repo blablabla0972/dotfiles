@@ -258,9 +258,8 @@ This follow-up supersedes the earlier live-version, security-backport, and
   guide. The custom branch compiled and config validation passed; its own test
   suite was not run. The 177/177 result above applies to pristine upstream.
 
-The reported Actions run `43049456203` failed during apt downloads because the
-runner could not resolve Ubuntu archive hosts; validation and unit tests were
-skipped. The workflow now switches the Azure archive hostname to Ubuntu's
-canonical archive, limits apt retries and the Lua installation step to eight
-minutes, and checks that runner-provided `jq` and Node plus Lua are present
-before tests.
+Actions runs `43049456203` and `43057316083` failed before validation because
+the hosted runner could not resolve Ubuntu archive hosts while installing Lua.
+The workflow now downloads pinned Lua 5.4.8 interpreter/compiler binaries from
+GitHub, verifies their SHA-256 digests, and checks that `jq`, Node, and Lua are
+available before tests.
