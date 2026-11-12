@@ -34,6 +34,16 @@ PanelWindow {
 
     property string currentTab: "Home"
     property bool expanded: false
+    property string activeSideDrawer: ""
+    readonly property bool sideDrawerOpen: expanded && activeSideDrawer.length > 0
+
+    function toggleSideDrawer(type: string): void {
+        if (activeSideDrawer === type) {
+            activeSideDrawer = "";
+        } else {
+            activeSideDrawer = type;
+        }
+    }
 
     function toggle(tab): void {
         var target = (tab && tab.length > 0) ? tab : "Home";
@@ -52,6 +62,7 @@ PanelWindow {
 
     function dismiss(): void {
         if (!visible) return;
+        activeSideDrawer = "";
         expanded = false;
         closeTimer.restart();
     }
@@ -74,11 +85,15 @@ PanelWindow {
         }
     }
 
-    // Escape Key Handler to dismiss
+    // Escape Key Handler to dismiss or close side drawer
     Item {
         focus: dashboardWindow.visible
         Keys.onEscapePressed: (event) => {
-            dashboardWindow.dismiss();
+            if (dashboardWindow.sideDrawerOpen) {
+                dashboardWindow.activeSideDrawer = "";
+            } else {
+                dashboardWindow.dismiss();
+            }
             event.accepted = true;
         }
     }
@@ -93,7 +108,7 @@ PanelWindow {
             onTapped: (eventPoint) => {
                 var p = eventPoint.position;
                 var minX = morphContainer.x;
-                var maxX = morphContainer.x + morphContainer.width;
+                var maxX = morphContainer.x + morphContainer.width + (dashboardWindow.sideDrawerOpen ? (sideDrawerContainer.width + 12) : 0);
                 var minY = morphContainer.y;
                 var maxY = morphContainer.y + morphShape.pillHeight;
                 if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) {
@@ -108,11 +123,15 @@ PanelWindow {
             anchors.top: parent.top
             anchors.topMargin: dashboardWindow.expanded ? 42 : 0
             anchors.horizontalCenter: parent.horizontalCenter
+            anchors.horizontalCenterOffset: dashboardWindow.sideDrawerOpen ? -156 : 0
             width: morphShape.width
             height: morphShape.height
 
             Behavior on anchors.topMargin {
                 NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+            }
+            Behavior on anchors.horizontalCenterOffset {
+                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
             }
 
             // Absorb inner clicks so they never trigger outside-click dismissal
@@ -291,6 +310,7 @@ PanelWindow {
                         Home {
                             anchors.fill: parent
                             visible: dashboardWindow.currentTab === "Home"
+                            onRequestSideDrawer: (type) => dashboardWindow.toggleSideDrawer(type)
                         }
 
                         Loader {
@@ -310,5 +330,49 @@ PanelWindow {
                 }
             }
         }
+
+        // Sidecar Drawer Panel (Wi-Fi or Bluetooth) floating right next to Control Center (User sketch)
+        Item {
+            id: sideDrawerContainer
+            anchors.top: morphContainer.top
+            anchors.left: morphContainer.right
+            anchors.leftMargin: 12
+            width: dashboardWindow.sideDrawerOpen ? 300 : 0
+            height: morphShape.pillHeight
+            clip: true
+            visible: width > 0
+            opacity: dashboardWindow.sideDrawerOpen ? 1.0 : 0.0
+
+            Behavior on width {
+                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+            }
+            Behavior on opacity {
+                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            }
+
+            // Absorb inner clicks
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {}
+            }
+
+            Item {
+                width: 300
+                height: sideDrawerContainer.height
+
+                WifiDrawer {
+                    anchors.fill: parent
+                    visible: dashboardWindow.activeSideDrawer === "wifi"
+                    onCloseRequested: dashboardWindow.activeSideDrawer = ""
+                }
+
+                BluetoothDrawer {
+                    anchors.fill: parent
+                    visible: dashboardWindow.activeSideDrawer === "bluetooth"
+                    onCloseRequested: dashboardWindow.activeSideDrawer = ""
+                }
+            }
+        }
     }
 }
+

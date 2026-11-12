@@ -10,9 +10,9 @@ Rectangle {
     id: root
 
     anchors.fill: parent
-    radius: 14
-    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.98)
-    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4)
+    radius: 22
+    color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.96)
+    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
     border.width: 1
     clip: true
 
@@ -182,11 +182,38 @@ Rectangle {
             }
         }
 
+        // Empty state indicator
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: root.networks.length === 0
+
+            ColumnLayout {
+                anchors.centerIn: parent
+                spacing: 8
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: "󰤮"
+                    font.pixelSize: 32
+                    color: Tokens.text_secondary
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: root.isScanning ? "Scanning for networks..." : "No Wi-Fi networks found"
+                    font.pixelSize: 11
+                    color: Tokens.text_secondary
+                }
+            }
+        }
+
         // Network List View
         ListView {
             id: netListView
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: root.networks.length > 0
             clip: true
             spacing: 6
             model: root.networks

@@ -27,6 +27,8 @@ Rectangle {
     property bool wifiDrawerOpen: false
     property bool btDrawerOpen: false
 
+    signal requestSideDrawer(string type)
+
     Process {
         id: wifiToggleProcess
     }
@@ -236,18 +238,23 @@ Rectangle {
                 border.width: 1
 
                 RowLayout {
-                    anchors.centerIn: parent
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 8
                     spacing: 6
                     Text { text: "󰤨"; font.pixelSize: 15; color: root.wifiActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "Wi-Fi"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
-                    Text { text: "󰅂"; font.pixelSize: 11; color: Tokens.text_secondary }
+                    Text { Layout.fillWidth: true; text: "Wi-Fi"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary; elide: Text.ElideRight }
+                    Text { text: "󰅂"; font.pixelSize: 12; color: Tokens.text_secondary }
                 }
 
-                TapHandler {
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onTapped: (eventPoint) => {
-                        if (eventPoint.event.button === Qt.RightButton) {
-                            root.wifiDrawerOpen = true;
+                    onClicked: (mouse) => {
+                        if (mouse.button === Qt.RightButton || mouse.x >= (parent.width - 32)) {
+                            root.wifiDrawerOpen = !root.wifiDrawerOpen;
+                            root.requestSideDrawer("wifi");
                         } else {
                             root.wifiActive = !root.wifiActive;
                             wifiToggleProcess.command = ["nmcli", "radio", "wifi", root.wifiActive ? "on" : "off"];
@@ -267,18 +274,23 @@ Rectangle {
                 border.width: 1
 
                 RowLayout {
-                    anchors.centerIn: parent
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 8
                     spacing: 6
                     Text { text: "󰂯"; font.pixelSize: 15; color: root.btActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "Bluetooth"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
-                    Text { text: "󰅂"; font.pixelSize: 11; color: Tokens.text_secondary }
+                    Text { Layout.fillWidth: true; text: "Bluetooth"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary; elide: Text.ElideRight }
+                    Text { text: "󰅂"; font.pixelSize: 12; color: Tokens.text_secondary }
                 }
 
-                TapHandler {
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onTapped: (eventPoint) => {
-                        if (eventPoint.event.button === Qt.RightButton) {
-                            root.btDrawerOpen = true;
+                    onClicked: (mouse) => {
+                        if (mouse.button === Qt.RightButton || mouse.x >= (parent.width - 32)) {
+                            root.btDrawerOpen = !root.btDrawerOpen;
+                            root.requestSideDrawer("bluetooth");
                         } else {
                             root.btActive = !root.btActive;
                             btToggleProcess.command = ["bluetoothctl", "power", root.btActive ? "on" : "off"];
@@ -374,25 +386,16 @@ Rectangle {
         }
     }
 
-    // Interactive Wi-Fi Selection Drawer Overlay
+    // Sidecar panel hosted drawers (embedded fallback disabled in favor of sidecar)
     WifiDrawer {
-        visible: root.wifiDrawerOpen
-        opacity: root.wifiDrawerOpen ? 1.0 : 0.0
+        visible: false
+        opacity: 0.0
         onCloseRequested: root.wifiDrawerOpen = false
-
-        Behavior on opacity {
-            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-        }
     }
 
-    // Interactive Bluetooth Device Drawer Overlay
     BluetoothDrawer {
-        visible: root.btDrawerOpen
-        opacity: root.btDrawerOpen ? 1.0 : 0.0
+        visible: false
+        opacity: 0.0
         onCloseRequested: root.btDrawerOpen = false
-
-        Behavior on opacity {
-            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-        }
     }
 }

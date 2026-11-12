@@ -10,6 +10,8 @@ Item {
     implicitWidth: 724
     implicitHeight: 370
 
+    signal requestSideDrawer(string type)
+
     RowLayout {
         anchors.fill: parent
         spacing: 10
@@ -55,6 +57,7 @@ Item {
             QuickSettings {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                onRequestSideDrawer: (type) => root.requestSideDrawer(type)
             }
         }
     }

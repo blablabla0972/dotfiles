@@ -202,6 +202,16 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
         self.assertIn("WifiDrawer", qs_content)
         self.assertIn("BluetoothDrawer", qs_content)
         self.assertIn("Qt.RightButton", qs_content)
+        self.assertIn("requestSideDrawer", qs_content)
+
+        # Dashboard sidecar drawer panel (floating next to control center per user sketch)
+        dash_content = DASHBOARD_QML.read_text()
+        self.assertIn("sideDrawerContainer", dash_content)
+        self.assertIn("activeSideDrawer", dash_content)
+        self.assertIn("sideDrawerOpen", dash_content)
+        self.assertIn("toggleSideDrawer", dash_content)
+        self.assertIn("WifiDrawer", dash_content)
+        self.assertIn("BluetoothDrawer", dash_content)
 
 
 if __name__ == "__main__":

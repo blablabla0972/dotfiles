@@ -108,6 +108,17 @@ ShellRoot {
             }
         }
 
+        function toggleSideDrawer(type: string): void {
+            var targetType = (typeof type === "string" && type.length > 0) ? type : "wifi";
+            for (var i = 0; i < dashboardInstances.length; i++) {
+                var inst = dashboardInstances[i];
+                if (inst && typeof inst.toggleSideDrawer === "function") {
+                    if (!inst.visible) inst.toggle("Home");
+                    inst.toggleSideDrawer(targetType);
+                }
+            }
+        }
+
         function toggleNotifications(): void {
             // Target for M6 notifications center implementation
         }
