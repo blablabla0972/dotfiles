@@ -18,8 +18,20 @@ ShellRoot {
     property list<Dashboard> dashboardInstances: []
     property list<Launcher> launcherInstances: []
 
+    // Expose IPC handler reference and convenience dispatchers for child components
+    property alias ipcHandler: riceIpc
+
+    function toggleLauncher(): void {
+        riceIpc.toggleLauncher();
+    }
+
+    function toggleDashboard(tab: string): void {
+        riceIpc.toggleDashboard(tab);
+    }
+
     // Public IPC Handler for the rice desktop shell
     IpcHandler {
+        id: riceIpc
         target: "rice"
 
         readonly property string status: "ok"
@@ -56,13 +68,20 @@ ShellRoot {
 
         function toggleLauncher(): void {
             for (var i = 0; i < launcherInstances.length; i++) {
-                if (launcherInstances[i]) launcherInstances[i].toggle();
+                var inst = launcherInstances[i];
+                if (inst && typeof inst.toggle === "function") {
+                    inst.toggle();
+                }
             }
         }
 
         function toggleDashboard(tab: string): void {
+            var targetTab = (typeof tab === "string" && tab.length > 0) ? tab : "Home";
             for (var i = 0; i < dashboardInstances.length; i++) {
-                if (dashboardInstances[i]) dashboardInstances[i].toggle(tab);
+                var inst = dashboardInstances[i];
+                if (inst && typeof inst.toggle === "function") {
+                    inst.toggle(targetTab);
+                }
             }
         }
 

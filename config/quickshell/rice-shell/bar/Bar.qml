@@ -65,7 +65,15 @@ PanelWindow {
                     HoverHandler { id: launcherHover }
                     TapHandler {
                         onTapped: {
-                            // Triggers launcher in M5
+                            if (typeof root !== "undefined") {
+                                if (root.ipcHandler) {
+                                    root.ipcHandler.toggleLauncher();
+                                } else if (typeof root.toggleLauncher === "function") {
+                                    root.toggleLauncher();
+                                }
+                            } else if (typeof launcherWindow !== "undefined" && typeof launcherWindow.toggle === "function") {
+                                launcherWindow.toggle();
+                            }
                         }
                     }
                 }
@@ -94,10 +102,13 @@ PanelWindow {
 
                 // Clock Pill
                 Rectangle {
+                    id: clockPill
                     height: 24
                     implicitWidth: clockText.implicitWidth + 16
                     radius: 8
-                    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7)
+                    color: clockHover.hovered
+                        ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25)
+                        : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7)
 
                     Text {
                         id: clockText
@@ -105,7 +116,22 @@ PanelWindow {
                         text: Qt.formatDateTime(new Date(), "hh:mm")
                         font.pixelSize: 12
                         font.bold: true
-                        color: Tokens.text_primary
+                        color: clockHover.hovered ? Tokens.accent : Tokens.text_primary
+                    }
+
+                    HoverHandler { id: clockHover }
+                    TapHandler {
+                        onTapped: {
+                            if (typeof root !== "undefined") {
+                                if (root.ipcHandler) {
+                                    root.ipcHandler.toggleDashboard("Home");
+                                } else if (typeof root.toggleDashboard === "function") {
+                                    root.toggleDashboard("Home");
+                                }
+                            } else if (typeof dashboardWindow !== "undefined" && typeof dashboardWindow.toggle === "function") {
+                                dashboardWindow.toggle("Home");
+                            }
+                        }
                     }
 
                     Timer {
