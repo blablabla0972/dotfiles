@@ -388,6 +388,37 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.assertEqual(tokens['source_palette_sha256'], hashlib.sha256(self.raw.read_bytes()).hexdigest())
         self.assertEqual(tokens['wallpaper_sha256'], hashlib.sha256(self.link.resolve().read_bytes()).hexdigest())
 
+    def test_quickshell_mode_applies_without_noctalia_on_path(self):
+        with patch.dict(os.environ, {'NOCTALIA_WALLPAPER_PATH': ''}, clear=False), \
+             patch('shutil.which', side_effect=lambda cmd: None if cmd == 'noctalia' else '/usr/bin/' + cmd):
+            code, record = self.invoke('--backend', 'quickshell')
+            self.assertEqual(code, 0)
+            self.assertEqual(record['status'], 'applied')
+            self.assertIsNone(record['error_code'])
+            self.assertEqual(record['wallpaper'], str(self.wallpaper))
+            self.assertEqual(self.link.resolve(), self.wallpaper)
+            noctalia_calls = [c for c in self.calls if c[0] == 'noctalia']
+            self.assertEqual(noctalia_calls, [], f'Expected zero noctalia calls, got: {noctalia_calls}')
+            tokens = json.loads(self.tokens.read_text())
+            self.assertEqual(tokens['mode'], self.mode)
+            lua_path = self.config / 'hypr/noctalia.lua'
+            self.assertTrue(lua_path.is_file())
+            self.assertIn('apply_theme', lua_path.read_text())
+
+    def test_quickshell_mode_rolls_back_without_restarting_noctalia(self):
+        self.failure = 'matugen'
+        with patch.dict(os.environ, {'NOCTALIA_WALLPAPER_PATH': ''}, clear=False), \
+             patch('shutil.which', side_effect=lambda cmd: None if cmd == 'noctalia' else '/usr/bin/' + cmd), \
+             patch.object(theme, 'restart_shell') as mock_restart:
+            code, record = self.invoke('--backend', 'quickshell')
+            self.assertEqual(code, 1)
+            self.assertEqual(record['status'], 'rolled_back')
+            self.assertEqual(self.link.resolve(), self.old)
+            self.assertEqual(self.tokens.read_text(), 'old adaptive')
+            noctalia_calls = [c for c in self.calls if c[0] == 'noctalia']
+            self.assertEqual(noctalia_calls, [], f'Expected zero noctalia calls, got: {noctalia_calls}')
+            mock_restart.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

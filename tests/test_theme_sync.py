@@ -366,6 +366,19 @@ class ThemeSyncTest(unittest.TestCase):
             theme.wait_for_templates(self.wallpaper, expected, mode='dark')
         self.assertGreaterEqual(attempts, 3)
 
+    def test_theme_mode_changed_without_noctalia(self):
+        with patch.dict(os.environ, {'NOCTALIA_WALLPAPER_PATH': ''}, clear=False), \
+             patch('shutil.which', side_effect=lambda cmd: None if cmd == 'noctalia' else '/usr/bin/' + cmd), \
+             patch('sys.argv', [str(SCRIPT), '--theme-mode-changed', '--mode', 'light', '--backend', 'quickshell']), \
+             contextlib.redirect_stderr(io.StringIO()):
+            try:
+                code = theme.main()
+            except SystemExit as e:
+                code = e.code
+            self.assertEqual(code, 0)
+            self.assertEqual((self.config / 'hypr/current_wallpaper').resolve(), self.wallpaper)
+            self.assertEqual(self.backend_changes, [])
+
 
 if __name__ == '__main__':
     unittest.main()
