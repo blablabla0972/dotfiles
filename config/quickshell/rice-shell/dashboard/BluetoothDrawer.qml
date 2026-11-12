@@ -23,9 +23,37 @@ Rectangle {
     property string statusMessage: ""
     property bool isConnecting: false
 
+    onVisibleChanged: {
+        if (visible) {
+            refresh();
+            startScan();
+        } else {
+            isScanning = false;
+            scanProcess.running = false;
+        }
+    }
+
     function refresh(): void {
         statusMessage = "Loading devices...";
         listProcess.running = true;
+    }
+
+    function startScan(): void {
+        if (scanProcess.running) return;
+        isScanning = true;
+        statusMessage = "Scanning for devices...";
+        scanProcess.command = ["bluetoothctl", "--timeout", "8", "scan", "on"];
+        scanProcess.running = true;
+    }
+
+    function toggleScan(): void {
+        if (isScanning) {
+            isScanning = false;
+            scanProcess.running = false;
+            refresh();
+        } else {
+            startScan();
+        }
     }
 
     Process {
@@ -56,11 +84,69 @@ Rectangle {
                         }
                     }
                     root.devices = list;
-                    root.statusMessage = list.length > 0 ? "" : "No Bluetooth devices found";
+                    root.statusMessage = list.length > 0 ? "" : (root.isScanning ? "Scanning for nearby devices..." : "No Bluetooth devices found");
+                    connectedProcess.running = true;
                 } catch (e) {
                     root.statusMessage = "Error reading devices";
                 }
             }
+        }
+    }
+
+    Process {
+        id: connectedProcess
+        command: ["bluetoothctl", "devices", "Connected"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    var lines = text.trim().split("\n");
+                    var connectedMacs = {};
+                    for (var i = 0; i < lines.length; i++) {
+                        var line = lines[i].trim();
+                        if (!line.startsWith("Device ")) continue;
+                        var parts = line.split(" ");
+                        if (parts.length >= 2) {
+                            connectedMacs[parts[1].trim()] = true;
+                        }
+                    }
+                    var updated = [];
+                    for (var j = 0; j < root.devices.length; j++) {
+                        var d = root.devices[j];
+                        updated.push({
+                            mac: d.mac,
+                            name: d.name,
+                            connected: !!connectedMacs[d.mac]
+                        });
+                    }
+                    root.devices = updated;
+                } catch (e) {}
+            }
+        }
+    }
+
+    Process {
+        id: scanProcess
+        running: false
+        onExited: (exitCode) => {
+            root.isScanning = false;
+            root.refresh();
+        }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.isScanning = false;
+                root.refresh();
+            }
+        }
+    }
+
+    Timer {
+        id: scanPollingTimer
+        interval: 2000
+        repeat: true
+        running: root.isScanning
+        onTriggered: {
+            listProcess.running = true;
         }
     }
 
@@ -77,24 +163,14 @@ Rectangle {
         }
     }
 
-    Process {
-        id: scanProcess
-        onExited: (exitCode) => {
-            root.refresh();
-        }
-    }
-
-    function toggleScan(): void {
-        root.isScanning = !root.isScanning;
-        scanProcess.command = ["bluetoothctl", "scan", root.isScanning ? "on" : "off"];
-        scanProcess.running = true;
-        root.statusMessage = root.isScanning ? "Scanning for devices..." : "Scan stopped";
-    }
-
     function connectDevice(dev): void {
         root.isConnecting = true;
         root.statusMessage = dev.connected ? "Disconnecting..." : "Connecting to " + dev.name + "...";
-        actionProcess.command = ["bluetoothctl", dev.connected ? "disconnect" : "connect", dev.mac];
+        if (dev.connected) {
+            actionProcess.command = ["bluetoothctl", "disconnect", dev.mac];
+        } else {
+            actionProcess.command = ["bash", "-c", "bluetoothctl pair " + dev.mac + " 2>&1; bluetoothctl trust " + dev.mac + " 2>&1; bluetoothctl connect " + dev.mac];
+        }
         actionProcess.running = true;
     }
 

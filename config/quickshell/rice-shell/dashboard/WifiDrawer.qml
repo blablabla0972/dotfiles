@@ -25,8 +25,15 @@ Rectangle {
     property bool isConnecting: false
     property bool isScanning: scanProcess.running
 
+    onVisibleChanged: {
+        if (visible) {
+            scan();
+        }
+    }
+
     function scan(): void {
         statusMessage = "Scanning networks...";
+        scanProcess.command = ["bash", "-c", "nmcli radio wifi on 2>/dev/null; nmcli -t -f active,ssid,signal,security dev wifi list --rescan yes"];
         scanProcess.running = true;
     }
 
