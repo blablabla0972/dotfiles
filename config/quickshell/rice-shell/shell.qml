@@ -7,12 +7,16 @@ import "theme"
 import "services"
 import "bar"
 import "island"
+import "dashboard"
+import "launcher"
 
 ShellRoot {
     id: root
 
-    // List of active island window instances for IPC dispatch
+    // Lists of active window instances for multi-monitor IPC dispatch
     property list<Island> islandInstances: []
+    property list<Dashboard> dashboardInstances: []
+    property list<Launcher> launcherInstances: []
 
     // Public IPC Handler for the rice desktop shell
     IpcHandler {
@@ -51,11 +55,15 @@ ShellRoot {
         }
 
         function toggleLauncher(): void {
-            // Target for M5 launcher implementation
+            for (var i = 0; i < launcherInstances.length; i++) {
+                if (launcherInstances[i]) launcherInstances[i].toggle();
+            }
         }
 
         function toggleDashboard(tab: string): void {
-            // Target for M5 control center implementation
+            for (var i = 0; i < dashboardInstances.length; i++) {
+                if (dashboardInstances[i]) dashboardInstances[i].toggle(tab);
+            }
         }
 
         function toggleNotifications(): void {
@@ -63,7 +71,7 @@ ShellRoot {
         }
 
         function toggleSession(): void {
-            // Target for M7 session dialog implementation
+            toggleDashboard("Config");
         }
 
         function volumeUp(): void {
@@ -111,6 +119,48 @@ ShellRoot {
                 Component.onDestruction: {
                     var idx = root.islandInstances.indexOf(screenIsland);
                     if (idx >= 0) root.islandInstances.splice(idx, 1);
+                }
+            }
+        }
+    }
+
+    // Control Center Dashboard instantiated on all active monitors
+    Variants {
+        model: Quickshell.screens
+
+        delegate: Component {
+            Dashboard {
+                id: screenDashboard
+                required property var modelData
+                targetScreen: modelData
+
+                Component.onCompleted: {
+                    root.dashboardInstances.push(screenDashboard);
+                }
+                Component.onDestruction: {
+                    var idx = root.dashboardInstances.indexOf(screenDashboard);
+                    if (idx >= 0) root.dashboardInstances.splice(idx, 1);
+                }
+            }
+        }
+    }
+
+    // Application Search Launcher instantiated on all active monitors
+    Variants {
+        model: Quickshell.screens
+
+        delegate: Component {
+            Launcher {
+                id: screenLauncher
+                required property var modelData
+                targetScreen: modelData
+
+                Component.onCompleted: {
+                    root.launcherInstances.push(screenLauncher);
+                }
+                Component.onDestruction: {
+                    var idx = root.launcherInstances.indexOf(screenLauncher);
+                    if (idx >= 0) root.launcherInstances.splice(idx, 1);
                 }
             }
         }
