@@ -83,16 +83,11 @@ PanelWindow {
         }
     }
 
-    // Fullscreen Backdrop Scrim with Outside Click Dismissal
+    // Fullscreen Backdrop Scrim with Outside Click Dismissal (transparent: no dimming or darkening)
     Rectangle {
         id: scrim
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, 0.3)
-        opacity: dashboardWindow.expanded ? 1.0 : 0.0
-
-        Behavior on opacity {
-            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-        }
+        color: "transparent"
 
         TapHandler {
             onTapped: (eventPoint) => {
