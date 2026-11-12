@@ -44,10 +44,22 @@ Item {
         }
     }
 
-    // Unified Surface Mesh: zero internal seams, zero vertical border lines
+    // 1. Fully rounded card mode (when showAntiCorners: false -> all corners rounded in)
+    Rectangle {
+        id: roundedRect
+        anchors.fill: parent
+        visible: !root.showAntiCorners
+        radius: root.bottomRadius
+        color: root.fillColor
+        border.color: Qt.rgba(root.borderColor.r, root.borderColor.g, root.borderColor.b, 0.4)
+        border.width: 1
+    }
+
+    // 2. Anti-Corners Notch Shape (when showAntiCorners: true)
     Shape {
         id: surfaceShape
         anchors.fill: parent
+        visible: root.showAntiCorners
         antialiasing: true
         preferredRendererType: Shape.CurveRenderer
 

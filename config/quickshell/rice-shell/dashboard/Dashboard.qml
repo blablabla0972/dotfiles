@@ -107,13 +107,18 @@ PanelWindow {
             }
         }
 
-        // Morphing Control Center Container anchored to the top bezel
+        // Morphing Control Center Container floating below top bar
         Item {
             id: morphContainer
             anchors.top: parent.top
+            anchors.topMargin: dashboardWindow.expanded ? 42 : 0
             anchors.horizontalCenter: parent.horizontalCenter
             width: morphShape.width
             height: morphShape.height
+
+            Behavior on anchors.topMargin {
+                NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+            }
 
             // Absorb inner clicks so they never trigger outside-click dismissal
             TapHandler {
@@ -126,21 +131,21 @@ PanelWindow {
                 onClicked: {}
             }
 
-            // Morphing Island Shape with concave Bézier anti-corners meeting top bezel
+            // Morphing Island Shape with rounded corners on all sides ("bo tròn vào")
             IslandShape {
                 id: morphShape
                 anchors.top: parent.top
                 anchors.horizontalCenter: parent.horizontalCenter
                 pillWidth: dashboardWindow.expanded ? 760 : 200
                 pillHeight: dashboardWindow.expanded ? 440 : 0
-                antiCornerRadius: 18
+                antiCornerRadius: 0
                 bottomRadius: 22
                 animDurationWidth: 280
                 animDurationHeight: 300
                 overshoot: 0.15
                 fillColor: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.panelOpacity)
                 borderColor: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.45)
-                showAntiCorners: true
+                showAntiCorners: false
             }
 
             // Dashboard Content Layout
