@@ -130,7 +130,7 @@ hl.bind(mainMod .. " + D",          hl.dsp.window.fullscreen({ mode = 1 }))
 hl.bind(mainMod .. " + Space",      hl.dsp.exec_cmd(qsRice .. "toggleLauncher 2>/dev/null || " .. noctCall .. "panel-toggle launcher"))
 hl.bind(mainMod .. " + period",     hl.dsp.exec_cmd(qsRice .. "toggleLauncher 2>/dev/null || " .. noctCall .. "panel-toggle launcher /emo"))
 hl.bind(mainMod .. " + L",          hl.dsp.exec_cmd("pidof hyprlock || hyprlock"))
-hl.bind(mainMod .. " + ALT + C",    hl.dsp.exec_cmd(qsRice .. "toggleSession 2>/dev/null || " .. noctCall .. "panel-toggle session"))
+hl.bind(mainMod .. " + ALT + C",    hl.dsp.exec_cmd(qsRice .. "togglePowerMenu 2>/dev/null || " .. noctCall .. "panel-toggle session"))
 
 
 ---------------------------

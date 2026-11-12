@@ -4,7 +4,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Services.SystemTray
+import Quickshell.Networking
 import "../theme"
 import "../services"
 
@@ -31,6 +31,22 @@ PanelWindow {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
     property bool islandActive: false
+    readonly property string internetStatusText: {
+        switch (Networking.connectivity) {
+        case NetworkConnectivity.Full: return "Online";
+        case NetworkConnectivity.Limited: return "Limited";
+        case NetworkConnectivity.Portal: return "Portal";
+        case NetworkConnectivity.None: return "Offline";
+        default: return "Unknown";
+        }
+    }
+    readonly property color internetStatusColor: Networking.connectivity === NetworkConnectivity.Full
+        ? Tokens.accent
+        : Tokens.text_secondary
+
+    Component.onCompleted: {
+        if (Networking.canCheckConnectivity) Networking.checkConnectivity();
+    }
 
     // 1. Left Floating Island: App Launcher & Workspaces
     Rectangle {
@@ -237,9 +253,43 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
             }
 
-            // Divider between tray and clock if tray has items
+            // Internet connectivity
             Rectangle {
-                visible: SystemTray.items.length > 0
+                Layout.alignment: Qt.AlignVCenter
+                height: 24
+                implicitWidth: internetContent.implicitWidth + 14
+                radius: 8
+                color: internetHover.hovered
+                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+                    : "transparent"
+
+                RowLayout {
+                    id: internetContent
+                    anchors.centerIn: parent
+                    spacing: 5
+
+                    Text {
+                        text: Networking.connectivity === NetworkConnectivity.Full ? "󰤨" : "󰤮"
+                        font.pixelSize: 12
+                        color: barRoot.internetStatusColor
+                    }
+
+                    Text {
+                        text: barRoot.internetStatusText
+                        font.pixelSize: 10
+                        font.bold: true
+                        color: barRoot.internetStatusColor
+                    }
+                }
+
+                HoverHandler { id: internetHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: barRoot.requestDashboard("Home")
+                }
+            }
+
+            // Divider between network status and clock
+            Rectangle {
                 width: 1
                 height: 14
                 color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)

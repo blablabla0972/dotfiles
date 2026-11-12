@@ -2,8 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import Quickshell
-import Quickshell.Io
+import Quickshell.Networking
 import "../theme"
 
 Rectangle {
@@ -18,121 +17,163 @@ Rectangle {
 
     signal closeRequested()
 
-    property var networks: []
-    property string selectedSsid: ""
+    readonly property var wifiDevice: {
+        var devices = Networking.devices.values;
+        for (var i = 0; i < devices.length; i++) {
+            var device = devices[i];
+            if (device.type === DeviceType.Wifi) return device;
+        }
+        return null;
+    }
+    readonly property var networks: {
+        if (!wifiDevice) return [];
+        var list = wifiDevice.networks.values.slice();
+        list.sort(function(a, b) {
+            if (a.connected !== b.connected) return a.connected ? -1 : 1;
+            if (a.known !== b.known) return a.known ? -1 : 1;
+            return (b.signalStrength || 0) - (a.signalStrength || 0);
+        });
+        return list;
+    }
+    property var selectedNetwork: null
+    property var pendingNetwork: null
+    property string pendingAction: ""
     property string passwordText: ""
     property string statusMessage: ""
     property bool isConnecting: false
-    property bool isScanning: scanProcess.running
+    property bool isScanning: wifiDevice ? wifiDevice.scannerEnabled : false
+    property bool scanRequested: true
+
+    Binding {
+        target: root.wifiDevice
+        property: "scannerEnabled"
+        value: root.visible && root.scanRequested && Networking.wifiEnabled
+        when: root.wifiDevice !== null
+    }
 
     onVisibleChanged: {
         if (visible) {
             scan();
+        } else if (!root.isConnecting) {
+            root.selectedNetwork = null;
+            root.passwordText = "";
         }
     }
 
     function scan(): void {
-        statusMessage = "Scanning networks...";
-        scanProcess.command = ["bash", "-c", "nmcli radio wifi on 2>/dev/null; nmcli -t -f active,ssid,signal,security dev wifi list --rescan yes"];
-        scanProcess.running = true;
+        root.statusMessage = root.wifiDevice ? "" : "Wi-Fi adapter unavailable";
+        if (!root.wifiDevice || !Networking.wifiEnabled) return;
+        root.scanRequested = false;
+        scanRestartTimer.restart();
     }
 
-    Process {
-        id: scanProcess
-        command: ["nmcli", "-t", "-f", "active,ssid,signal,security", "dev", "wifi", "list"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var lines = text.trim().split("\n");
-                    var list = [];
-                    var seen = {};
-                    for (var i = 0; i < lines.length; i++) {
-                        var line = lines[i].trim();
-                        if (!line) continue;
-                        var parts = line.split(":");
-                        if (parts.length >= 4) {
-                            var active = (parts[0] === "yes" || parts[0] === "*");
-                            var ssid = parts[1].trim();
-                            var sig = parseInt(parts[2]) || 0;
-                            var sec = parts[3].trim();
-                            if (ssid.length > 0 && !seen[ssid]) {
-                                seen[ssid] = true;
-                                list.push({
-                                    active: active,
-                                    ssid: ssid,
-                                    signal: sig,
-                                    security: sec,
-                                    secured: sec.length > 0 && sec !== "--"
-                                });
-                            }
-                        }
-                    }
-                    list.sort(function(a, b) {
-                        if (a.active && !b.active) return -1;
-                        if (!a.active && b.active) return 1;
-                        return b.signal - a.signal;
-                    });
-                    root.networks = list;
-                    root.statusMessage = list.length > 0 ? "" : "No networks found";
-                } catch (e) {
-                    root.statusMessage = "Scan error";
-                }
-            }
-        }
+    Timer {
+        id: scanRestartTimer
+        interval: 180
+        onTriggered: root.scanRequested = true
     }
 
-    Process {
-        id: connectProcess
-        onExited: (exitCode) => {
-            root.isConnecting = false;
-            if (exitCode === 0) {
-                root.statusMessage = "Connected successfully!";
-                root.selectedSsid = "";
+    Connections {
+        target: root.pendingNetwork
+        ignoreUnknownSignals: true
+
+        function onConnectedChanged(): void {
+            if (!root.pendingNetwork) return;
+
+            if (root.pendingNetwork.connected) {
+                root.isConnecting = false;
+                root.statusMessage = "Connected to " + root.pendingNetwork.name;
+                root.selectedNetwork = null;
                 root.passwordText = "";
-                root.scan();
-            } else {
-                root.statusMessage = "Connection failed";
+                root.pendingNetwork = null;
+                root.pendingAction = "";
+            } else if (root.pendingAction === "disconnect") {
+                root.isConnecting = false;
+                root.statusMessage = "Disconnected from " + root.pendingNetwork.name;
+                root.pendingNetwork = null;
+                root.pendingAction = "";
             }
         }
-    }
 
-    Process {
-        id: disconnectProcess
-        onExited: (exitCode) => {
+        function onConnectionFailed(reason): void {
+            if (!root.pendingNetwork) return;
+
             root.isConnecting = false;
-            root.statusMessage = "Disconnected";
-            root.scan();
+            if (reason === ConnectionFailReason.NoSecrets && root.supportsPsk(root.pendingNetwork)) {
+                root.selectedNetwork = root.pendingNetwork;
+                root.statusMessage = "Incorrect password or authentication required";
+            } else if (reason === ConnectionFailReason.NoSecrets) {
+                root.statusMessage = "This network needs a saved NetworkManager profile";
+            } else if (reason === ConnectionFailReason.WifiAuthTimeout) {
+                root.statusMessage = "Wi-Fi authentication timed out";
+            } else if (reason === ConnectionFailReason.WifiNetworkLost) {
+                root.statusMessage = "Wi-Fi network disappeared";
+            } else {
+                root.statusMessage = "Could not connect to " + root.pendingNetwork.name;
+            }
+            root.pendingNetwork = null;
+            root.pendingAction = "";
         }
     }
 
-    function connectNetwork(net): void {
-        if (net.active) {
+    function supportsPsk(net): bool {
+        return net.security === WifiSecurityType.WpaPsk
+            || net.security === WifiSecurityType.Wpa2Psk
+            || net.security === WifiSecurityType.Sae;
+    }
+
+    function requiresPassword(net): bool {
+        return !net.known && root.supportsPsk(net);
+    }
+
+    function connectNetwork(net, withPassword): void {
+        if (!net || root.isConnecting) return;
+
+        if (net.stateChanging) {
+            root.pendingNetwork = net;
+            root.pendingAction = net.state === ConnectionState.Connecting ? "connect" : "disconnect";
             root.isConnecting = true;
-            root.statusMessage = "Disconnecting...";
-            disconnectProcess.command = ["nmcli", "con", "down", "id", net.ssid];
-            disconnectProcess.running = true;
+            root.statusMessage = net.state === ConnectionState.Connecting
+                ? "Connecting to " + net.name + "..."
+                : "Disconnecting from " + net.name + "...";
             return;
         }
 
-        if (net.secured && root.passwordText.length === 0 && root.selectedSsid !== net.ssid) {
-            root.selectedSsid = net.ssid;
+        if (net.connected) {
+            root.pendingNetwork = net;
+            root.pendingAction = "disconnect";
+            root.isConnecting = true;
+            root.statusMessage = "Disconnecting from " + net.name + "...";
+            net.disconnect();
+            return;
+        }
+
+        if (root.requiresPassword(net) && !withPassword) {
+            root.selectedNetwork = net;
+            root.passwordText = "";
             root.statusMessage = "";
             return;
         }
 
-        root.isConnecting = true;
-        root.statusMessage = "Connecting to " + net.ssid + "...";
-        if (net.secured && root.passwordText.length > 0) {
-            connectProcess.command = ["nmcli", "dev", "wifi", "connect", net.ssid, "password", root.passwordText];
-        } else {
-            connectProcess.command = ["nmcli", "dev", "wifi", "connect", net.ssid];
+        if (!withPassword && root.selectedNetwork !== net) {
+            root.selectedNetwork = null;
+            root.passwordText = "";
         }
-        connectProcess.running = true;
-    }
 
-    Component.onCompleted: {
-        scan();
+        if (withPassword && root.passwordText.length === 0) {
+            root.statusMessage = "Enter a password";
+            return;
+        }
+
+        root.pendingNetwork = net;
+        root.pendingAction = "connect";
+        root.isConnecting = true;
+        root.statusMessage = "Connecting to " + net.name + "...";
+        if (withPassword) {
+            net.connectWithPsk(root.passwordText);
+        } else {
+            net.connect();
+        }
     }
 
     ColumnLayout {
@@ -193,7 +234,7 @@ Rectangle {
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: root.networks.length === 0
+            visible: !Networking.wifiEnabled || root.networks.length === 0
 
             ColumnLayout {
                 anchors.centerIn: parent
@@ -208,7 +249,11 @@ Rectangle {
 
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: root.isScanning ? "Scanning for networks..." : "No Wi-Fi networks found"
+                    text: !root.wifiDevice
+                        ? "Wi-Fi adapter unavailable"
+                        : (!Networking.wifiEnabled
+                            ? "Wi-Fi is disabled"
+                            : (root.isScanning ? "Scanning for networks..." : "No Wi-Fi networks found"))
                     font.pixelSize: 11
                     color: Tokens.text_secondary
                 }
@@ -220,7 +265,7 @@ Rectangle {
             id: netListView
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: root.networks.length > 0
+            visible: Networking.wifiEnabled && root.networks.length > 0
             clip: true
             spacing: 6
             model: root.networks
@@ -231,15 +276,15 @@ Rectangle {
                 width: netListView.width
                 height: isSelectedPasswordRow ? 74 : 36
                 radius: 8
-                color: modelData.active 
+                color: modelData.connected
                     ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
                     : (rowHover.hovered ? Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.5))
-                border.color: modelData.active 
+                border.color: modelData.connected
                     ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.5)
                     : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2)
                 border.width: 1
 
-                readonly property bool isSelectedPasswordRow: root.selectedSsid === modelData.ssid && !modelData.active
+                readonly property bool isSelectedPasswordRow: root.selectedNetwork === modelData && !modelData.connected
 
                 Behavior on height {
                     NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
@@ -259,34 +304,42 @@ Rectangle {
 
                         Text {
                             text: {
-                                var s = netRow.modelData.signal;
+                                var s = netRow.modelData.signalStrength * 100;
                                 if (s >= 75) return "󰤨";
                                 if (s >= 50) return "󰤥";
                                 if (s >= 25) return "󰤢";
                                 return "󰤟";
                             }
                             font.pixelSize: 13
-                            color: netRow.modelData.active ? Tokens.accent : Tokens.text_secondary
+                            color: netRow.modelData.connected ? Tokens.accent : Tokens.text_secondary
                         }
 
                         Text {
                             Layout.fillWidth: true
-                            text: netRow.modelData.ssid
+                            text: netRow.modelData.name
                             font.pixelSize: 11
-                            font.bold: netRow.modelData.active
+                            font.bold: netRow.modelData.connected
                             color: Tokens.text_primary
                             elide: Text.ElideRight
                         }
 
                         Text {
-                            visible: netRow.modelData.secured
+                            visible: netRow.modelData.connected
+                            text: "Connected"
+                            font.pixelSize: 9
+                            color: Tokens.accent
+                        }
+
+                        Text {
+                            visible: netRow.modelData.security !== WifiSecurityType.Open
+                                && netRow.modelData.security !== WifiSecurityType.Unknown
                             text: "󰌾"
                             font.pixelSize: 10
                             color: Tokens.text_secondary
                         }
 
                         Text {
-                            visible: netRow.modelData.active
+                            visible: netRow.modelData.connected
                             text: "󰄲"
                             font.pixelSize: 12
                             color: Tokens.accent
@@ -318,7 +371,7 @@ Rectangle {
                                 echoMode: TextInput.Password
                                 text: root.passwordText
                                 onTextChanged: root.passwordText = text
-                                onAccepted: root.connectNetwork(netRow.modelData)
+                                onAccepted: root.connectNetwork(netRow.modelData, true)
                             }
 
                             Text {
@@ -340,21 +393,24 @@ Rectangle {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "Connect"
+                                text: root.isConnecting ? "..." : "Connect"
                                 font.pixelSize: 10
                                 font.bold: true
                                 color: Tokens.surface
                             }
 
                             HoverHandler { id: connectHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.connectNetwork(netRow.modelData) }
+                            TapHandler {
+                                enabled: !root.isConnecting && root.passwordText.length > 0
+                                onTapped: root.connectNetwork(netRow.modelData, true)
+                            }
                         }
                     }
                 }
 
                 TapHandler {
                     // Only trigger if not clicking inside password field
-                    enabled: !netRow.isSelectedPasswordRow
+                    enabled: !netRow.isSelectedPasswordRow && !root.isConnecting
                     onTapped: root.connectNetwork(netRow.modelData)
                 }
             }

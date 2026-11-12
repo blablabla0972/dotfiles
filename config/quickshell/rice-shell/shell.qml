@@ -17,6 +17,7 @@ ShellRoot {
     property list<Island> islandInstances: []
     property list<Dashboard> dashboardInstances: []
     property list<Launcher> launcherInstances: []
+    property list<PowerMenu> powerMenuInstances: []
 
     property bool isIslandActive: false
 
@@ -127,6 +128,15 @@ ShellRoot {
             toggleDashboard("Config");
         }
 
+        function togglePowerMenu(): void {
+            for (var i = 0; i < powerMenuInstances.length; i++) {
+                var inst = powerMenuInstances[i];
+                if (inst && typeof inst.toggle === "function") {
+                    inst.toggle();
+                }
+            }
+        }
+
         function volumeUp(): void {
             Audio.volumeUp(0.05);
         }
@@ -216,6 +226,27 @@ ShellRoot {
                 Component.onDestruction: {
                     var idx = root.dashboardInstances.indexOf(screenDashboard);
                     if (idx >= 0) root.dashboardInstances.splice(idx, 1);
+                }
+            }
+        }
+    }
+
+    // Session power menu instantiated on all active monitors
+    Variants {
+        model: Quickshell.screens
+
+        delegate: Component {
+            PowerMenu {
+                id: screenPowerMenu
+                required property var modelData
+                targetScreen: modelData
+
+                Component.onCompleted: {
+                    root.powerMenuInstances.push(screenPowerMenu);
+                }
+                Component.onDestruction: {
+                    var idx = root.powerMenuInstances.indexOf(screenPowerMenu);
+                    if (idx >= 0) root.powerMenuInstances.splice(idx, 1);
                 }
             }
         }

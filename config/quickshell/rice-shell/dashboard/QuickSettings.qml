@@ -3,7 +3,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Io
+import Quickshell.Networking
 import "../theme"
 import "../services"
 
@@ -17,8 +19,9 @@ Rectangle {
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
     border.width: 1
 
-    property bool wifiActive: true
-    property bool btActive: true
+    property bool wifiActive: Networking.wifiEnabled
+    property var btAdapter: Bluetooth.defaultAdapter
+    property bool btActive: btAdapter ? btAdapter.enabled : false
     property bool dndActive: false
     property bool nightLightActive: false
     property bool caffeineActive: false
@@ -28,14 +31,6 @@ Rectangle {
     property bool btDrawerOpen: false
 
     signal requestSideDrawer(string type)
-
-    Process {
-        id: wifiToggleProcess
-    }
-
-    Process {
-        id: btToggleProcess
-    }
 
     Process {
         id: readBrightProcess
@@ -256,9 +251,7 @@ Rectangle {
                             root.wifiDrawerOpen = !root.wifiDrawerOpen;
                             root.requestSideDrawer("wifi");
                         } else {
-                            root.wifiActive = !root.wifiActive;
-                            wifiToggleProcess.command = ["nmcli", "radio", "wifi", root.wifiActive ? "on" : "off"];
-                            wifiToggleProcess.running = true;
+                            Networking.wifiEnabled = !Networking.wifiEnabled;
                         }
                     }
                 }
@@ -292,9 +285,7 @@ Rectangle {
                             root.btDrawerOpen = !root.btDrawerOpen;
                             root.requestSideDrawer("bluetooth");
                         } else {
-                            root.btActive = !root.btActive;
-                            btToggleProcess.command = ["bluetoothctl", "power", root.btActive ? "on" : "off"];
-                            btToggleProcess.running = true;
+                            if (root.btAdapter) root.btAdapter.enabled = !root.btAdapter.enabled;
                         }
                     }
                 }
