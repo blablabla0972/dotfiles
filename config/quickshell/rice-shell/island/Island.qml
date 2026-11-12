@@ -14,6 +14,7 @@ PanelWindow {
     required property ShellScreen targetScreen
     screen: targetScreen
     color: "transparent"
+    visible: activeMode !== IslandState.State.IDLE
     implicitHeight: Math.max(48, islandShape.height + 8)
 
     anchors {
@@ -28,7 +29,7 @@ PanelWindow {
 
     // Input Region: only the visible island shape intercepts clicks
     mask: Region {
-        item: islandShape
+        item: (islandWindow.visible && islandWindow.activeMode !== IslandState.State.IDLE) ? islandShape : null
     }
 
     signal requestDashboard(string tab)
@@ -139,29 +140,7 @@ PanelWindow {
             anchors.fill: parent
             clip: true
 
-            // 1. Idle Content
-            Row {
-                visible: islandWindow.activeMode === IslandState.State.IDLE
-                anchors.centerIn: parent
-                spacing: 6
-
-                Rectangle {
-                    width: 6
-                    height: 6
-                    radius: 3
-                    color: Tokens.accent
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                Text {
-                    text: "Dynamic Island"
-                    font.pixelSize: 11
-                    color: Tokens.text_secondary
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-
-            // 2. Media Mini Pill Content
+            // 1. Media Mini Pill Content
             RowLayout {
                 visible: islandWindow.activeMode === IslandState.State.MEDIA
                 anchors.fill: parent

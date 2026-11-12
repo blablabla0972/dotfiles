@@ -30,7 +30,7 @@ function resolveState(currentAlert, hasMedia, isHovered, isPinned) {
 function targetDimensions(state, details) {
     switch (state) {
         case State.IDLE:
-            return { width: 140, height: 28, radius: 14 };
+            return { width: 0, height: 0, radius: 0 };
         case State.MEDIA:
             return { width: 240, height: 32, radius: 16 };
         case State.OSD:
@@ -40,6 +40,6 @@ function targetDimensions(state, details) {
         case State.EXPANDED:
             return { width: 360, height: 110, radius: 20 };
         default:
-            return { width: 140, height: 28, radius: 14 };
+            return { width: 0, height: 0, radius: 0 };
     }
 }

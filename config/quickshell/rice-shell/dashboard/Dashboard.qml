@@ -40,8 +40,9 @@ PanelWindow {
         if (!visible) {
             currentTab = target;
             closeTimer.stop();
+            expanded = false;
             visible = true;
-            expanded = true;
+            openTimer.restart();
         } else if (currentTab !== target) {
             currentTab = target;
         } else {
@@ -56,8 +57,17 @@ PanelWindow {
     }
 
     Timer {
+        id: openTimer
+        interval: 16
+        repeat: false
+        onTriggered: {
+            dashboardWindow.expanded = true;
+        }
+    }
+
+    Timer {
         id: closeTimer
-        interval: 260
+        interval: 300
         repeat: false
         onTriggered: {
             dashboardWindow.visible = false;
@@ -77,7 +87,7 @@ PanelWindow {
     Rectangle {
         id: scrim
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, 0.45)
+        color: Qt.rgba(0, 0, 0, 0.25)
         opacity: dashboardWindow.expanded ? 1.0 : 0.0
 
         Behavior on opacity {
@@ -106,13 +116,13 @@ PanelWindow {
                 id: morphShape
                 anchors.top: parent.top
                 anchors.horizontalCenter: parent.horizontalCenter
-                pillWidth: dashboardWindow.expanded ? 760 : 240
-                pillHeight: dashboardWindow.expanded ? 440 : 28
+                pillWidth: dashboardWindow.expanded ? 760 : 200
+                pillHeight: dashboardWindow.expanded ? 440 : 0
                 antiCornerRadius: 18
                 bottomRadius: 22
-                animDurationWidth: 260
-                animDurationHeight: 250
-                overshoot: 0.1
+                animDurationWidth: 280
+                animDurationHeight: 300
+                overshoot: 0.15
                 fillColor: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.panelOpacity)
                 borderColor: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.45)
                 showAntiCorners: true
@@ -126,10 +136,14 @@ PanelWindow {
                 width: morphShape.pillWidth
                 height: morphShape.pillHeight
                 clip: true
+                y: dashboardWindow.expanded ? 0 : -30
                 opacity: dashboardWindow.expanded ? 1.0 : 0.0
 
                 Behavior on opacity {
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                }
+                Behavior on y {
+                    NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
                 }
 
                 ColumnLayout {

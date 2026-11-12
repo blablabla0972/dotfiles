@@ -77,10 +77,16 @@ PanelWindow {
                 }
             }
 
-            // Center: Reserved empty space for Dynamic Island
+            // Center: Tap to open Control Center dropdown
             Item {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 260
+                Layout.fillHeight: true
+
+                HoverHandler { id: centerBarHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: barRoot.requestDashboard("Home")
+                }
             }
 
             // Right Area: System Tray, Status & Clock Pill
