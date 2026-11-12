@@ -15,6 +15,8 @@ ISLAND_QML = ROOT / "config/quickshell/rice-shell/island/Island.qml"
 ISLAND_SHAPE_QML = ROOT / "config/quickshell/rice-shell/island/IslandShape.qml"
 SHELL_QML = ROOT / "config/quickshell/rice-shell/shell.qml"
 BAR_QML = ROOT / "config/quickshell/rice-shell/bar/Bar.qml"
+WIFI_DRAWER_QML = ROOT / "config/quickshell/rice-shell/dashboard/WifiDrawer.qml"
+BT_DRAWER_QML = ROOT / "config/quickshell/rice-shell/dashboard/BluetoothDrawer.qml"
 
 
 class TelemetryScriptTest(unittest.TestCase):
@@ -151,6 +153,57 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
         self.assertIn("id: clockPill", content)
         self.assertIn("hh:mm", content)
 
+    def test_dynamic_island_media_capsule(self):
+        self.assertTrue(ISLAND_QML.exists(), "Island.qml must exist")
+        content = ISLAND_QML.read_text()
+
+        # 3-tier expanded media capsule layout
+        self.assertIn("expandedMediaContent", content)
+        self.assertIn("visualizerPhase", content)
+        self.assertIn("visualizerLevel", content)
+        self.assertIn("progressBarTrack", content)
+        self.assertIn("Media.setPosition", content)
+        self.assertIn("Media.previous", content)
+        self.assertIn("Media.togglePlaying", content)
+        self.assertIn("Media.next", content)
+
+        # Scrim outside-click and escape dismissal
+        self.assertIn("id: scrim", content)
+        self.assertIn("Keys.onEscapePressed", content)
+
+        # Bar integration: requestMediaCapsule
+        bar_content = BAR_QML.read_text()
+        self.assertIn("requestMediaCapsule()", bar_content)
+
+    def test_interactive_network_drawers(self):
+        self.assertTrue(WIFI_DRAWER_QML.exists(), "WifiDrawer.qml must exist")
+        self.assertTrue(BT_DRAWER_QML.exists(), "BluetoothDrawer.qml must exist")
+
+        wifi_content = WIFI_DRAWER_QML.read_text()
+        bt_content = BT_DRAWER_QML.read_text()
+        qs_content = QUICKSETTINGS_QML.read_text()
+
+        # Wi-Fi drawer: nmcli dev wifi list, inline password, connect/disconnect
+        self.assertIn("nmcli", wifi_content)
+        self.assertIn("dev", wifi_content)
+        self.assertIn("wifi", wifi_content)
+        self.assertIn("passInput", wifi_content)
+        self.assertIn("closeRequested", wifi_content)
+
+        # Bluetooth drawer: bluetoothctl, device list, scan toggle, connect/disconnect
+        self.assertIn("bluetoothctl", bt_content)
+        self.assertIn("devices", bt_content)
+        self.assertIn("scan", bt_content)
+        self.assertIn("closeRequested", bt_content)
+
+        # QuickSettings integration: right-click expand triggers and drawer overlays
+        self.assertIn("wifiDrawerOpen", qs_content)
+        self.assertIn("btDrawerOpen", qs_content)
+        self.assertIn("WifiDrawer", qs_content)
+        self.assertIn("BluetoothDrawer", qs_content)
+        self.assertIn("Qt.RightButton", qs_content)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -28,6 +28,22 @@ QtObject {
     readonly property bool canToggle: activePlayer ? (activePlayer.canTogglePlaying || activePlayer.canPlay || activePlayer.canPause) : false
     readonly property bool canNext: activePlayer ? activePlayer.canGoNext : false
     readonly property bool canPrev: activePlayer ? activePlayer.canGoPrevious : false
+    readonly property real position: activePlayer ? (activePlayer.position || 0) : 0
+    readonly property real length: activePlayer ? (activePlayer.length || 0) : 0
+    readonly property real progress: (length > 0) ? Math.max(0.0, Math.min(1.0, position / length)) : 0.0
+
+    function formatTime(seconds: real): string {
+        if (!seconds || isNaN(seconds) || seconds <= 0) return "0:00";
+        var m = Math.floor(seconds / 60);
+        var s = Math.floor(seconds % 60);
+        return m + ":" + (s < 10 ? "0" + s : s);
+    }
+
+    function setPosition(targetSeconds: real): void {
+        if (root.activePlayer && root.activePlayer.canSeek) {
+            root.activePlayer.position = Math.max(0, Math.min(root.length > 0 ? root.length : targetSeconds, targetSeconds));
+        }
+    }
 
     function togglePlaying(): void {
         if (root.activePlayer) {
@@ -53,3 +69,4 @@ QtObject {
         }
     }
 }
+

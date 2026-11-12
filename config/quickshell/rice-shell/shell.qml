@@ -150,6 +150,10 @@ ShellRoot {
                 onRequestDashboard: (tab) => {
                     root.toggleDashboard(tab);
                 }
+
+                onRequestMediaCapsule: () => {
+                    root.ipcHandler.islandToggle();
+                }
             }
         }
     }

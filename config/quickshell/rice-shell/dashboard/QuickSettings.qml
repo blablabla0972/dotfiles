@@ -24,6 +24,17 @@ Rectangle {
     property bool caffeineActive: false
     property real brightness: 0.8
 
+    property bool wifiDrawerOpen: false
+    property bool btDrawerOpen: false
+
+    Process {
+        id: wifiToggleProcess
+    }
+
+    Process {
+        id: btToggleProcess
+    }
+
     Process {
         id: readBrightProcess
         command: ["brightnessctl", "get", "-m"]
@@ -226,13 +237,23 @@ Rectangle {
 
                 RowLayout {
                     anchors.centerIn: parent
-                    spacing: 8
+                    spacing: 6
                     Text { text: "󰤨"; font.pixelSize: 15; color: root.wifiActive ? Tokens.accent : Tokens.text_secondary }
                     Text { text: "Wi-Fi"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
+                    Text { text: "󰅂"; font.pixelSize: 11; color: Tokens.text_secondary }
                 }
 
                 TapHandler {
-                    onTapped: root.wifiActive = !root.wifiActive
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onTapped: (eventPoint) => {
+                        if (eventPoint.event.button === Qt.RightButton) {
+                            root.wifiDrawerOpen = true;
+                        } else {
+                            root.wifiActive = !root.wifiActive;
+                            wifiToggleProcess.command = ["nmcli", "radio", "wifi", root.wifiActive ? "on" : "off"];
+                            wifiToggleProcess.running = true;
+                        }
+                    }
                 }
             }
 
@@ -247,13 +268,23 @@ Rectangle {
 
                 RowLayout {
                     anchors.centerIn: parent
-                    spacing: 8
+                    spacing: 6
                     Text { text: "󰂯"; font.pixelSize: 15; color: root.btActive ? Tokens.accent : Tokens.text_secondary }
                     Text { text: "Bluetooth"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
+                    Text { text: "󰅂"; font.pixelSize: 11; color: Tokens.text_secondary }
                 }
 
                 TapHandler {
-                    onTapped: root.btActive = !root.btActive
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onTapped: (eventPoint) => {
+                        if (eventPoint.event.button === Qt.RightButton) {
+                            root.btDrawerOpen = true;
+                        } else {
+                            root.btActive = !root.btActive;
+                            btToggleProcess.command = ["bluetoothctl", "power", root.btActive ? "on" : "off"];
+                            btToggleProcess.running = true;
+                        }
+                    }
                 }
             }
 
@@ -340,6 +371,28 @@ Rectangle {
                     onTapped: root.caffeineActive = !root.caffeineActive
                 }
             }
+        }
+    }
+
+    // Interactive Wi-Fi Selection Drawer Overlay
+    WifiDrawer {
+        visible: root.wifiDrawerOpen
+        opacity: root.wifiDrawerOpen ? 1.0 : 0.0
+        onCloseRequested: root.wifiDrawerOpen = false
+
+        Behavior on opacity {
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+        }
+    }
+
+    // Interactive Bluetooth Device Drawer Overlay
+    BluetoothDrawer {
+        visible: root.btDrawerOpen
+        opacity: root.btDrawerOpen ? 1.0 : 0.0
+        onCloseRequested: root.btDrawerOpen = false
+
+        Behavior on opacity {
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
         }
     }
 }

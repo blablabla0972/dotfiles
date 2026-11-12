@@ -36,7 +36,7 @@ function targetDimensions(state, details) {
         case State.NOTIFICATION:
             return { width: 320, height: 56, radius: 18 };
         case State.EXPANDED:
-            return { width: 360, height: 110, radius: 20 };
+            return { width: 380, height: 130, radius: 20 };
         default:
             return { width: 0, height: 0, radius: 0 };
     }

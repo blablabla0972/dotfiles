@@ -18,6 +18,7 @@ PanelWindow {
 
     signal requestLauncher()
     signal requestDashboard(string tab)
+    signal requestMediaCapsule()
 
     anchors {
         top: true
@@ -117,7 +118,16 @@ PanelWindow {
 
         HoverHandler { id: centerHover; cursorShape: Qt.PointingHandCursor }
         TapHandler {
-            onTapped: barRoot.requestDashboard("Home")
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onTapped: (eventPoint) => {
+                if (eventPoint.event.button === Qt.RightButton) {
+                    barRoot.requestDashboard("Home");
+                } else if (Media.hasPlayer && Media.isPlaying) {
+                    barRoot.requestMediaCapsule();
+                } else {
+                    barRoot.requestDashboard("Home");
+                }
+            }
         }
 
         RowLayout {
