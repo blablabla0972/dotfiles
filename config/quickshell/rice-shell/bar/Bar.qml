@@ -4,7 +4,9 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Services.SystemTray
 import "../theme"
+import "../services"
 
 PanelWindow {
     id: barRoot
@@ -27,108 +29,244 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    // Top Bar Main Frame
+    // 1. Left Floating Island: App Launcher & Workspaces
     Rectangle {
-        id: barBackground
-        anchors.fill: parent
-        anchors.leftMargin: 8
-        anchors.rightMargin: 8
-        anchors.topMargin: 4
-        anchors.bottomMargin: 4
+        id: leftIsland
+        anchors.left: parent.left
+        anchors.leftMargin: 12
+        anchors.verticalCenter: parent.verticalCenter
+        height: 32
+        implicitWidth: leftLayout.implicitWidth + 20
         radius: 12
         color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.barOpacity)
         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
         border.width: 1
 
         RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
+            id: leftLayout
+            anchors.centerIn: parent
             spacing: 8
 
-            // Left Area: Workspaces & Launcher
-            RowLayout {
-                Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
-                spacing: 10
+            // App Launcher Icon Button
+            Rectangle {
+                width: 24
+                height: 24
+                radius: 6
+                color: launcherHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : "transparent"
 
-                // Launcher icon button
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰣇"
+                    font.pixelSize: 14
+                    color: Tokens.accent
+                }
+
+                HoverHandler { id: launcherHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: barRoot.requestLauncher()
+                }
+            }
+
+            // Divider line
+            Rectangle {
+                width: 1
+                height: 14
+                color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
+            }
+
+            // Workspaces Module
+            Workspaces {
+                Layout.alignment: Qt.AlignVCenter
+            }
+        }
+    }
+
+    // 2. Center Floating Island: Inline Dynamic Island
+    Rectangle {
+        id: centerIsland
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        height: 32
+        implicitWidth: centerContent.implicitWidth + 24
+        radius: 14
+        color: centerHover.hovered 
+            ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, Tokens.barOpacity) 
+            : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.barOpacity)
+        border.color: centerHover.hovered 
+            ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.5)
+            : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+        border.width: 1
+
+        Behavior on implicitWidth {
+            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+        }
+        Behavior on color {
+            ColorAnimation { duration: 150 }
+        }
+        Behavior on border.color {
+            ColorAnimation { duration: 150 }
+        }
+
+        HoverHandler { id: centerHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler {
+            onTapped: barRoot.requestDashboard("Home")
+        }
+
+        RowLayout {
+            id: centerContent
+            anchors.centerIn: parent
+            spacing: 8
+
+            // Media Active State
+            RowLayout {
+                visible: Media.hasPlayer && Media.isPlaying
+                spacing: 8
+
+                Text {
+                    text: "󰎆"
+                    font.pixelSize: 13
+                    color: Tokens.accent
+                }
+
+                Text {
+                    text: {
+                        var str = Media.trackTitle;
+                        if (Media.trackArtist && Media.trackArtist.length > 0) {
+                            str += " • " + Media.trackArtist;
+                        }
+                        return str;
+                    }
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: Tokens.text_primary
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 220
+                }
+
                 Rectangle {
-                    width: 26
-                    height: 26
-                    radius: 7
-                    color: launcherHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : "transparent"
+                    width: 20
+                    height: 20
+                    radius: 10
+                    color: mediaBtnHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : "transparent"
 
                     Text {
                         anchors.centerIn: parent
-                        text: "󰣇"
-                        font.pixelSize: 15
+                        text: Media.isPlaying ? "󰏤" : "󰐊"
+                        font.pixelSize: 12
                         color: Tokens.accent
                     }
 
-                    HoverHandler { id: launcherHover }
+                    HoverHandler { id: mediaBtnHover }
                     TapHandler {
-                        onTapped: barRoot.requestLauncher()
+                        onTapped: Media.togglePlaying()
+                    }
+                }
+            }
+
+            // Idle State: Sleek Dynamic Island Pill
+            RowLayout {
+                visible: !(Media.hasPlayer && Media.isPlaying)
+                spacing: 6
+
+                Rectangle {
+                    width: 18
+                    height: 18
+                    radius: 9
+                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "󰍹"
+                        font.pixelSize: 11
+                        color: Tokens.accent
                     }
                 }
 
-                // Workspaces Module
-                Workspaces {
-                    Layout.alignment: Qt.AlignVCenter
+                Text {
+                    text: "Control Center"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: centerHover.hovered ? Tokens.accent : Tokens.text_primary
+
+                    Behavior on color {
+                        ColorAnimation { duration: 150 }
+                    }
                 }
             }
+        }
+    }
 
-            // Center: Tap to open Control Center dropdown
-            Item {
-                Layout.fillWidth: true
-                Layout.minimumWidth: 260
-                Layout.fillHeight: true
+    // 3. Right Floating Island: Status Tray & Clock Pill
+    Rectangle {
+        id: rightIsland
+        anchors.right: parent.right
+        anchors.rightMargin: 12
+        anchors.verticalCenter: parent.verticalCenter
+        height: 32
+        implicitWidth: rightLayout.implicitWidth + 20
+        radius: 12
+        color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.barOpacity)
+        border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+        border.width: 1
 
-                HoverHandler { id: centerBarHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler {
-                    onTapped: barRoot.requestDashboard("Home")
-                }
+        RowLayout {
+            id: rightLayout
+            anchors.centerIn: parent
+            spacing: 8
+
+            // Status Tray
+            StatusTray {
+                Layout.alignment: Qt.AlignVCenter
             }
 
-            // Right Area: System Tray, Status & Clock Pill
-            RowLayout {
-                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                spacing: 8
+            // Divider between tray and clock if tray has items
+            Rectangle {
+                visible: SystemTray.items.length > 0
+                width: 1
+                height: 14
+                color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
+            }
 
-                // Status Tray
-                StatusTray {
-                    Layout.alignment: Qt.AlignVCenter
-                }
+            // Clock Pill
+            Rectangle {
+                id: clockPill
+                height: 24
+                implicitWidth: clockContent.implicitWidth + 14
+                radius: 8
+                color: clockHover.hovered
+                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25)
+                    : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7)
 
-                // Clock Pill
-                Rectangle {
-                    id: clockPill
-                    height: 24
-                    implicitWidth: clockText.implicitWidth + 16
-                    radius: 8
-                    color: clockHover.hovered
-                        ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25)
-                        : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7)
+                RowLayout {
+                    id: clockContent
+                    anchors.centerIn: parent
+                    spacing: 5
+
+                    Text {
+                        text: "󰥔"
+                        font.pixelSize: 11
+                        color: clockHover.hovered ? Tokens.accent : Tokens.text_secondary
+                    }
 
                     Text {
                         id: clockText
-                        anchors.centerIn: parent
                         text: Qt.formatDateTime(new Date(), "hh:mm")
                         font.pixelSize: 12
                         font.bold: true
                         color: clockHover.hovered ? Tokens.accent : Tokens.text_primary
                     }
+                }
 
-                    HoverHandler { id: clockHover }
-                    TapHandler {
-                        onTapped: barRoot.requestDashboard("Home")
-                    }
+                HoverHandler { id: clockHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: barRoot.requestDashboard("Home")
+                }
 
-                    Timer {
-                        interval: 1000
-                        running: true
-                        repeat: true
-                        onTriggered: clockText.text = Qt.formatDateTime(new Date(), "hh:mm")
-                    }
+                Timer {
+                    interval: 1000
+                    running: true
+                    repeat: true
+                    onTriggered: clockText.text = Qt.formatDateTime(new Date(), "hh:mm")
                 }
             }
         }

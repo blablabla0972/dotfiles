@@ -14,6 +14,7 @@ QUICKSETTINGS_QML = ROOT / "config/quickshell/rice-shell/dashboard/QuickSettings
 ISLAND_QML = ROOT / "config/quickshell/rice-shell/island/Island.qml"
 ISLAND_SHAPE_QML = ROOT / "config/quickshell/rice-shell/island/IslandShape.qml"
 SHELL_QML = ROOT / "config/quickshell/rice-shell/shell.qml"
+BAR_QML = ROOT / "config/quickshell/rice-shell/bar/Bar.qml"
 
 
 class TelemetryScriptTest(unittest.TestCase):
@@ -124,6 +125,31 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
         self.assertIn("islandWindow.osdIcon", content)
         self.assertIn("islandWindow.osdProgress", content)
         self.assertIn("islandWindow.osdProgress * 100", content)
+
+    def test_segmented_bar_islands(self):
+        self.assertTrue(BAR_QML.exists(), "Bar.qml must exist")
+        content = BAR_QML.read_text()
+
+        # Verify 3 distinct floating island blocks exist
+        self.assertIn("id: leftIsland", content)
+        self.assertIn("id: centerIsland", content)
+        self.assertIn("id: rightIsland", content)
+
+        # Left Island: launcher icon button and workspaces
+        self.assertIn("launcherHover", content)
+        self.assertIn("barRoot.requestLauncher()", content)
+        self.assertIn("Workspaces", content)
+
+        # Center Island: horizontal center anchoring, dynamic island inline (idle & media), dashboard request
+        self.assertIn("anchors.horizontalCenter: parent.horizontalCenter", content)
+        self.assertIn("Control Center", content)
+        self.assertIn("barRoot.requestDashboard(\"Home\")", content)
+        self.assertIn("Media.hasPlayer && Media.isPlaying", content)
+
+        # Right Island: status tray and clock pill
+        self.assertIn("StatusTray", content)
+        self.assertIn("id: clockPill", content)
+        self.assertIn("hh:mm", content)
 
 
 if __name__ == "__main__":

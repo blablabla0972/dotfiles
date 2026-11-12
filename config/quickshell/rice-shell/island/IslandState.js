@@ -22,8 +22,6 @@ var alertTimer = null;
 function resolveState(currentAlert, hasMedia, isHovered, isPinned) {
     if (isPinned) return State.EXPANDED;
     if (currentAlert) return currentAlert.type;
-    if (isHovered && hasMedia) return State.EXPANDED;
-    if (hasMedia) return State.MEDIA;
     return State.IDLE;
 }
 
