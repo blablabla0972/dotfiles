@@ -87,7 +87,7 @@ PanelWindow {
     Rectangle {
         id: scrim
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, 0.25)
+        color: Qt.rgba(0, 0, 0, 0.3)
         opacity: dashboardWindow.expanded ? 1.0 : 0.0
 
         Behavior on opacity {
@@ -116,6 +116,11 @@ PanelWindow {
             height: morphShape.height
 
             // Absorb inner clicks so they never trigger outside-click dismissal
+            TapHandler {
+                gesturePolicy: TapHandler.WithinBounds
+                onTapped: (eventPoint) => {}
+            }
+
             MouseArea {
                 anchors.fill: parent
                 onClicked: {}
@@ -278,7 +283,7 @@ PanelWindow {
                         }
                     }
 
-                    // Tab View Body
+                    // Tab View Body with Lazy Loading
                     Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -288,14 +293,18 @@ PanelWindow {
                             visible: dashboardWindow.currentTab === "Home"
                         }
 
-                        System {
+                        Loader {
                             anchors.fill: parent
+                            active: dashboardWindow.visible && dashboardWindow.currentTab === "System"
                             visible: dashboardWindow.currentTab === "System"
+                            sourceComponent: System {}
                         }
 
-                        Config {
+                        Loader {
                             anchors.fill: parent
+                            active: dashboardWindow.visible && dashboardWindow.currentTab === "Config"
                             visible: dashboardWindow.currentTab === "Config"
+                            sourceComponent: Config {}
                         }
                     }
                 }

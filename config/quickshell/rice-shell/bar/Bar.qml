@@ -29,6 +29,8 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
+    property bool islandActive: false
+
     // 1. Left Floating Island: App Launcher & Workspaces
     Rectangle {
         id: leftIsland
@@ -97,6 +99,12 @@ PanelWindow {
             : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
         border.width: 1
 
+        opacity: barRoot.islandActive ? 0.0 : 1.0
+        visible: opacity > 0.01
+
+        Behavior on opacity {
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+        }
         Behavior on implicitWidth {
             NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
         }

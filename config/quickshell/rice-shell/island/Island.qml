@@ -138,7 +138,6 @@ PanelWindow {
         // Inner Content Layer
         Item {
             anchors.fill: parent
-            clip: true
 
             // 1. Media Mini Pill Content
             RowLayout {
@@ -185,54 +184,48 @@ PanelWindow {
             RowLayout {
                 visible: islandWindow.activeMode === IslandState.State.OSD
                 anchors.fill: parent
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
+                anchors.leftMargin: 14
+                anchors.rightMargin: 14
                 spacing: 10
 
-                // Icon Badge Container
-                Rectangle {
-                    width: 26
-                    height: 26
-                    radius: 13
-                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+                // Prominent Audio Glyph
+                Text {
                     Layout.alignment: Qt.AlignVCenter
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: islandWindow.osdIcon
-                        font.pixelSize: 15
-                        color: Tokens.accent
-                    }
+                    text: islandWindow.osdIcon
+                    font.pixelSize: 18
+                    color: Tokens.accent
                 }
 
                 // Volume Progress Track
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 8
-                    radius: 4
-                    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.85)
-                    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                    border.width: 1
+                    height: 10
+                    radius: 5
+                    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.9)
+                    clip: true
 
                     Rectangle {
                         height: parent.height
                         width: Math.min(parent.width, Math.max(parent.height, parent.width * islandWindow.osdProgress))
-                        radius: 4
+                        radius: 5
                         color: Tokens.accent
 
                         Behavior on width {
-                            NumberAnimation { duration: 90; easing.type: Easing.OutQuad }
+                            NumberAnimation { duration: 110; easing.type: Easing.OutCubic }
                         }
                     }
                 }
 
-                // Value Percentage Text
+                // Value Percentage Text with Tabular Digits
                 Text {
                     Layout.alignment: Qt.AlignVCenter
+                    Layout.preferredWidth: 34
+                    horizontalAlignment: Text.AlignRight
                     text: Math.round(islandWindow.osdProgress * 100) + "%"
-                    font.pixelSize: 11
+                    font.pixelSize: 12
                     font.bold: true
-                    color: Tokens.text_secondary
+                    font.features: { "tnum": 1 }
+                    color: Tokens.text_primary
                 }
             }
 

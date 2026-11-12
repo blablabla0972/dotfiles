@@ -20,20 +20,38 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        // User Avatar Circle
-        Rectangle {
+        // User Avatar Circle with Status Dot
+        Item {
             width: 50
             height: 50
-            radius: 25
-            color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-            border.color: Tokens.accent
-            border.width: 1.5
 
-            Text {
-                anchors.centerIn: parent
-                text: "󰀄"
-                font.pixelSize: 26
-                color: Tokens.accent
+            Rectangle {
+                anchors.fill: parent
+                radius: 25
+                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+                border.color: Tokens.accent
+                border.width: 1.5
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰀄"
+                    font.pixelSize: 26
+                    color: Tokens.accent
+                }
+            }
+
+            // Active Green Status Indicator
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                anchors.bottomMargin: 2
+                anchors.rightMargin: 2
+                width: 12
+                height: 12
+                radius: 6
+                color: "#4ade80"
+                border.color: Tokens.surface_high
+                border.width: 2
             }
         }
 

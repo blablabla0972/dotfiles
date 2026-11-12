@@ -59,154 +59,176 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 10
+        anchors.margins: 14
+        spacing: 12
 
-        // Section Title
-        Text {
-            text: "Quick Controls"
-            font.pixelSize: 12
-            font.bold: true
-            color: Tokens.text_secondary
-        }
-
-        // 1. Volume Slider Bar
+        // Section Title with subtle badge
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            Text {
+                text: "Quick Controls"
+                font.pixelSize: 13
+                font.bold: true
+                color: Tokens.text_primary
+            }
+            Item { Layout.fillWidth: true }
+            Text {
+                text: "Settings"
+                font.pixelSize: 10
+                color: Tokens.text_secondary
+            }
+        }
 
+        // 1. Integrated Volume Slider Row
+        Rectangle {
+            id: volTrack
+            Layout.fillWidth: true
+            height: 36
+            radius: 10
+            color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.85)
+            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+            border.width: 1
+            clip: true
+
+            // Active volume fill
             Rectangle {
-                width: 24
-                height: 24
-                radius: 12
-                color: Audio.muted ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.2) : "transparent"
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: Math.min(parent.width, Math.max(0, parent.width * Audio.volume))
+                color: Audio.muted ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4) : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.22)
+            }
+
+            // Foreground content
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
 
                 Text {
-                    anchors.centerIn: parent
                     text: Audio.muted ? "󰝟" : (Audio.volume > 0.5 ? "󰕾" : (Audio.volume > 0.05 ? "󰖀" : "󰕿"))
-                    font.pixelSize: 14
+                    font.pixelSize: 15
                     color: Audio.muted ? Tokens.danger : Tokens.accent
                 }
 
-                TapHandler {
-                    onTapped: Audio.toggleMute()
-                }
-            }
-
-            Rectangle {
-                id: volTrack
-                Layout.fillWidth: true
-                height: 8
-                radius: 4
-                color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
-
-                Rectangle {
-                    height: parent.height
-                    width: Math.min(parent.width, Math.max(0, parent.width * Audio.volume))
-                    radius: 4
-                    color: Audio.muted ? Tokens.outline : Tokens.accent
-
-                    Behavior on width {
-                        NumberAnimation { duration: 80 }
-                    }
+                Text {
+                    text: "Volume"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: Tokens.text_primary
                 }
 
-                TapHandler {
-                    onTapped: (point) => {
-                        var ratio = Math.max(0.0, Math.min(1.0, point.position.x / volTrack.width));
-                        Audio.setVolume(ratio);
-                    }
-                }
-            }
-
-            Text {
-                text: Audio.muted ? "0%" : Math.round(Audio.volume * 100) + "%"
-                font.pixelSize: 10
-                font.bold: true
-                color: Tokens.text_secondary
-                Layout.preferredWidth: 26
-                horizontalAlignment: Text.AlignRight
-            }
-        }
-
-        // 2. Brightness Slider Bar
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-
-            Rectangle {
-                width: 24
-                height: 24
-                radius: 12
-                color: "transparent"
+                Item { Layout.fillWidth: true }
 
                 Text {
-                    anchors.centerIn: parent
-                    text: "󰃠"
-                    font.pixelSize: 14
-                    color: Tokens.accent
+                    text: Audio.muted ? "Muted" : Math.round(Audio.volume * 100) + "%"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: Tokens.text_secondary
                 }
             }
 
-            Rectangle {
-                id: brightTrack
-                Layout.fillWidth: true
-                height: 8
-                radius: 4
-                color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
-
-                Rectangle {
-                    height: parent.height
-                    width: Math.min(parent.width, Math.max(0, parent.width * root.brightness))
-                    radius: 4
-                    color: Tokens.accent
-
-                    Behavior on width {
-                        NumberAnimation { duration: 80 }
-                    }
+            // Continuous Drag & Click Handler
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                function updateVolume(mouse) {
+                    var ratio = Math.max(0.0, Math.min(1.0, mouse.x / volTrack.width));
+                    Audio.setVolume(ratio);
                 }
-
-                TapHandler {
-                    onTapped: (point) => {
-                        var ratio = Math.max(0.05, Math.min(1.0, point.position.x / brightTrack.width));
-                        root.setBrightness(ratio);
-                    }
+                onPressed: (mouse) => updateVolume(mouse)
+                onPositionChanged: (mouse) => {
+                    if (pressed) updateVolume(mouse);
                 }
-            }
-
-            Text {
-                text: Math.round(root.brightness * 100) + "%"
-                font.pixelSize: 10
-                font.bold: true
-                color: Tokens.text_secondary
-                Layout.preferredWidth: 26
-                horizontalAlignment: Text.AlignRight
             }
         }
 
-        Item { Layout.fillHeight: true }
+        // 2. Integrated Brightness Slider Row
+        Rectangle {
+            id: brightTrack
+            Layout.fillWidth: true
+            height: 36
+            radius: 10
+            color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.85)
+            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+            border.width: 1
+            clip: true
 
-        // 3. Quick Toggle Tiles (2 columns)
+            // Active brightness fill
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: Math.min(parent.width, Math.max(0, parent.width * root.brightness))
+                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.22)
+            }
+
+            // Foreground content
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+
+                Text {
+                    text: "󰃠"
+                    font.pixelSize: 15
+                    color: Tokens.accent
+                }
+
+                Text {
+                    text: "Brightness"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: Tokens.text_primary
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: Math.round(root.brightness * 100) + "%"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: Tokens.text_secondary
+                }
+            }
+
+            // Continuous Drag & Click Handler
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                function updateBrightness(mouse) {
+                    var ratio = Math.max(0.05, Math.min(1.0, mouse.x / brightTrack.width));
+                    root.setBrightness(ratio);
+                }
+                onPressed: (mouse) => updateBrightness(mouse)
+                onPositionChanged: (mouse) => {
+                    if (pressed) updateBrightness(mouse);
+                }
+            }
+        }
+
+        // 3. Compact 2-Column Quick Toggle Tiles (fills remaining height evenly without gaps)
         GridLayout {
             Layout.fillWidth: true
+            Layout.fillHeight: true
             columns: 2
-            rowSpacing: 6
-            columnSpacing: 6
+            rowSpacing: 8
+            columnSpacing: 8
 
             // Wi-Fi
             Rectangle {
                 Layout.fillWidth: true
-                height: 40
+                Layout.fillHeight: true
                 radius: 10
-                color: root.wifiActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.wifiActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.4) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+                color: root.wifiActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                border.color: root.wifiActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                 border.width: 1
 
                 RowLayout {
                     anchors.centerIn: parent
-                    spacing: 6
-                    Text { text: "󰤨"; font.pixelSize: 14; color: root.wifiActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "Wi-Fi"; font.pixelSize: 10; font.bold: true; color: Tokens.text_primary }
+                    spacing: 8
+                    Text { text: "󰤨"; font.pixelSize: 15; color: root.wifiActive ? Tokens.accent : Tokens.text_secondary }
+                    Text { text: "Wi-Fi"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
                 }
 
                 TapHandler {
@@ -217,17 +239,17 @@ Rectangle {
             // Bluetooth
             Rectangle {
                 Layout.fillWidth: true
-                height: 40
+                Layout.fillHeight: true
                 radius: 10
-                color: root.btActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.btActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.4) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+                color: root.btActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                border.color: root.btActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                 border.width: 1
 
                 RowLayout {
                     anchors.centerIn: parent
-                    spacing: 6
-                    Text { text: "󰂯"; font.pixelSize: 14; color: root.btActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "Bluetooth"; font.pixelSize: 10; font.bold: true; color: Tokens.text_primary }
+                    spacing: 8
+                    Text { text: "󰂯"; font.pixelSize: 15; color: root.btActive ? Tokens.accent : Tokens.text_secondary }
+                    Text { text: "Bluetooth"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
                 }
 
                 TapHandler {
@@ -238,17 +260,17 @@ Rectangle {
             // Mute Toggle Tile
             Rectangle {
                 Layout.fillWidth: true
-                height: 40
+                Layout.fillHeight: true
                 radius: 10
-                color: Audio.muted ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: Audio.muted ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.4) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+                color: Audio.muted ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.18) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                border.color: Audio.muted ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                 border.width: 1
 
                 RowLayout {
                     anchors.centerIn: parent
-                    spacing: 6
-                    Text { text: Audio.muted ? "󰝟" : "󰕾"; font.pixelSize: 14; color: Audio.muted ? Tokens.danger : Tokens.accent }
-                    Text { text: Audio.muted ? "Muted" : "Mute"; font.pixelSize: 10; font.bold: true; color: Tokens.text_primary }
+                    spacing: 8
+                    Text { text: Audio.muted ? "󰝟" : "󰕾"; font.pixelSize: 15; color: Audio.muted ? Tokens.danger : Tokens.accent }
+                    Text { text: Audio.muted ? "Muted" : "Mute"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
                 }
 
                 TapHandler {
@@ -259,17 +281,17 @@ Rectangle {
             // Do Not Disturb
             Rectangle {
                 Layout.fillWidth: true
-                height: 40
+                Layout.fillHeight: true
                 radius: 10
-                color: root.dndActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.dndActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.4) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+                color: root.dndActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                border.color: root.dndActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                 border.width: 1
 
                 RowLayout {
                     anchors.centerIn: parent
-                    spacing: 6
-                    Text { text: "󰂛"; font.pixelSize: 14; color: root.dndActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "DND"; font.pixelSize: 10; font.bold: true; color: Tokens.text_primary }
+                    spacing: 8
+                    Text { text: "󰂛"; font.pixelSize: 15; color: root.dndActive ? Tokens.accent : Tokens.text_secondary }
+                    Text { text: "DND"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
                 }
 
                 TapHandler {
@@ -280,17 +302,17 @@ Rectangle {
             // Night Light
             Rectangle {
                 Layout.fillWidth: true
-                height: 40
+                Layout.fillHeight: true
                 radius: 10
-                color: root.nightLightActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.nightLightActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.4) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+                color: root.nightLightActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                border.color: root.nightLightActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                 border.width: 1
 
                 RowLayout {
                     anchors.centerIn: parent
-                    spacing: 6
-                    Text { text: "󰖔"; font.pixelSize: 14; color: root.nightLightActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "Night"; font.pixelSize: 10; font.bold: true; color: Tokens.text_primary }
+                    spacing: 8
+                    Text { text: "󰖔"; font.pixelSize: 15; color: root.nightLightActive ? Tokens.accent : Tokens.text_secondary }
+                    Text { text: "Night"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
                 }
 
                 TapHandler {
@@ -301,17 +323,17 @@ Rectangle {
             // Caffeine / Awake
             Rectangle {
                 Layout.fillWidth: true
-                height: 40
+                Layout.fillHeight: true
                 radius: 10
-                color: root.caffeineActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.caffeineActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.4) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+                color: root.caffeineActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                border.color: root.caffeineActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                 border.width: 1
 
                 RowLayout {
                     anchors.centerIn: parent
-                    spacing: 6
-                    Text { text: "󰅶"; font.pixelSize: 14; color: root.caffeineActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "Awake"; font.pixelSize: 10; font.bold: true; color: Tokens.text_primary }
+                    spacing: 8
+                    Text { text: "󰅶"; font.pixelSize: 15; color: root.caffeineActive ? Tokens.accent : Tokens.text_secondary }
+                    Text { text: "Awake"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
                 }
 
                 TapHandler {

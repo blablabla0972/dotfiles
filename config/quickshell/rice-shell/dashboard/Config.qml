@@ -9,6 +9,9 @@ import "../theme"
 Item {
     id: root
 
+    implicitWidth: 724
+    implicitHeight: 370
+
     property string themeCommandResult: ""
 
     Process {
@@ -53,41 +56,42 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 16
-                spacing: 12
+                anchors.margins: 14
+                spacing: 10
 
+                // Header
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 10
 
                     Rectangle {
-                        width: 34
-                        height: 34
-                        radius: 17
+                        width: 32
+                        height: 32
+                        radius: 16
                         color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
 
                         Text {
                             anchors.centerIn: parent
                             text: "󰔎"
-                            font.pixelSize: 18
+                            font.pixelSize: 16
                             color: Tokens.accent
                         }
                     }
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: 1
 
                         Text {
-                            text: "Theme Appearance"
-                            font.pixelSize: 14
+                            text: "Theme & Palette"
+                            font.pixelSize: 13
                             font.bold: true
                             color: Tokens.text_primary
                         }
 
                         Text {
-                            text: "Material You adaptive palette"
-                            font.pixelSize: 11
+                            text: "Material You adaptive system"
+                            font.pixelSize: 10
                             color: Tokens.text_secondary
                         }
                     }
@@ -96,12 +100,12 @@ Item {
                 // Dark / Light Mode Switcher Pills
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 10
+                    spacing: 8
 
                     // Dark Mode Pill
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 40
+                        height: 38
                         radius: 10
                         readonly property bool isDark: Tokens.mode === "dark"
                         color: isDark ? Tokens.accent : (darkHover.hovered ? Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.5))
@@ -110,30 +114,32 @@ Item {
 
                         RowLayout {
                             anchors.centerIn: parent
-                            spacing: 8
+                            spacing: 6
                             Text {
                                 text: "󰖔"
-                                font.pixelSize: 16
+                                font.pixelSize: 14
                                 color: parent.parent.isDark ? Tokens.on_accent : Tokens.text_secondary
                             }
                             Text {
                                 text: "Dark Mode"
-                                font.pixelSize: 12
+                                font.pixelSize: 11
                                 font.bold: true
                                 color: parent.parent.isDark ? Tokens.on_accent : Tokens.text_primary
                             }
                         }
 
                         HoverHandler { id: darkHover }
-                        TapHandler {
-                            onTapped: root.switchTheme("dark")
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.switchTheme("dark")
                         }
                     }
 
                     // Light Mode Pill
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 40
+                        height: 38
                         radius: 10
                         readonly property bool isLight: Tokens.mode === "light"
                         color: isLight ? Tokens.accent : (lightHover.hovered ? Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.5))
@@ -142,23 +148,25 @@ Item {
 
                         RowLayout {
                             anchors.centerIn: parent
-                            spacing: 8
+                            spacing: 6
                             Text {
                                 text: "󰖨"
-                                font.pixelSize: 16
+                                font.pixelSize: 14
                                 color: parent.parent.isLight ? Tokens.on_accent : Tokens.text_secondary
                             }
                             Text {
                                 text: "Light Mode"
-                                font.pixelSize: 12
+                                font.pixelSize: 11
                                 font.bold: true
                                 color: parent.parent.isLight ? Tokens.on_accent : Tokens.text_primary
                             }
                         }
 
                         HoverHandler { id: lightHover }
-                        TapHandler {
-                            onTapped: root.switchTheme("light")
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.switchTheme("light")
                         }
                     }
                 }
@@ -166,9 +174,9 @@ Item {
                 // Regenerate Palette Button
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 40
+                    height: 38
                     radius: 10
-                    color: regenHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                    color: regenHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.6)
                     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
                     border.width: 1
 
@@ -178,27 +186,27 @@ Item {
 
                         Text {
                             text: "󰏘"
-                            font.pixelSize: 16
+                            font.pixelSize: 15
                             color: Tokens.accent
                         }
 
                         Text {
                             text: "Regenerate Palette from Wallpaper"
-                            font.pixelSize: 12
+                            font.pixelSize: 11
                             font.bold: true
                             color: Tokens.text_primary
                         }
                     }
 
                     HoverHandler { id: regenHover }
-                    TapHandler {
-                        onTapped: root.regenerateTheme()
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.regenerateTheme()
                     }
                 }
 
-                Item { Layout.fillHeight: true }
-
-                // Live Color Swatches Preview
+                // Swatches Section
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 6
@@ -210,36 +218,67 @@ Item {
                         color: Tokens.text_secondary
                     }
 
-                    RowLayout {
+                    // 2-row swatch matrix
+                    GridLayout {
                         Layout.fillWidth: true
-                        spacing: 8
+                        columns: 4
+                        rowSpacing: 6
+                        columnSpacing: 6
 
                         Repeater {
                             model: [
-                                { name: "accent", color: Tokens.accent },
-                                { name: "surface", color: Tokens.surface },
-                                { name: "surface_high", color: Tokens.surface_high },
-                                { name: "text", color: Tokens.text_primary },
-                                { name: "outline", color: Tokens.outline },
-                                { name: "danger", color: Tokens.danger }
+                                { name: "Accent", color: Tokens.accent },
+                                { name: "Surface", color: Tokens.surface },
+                                { name: "High", color: Tokens.surface_high },
+                                { name: "Outline", color: Tokens.outline },
+                                { name: "Text", color: Tokens.text_primary },
+                                { name: "Muted", color: Tokens.text_secondary },
+                                { name: "Danger", color: Tokens.danger },
+                                { name: "On-Acc", color: Tokens.on_accent }
                             ]
 
                             Rectangle {
                                 required property var modelData
                                 Layout.fillWidth: true
-                                height: 26
+                                height: 32
                                 radius: 6
                                 color: modelData.color
                                 border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4)
                                 border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: parent.modelData.name
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                    color: (parent.modelData.name === "Accent" || parent.modelData.name === "Danger" || parent.modelData.name === "Text") ? "#121318" : "#e2e2e9"
+                                }
                             }
                         }
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+
+                // Mode Footer
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "Status: Adaptive " + Tokens.mode.toUpperCase()
+                        font.pixelSize: 10
+                        color: Tokens.accent
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: "Matugen v2.4.0"
+                        font.pixelSize: 10
+                        color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.7)
                     }
                 }
             }
         }
 
-        // Right Section: Shell Management & Actions
+        // Right Section: Runtime & Compositor Control
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -250,41 +289,42 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 16
-                spacing: 12
+                anchors.margins: 14
+                spacing: 10
 
+                // Header
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 10
 
                     Rectangle {
-                        width: 34
-                        height: 34
-                        radius: 17
+                        width: 32
+                        height: 32
+                        radius: 16
                         color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
 
                         Text {
                             anchors.centerIn: parent
                             text: "󰑓"
-                            font.pixelSize: 18
+                            font.pixelSize: 16
                             color: Tokens.accent
                         }
                     }
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: 1
 
                         Text {
-                            text: "Shell & Compositor Control"
-                            font.pixelSize: 14
+                            text: "Runtime Control"
+                            font.pixelSize: 13
                             font.bold: true
                             color: Tokens.text_primary
                         }
 
                         Text {
-                            text: "Reload runtime components"
-                            font.pixelSize: 11
+                            text: "Compositor & desktop shell actions"
+                            font.pixelSize: 10
                             color: Tokens.text_secondary
                         }
                     }
@@ -293,9 +333,9 @@ Item {
                 // 1. Reload Quickshell Shell Action
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 48
+                    height: 44
                     radius: 10
-                    color: reloadHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                    color: reloadHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.6)
                     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                     border.width: 1
 
@@ -306,46 +346,48 @@ Item {
 
                         Text {
                             text: "󰑓"
-                            font.pixelSize: 20
+                            font.pixelSize: 18
                             color: Tokens.accent
                         }
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 2
+                            spacing: 1
                             Text {
                                 text: "Reload Rice Shell"
-                                font.pixelSize: 12
+                                font.pixelSize: 11
                                 font.bold: true
                                 color: Tokens.text_primary
                             }
                             Text {
                                 text: "Hot-restart bar, island & dashboard"
-                                font.pixelSize: 10
+                                font.pixelSize: 9
                                 color: Tokens.text_secondary
                             }
                         }
 
                         Text {
                             text: "Restart"
-                            font.pixelSize: 11
+                            font.pixelSize: 10
                             font.bold: true
                             color: Tokens.accent
                         }
                     }
 
                     HoverHandler { id: reloadHover }
-                    TapHandler {
-                        onTapped: root.reloadShell()
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.reloadShell()
                     }
                 }
 
                 // 2. Reload Hyprland Action
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 48
+                    height: 44
                     radius: 10
-                    color: hyprHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                    color: hyprHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.6)
                     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                     border.width: 1
 
@@ -356,37 +398,39 @@ Item {
 
                         Text {
                             text: "󰒓"
-                            font.pixelSize: 20
+                            font.pixelSize: 18
                             color: Tokens.accent
                         }
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 2
+                            spacing: 1
                             Text {
                                 text: "Reload Hyprland"
-                                font.pixelSize: 12
+                                font.pixelSize: 11
                                 font.bold: true
                                 color: Tokens.text_primary
                             }
                             Text {
                                 text: "Reapply compositor rules and binds"
-                                font.pixelSize: 10
+                                font.pixelSize: 9
                                 color: Tokens.text_secondary
                             }
                         }
 
                         Text {
                             text: "Reload"
-                            font.pixelSize: 11
+                            font.pixelSize: 10
                             font.bold: true
                             color: Tokens.accent
                         }
                     }
 
                     HoverHandler { id: hyprHover }
-                    TapHandler {
-                        onTapped: root.reloadHyprland()
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.reloadHyprland()
                     }
                 }
 
@@ -395,7 +439,7 @@ Item {
                     Layout.fillWidth: true
                     height: 44
                     radius: 10
-                    color: tokenHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.15) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                    color: tokenHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.15) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.6)
                     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                     border.width: 1
 
@@ -412,24 +456,33 @@ Item {
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 2
+                            spacing: 1
                             Text {
                                 text: "Refresh Theme Tokens"
-                                font.pixelSize: 12
+                                font.pixelSize: 11
                                 font.bold: true
                                 color: Tokens.text_primary
                             }
                             Text {
                                 text: "Re-read adaptive-theme.json"
-                                font.pixelSize: 10
+                                font.pixelSize: 9
                                 color: Tokens.text_secondary
                             }
+                        }
+
+                        Text {
+                            text: "Sync"
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: Tokens.accent
                         }
                     }
 
                     HoverHandler { id: tokenHover }
-                    TapHandler {
-                        onTapped: Tokens.reloadTheme()
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Tokens.reloadTheme()
                     }
                 }
 
@@ -445,7 +498,7 @@ Item {
                     }
                     Item { Layout.fillWidth: true }
                     Text {
-                        text: "Screens: " + Quickshell.screens.length
+                        text: "Active screens: " + Quickshell.screens.length
                         font.pixelSize: 10
                         color: Tokens.accent
                     }

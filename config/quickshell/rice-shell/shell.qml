@@ -18,6 +18,20 @@ ShellRoot {
     property list<Dashboard> dashboardInstances: []
     property list<Launcher> launcherInstances: []
 
+    property bool isIslandActive: false
+
+    function updateIslandState(): void {
+        var active = false;
+        for (var i = 0; i < islandInstances.length; i++) {
+            var inst = islandInstances[i];
+            if (inst && inst.activeMode !== "idle") {
+                active = true;
+                break;
+            }
+        }
+        root.isIslandActive = active;
+    }
+
     // Expose IPC handler reference and convenience dispatchers for child components
     property alias ipcHandler: riceIpc
 
@@ -85,6 +99,15 @@ ShellRoot {
             }
         }
 
+        function dismissDashboard(): void {
+            for (var i = 0; i < dashboardInstances.length; i++) {
+                var inst = dashboardInstances[i];
+                if (inst && typeof inst.dismiss === "function") {
+                    inst.dismiss();
+                }
+            }
+        }
+
         function toggleNotifications(): void {
             // Target for M6 notifications center implementation
         }
@@ -118,6 +141,7 @@ ShellRoot {
             Bar {
                 required property var modelData
                 targetScreen: modelData
+                islandActive: root.isIslandActive
 
                 onRequestLauncher: () => {
                     root.toggleLauncher();
@@ -140,16 +164,22 @@ ShellRoot {
                 required property var modelData
                 targetScreen: modelData
 
+                onActiveModeChanged: {
+                    root.updateIslandState();
+                }
+
                 onRequestDashboard: (tab) => {
                     root.toggleDashboard(tab);
                 }
 
                 Component.onCompleted: {
                     root.islandInstances.push(screenIsland);
+                    root.updateIslandState();
                 }
                 Component.onDestruction: {
                     var idx = root.islandInstances.indexOf(screenIsland);
                     if (idx >= 0) root.islandInstances.splice(idx, 1);
+                    root.updateIslandState();
                 }
             }
         }

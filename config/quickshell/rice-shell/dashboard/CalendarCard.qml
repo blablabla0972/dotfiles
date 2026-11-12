@@ -15,24 +15,37 @@ Rectangle {
     border.width: 1
 
     readonly property date now: new Date()
+    readonly property int currentYear: now.getFullYear()
+    readonly property int currentMonth: now.getMonth()
     readonly property int currentDay: now.getDate()
     readonly property string monthName: Qt.formatDateTime(now, "MMMM yyyy")
 
+    // Calendar date math: Monday = 0, ..., Sunday = 6
+    readonly property int firstDayWeekday: (new Date(root.currentYear, root.currentMonth, 1).getDay() + 6) % 7
+    readonly property int daysInMonth: new Date(root.currentYear, root.currentMonth + 1, 0).getDate()
+    readonly property int prevMonthDays: new Date(root.currentYear, root.currentMonth, 0).getDate()
+    readonly property int totalCells: (root.firstDayWeekday + root.daysInMonth > 35) ? 42 : 35
+
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
+        anchors.margins: 10
+        spacing: 6
 
         // Month Header
-        Text {
+        RowLayout {
+            Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
-            text: root.monthName
-            font.pixelSize: 12
-            font.bold: true
-            color: Tokens.accent
+
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: root.monthName
+                font.pixelSize: 12
+                font.bold: true
+                color: Tokens.accent
+            }
         }
 
-        // Days of Week Header
+        // Days of Week Header (Mon - Sun)
         RowLayout {
             Layout.fillWidth: true
             spacing: 0
@@ -52,21 +65,36 @@ Rectangle {
             }
         }
 
-        // Days Grid (Simplified 4x7 preview)
+        // Dynamic Days Grid
         GridLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             columns: 7
-            rowSpacing: 2
+            rowSpacing: 1
             columnSpacing: 0
 
             Repeater {
-                model: 28
+                model: root.totalCells
 
                 Item {
+                    id: cellItem
                     required property int index
-                    readonly property int dayNumber: index + 1
-                    readonly property bool isToday: dayNumber === root.currentDay
+
+                    readonly property bool isPrevMonth: index < root.firstDayWeekday
+                    readonly property bool isNextMonth: index >= (root.firstDayWeekday + root.daysInMonth)
+                    readonly property bool isCurrentMonth: !isPrevMonth && !isNextMonth
+
+                    readonly property int dayNumber: {
+                        if (isPrevMonth) {
+                            return root.prevMonthDays - (root.firstDayWeekday - 1 - index);
+                        } else if (isNextMonth) {
+                            return index - (root.firstDayWeekday + root.daysInMonth) + 1;
+                        } else {
+                            return index - root.firstDayWeekday + 1;
+                        }
+                    }
+
+                    readonly property bool isToday: isCurrentMonth && (dayNumber === root.currentDay)
 
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -76,14 +104,18 @@ Rectangle {
                         width: 18
                         height: 18
                         radius: 9
-                        color: isToday ? Tokens.accent : "transparent"
+                        color: cellItem.isToday ? Tokens.accent : "transparent"
 
                         Text {
                             anchors.centerIn: parent
-                            text: dayNumber.toString()
-                            font.pixelSize: 10
-                            font.bold: isToday
-                            color: isToday ? Tokens.on_accent : Tokens.text_primary
+                            text: cellItem.dayNumber.toString()
+                            font.pixelSize: 9
+                            font.bold: cellItem.isToday
+                            color: {
+                                if (cellItem.isToday) return Tokens.on_accent;
+                                if (cellItem.isCurrentMonth) return Tokens.text_primary;
+                                return Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.35);
+                            }
                         }
                     }
                 }
@@ -91,3 +123,4 @@ Rectangle {
         }
     }
 }
+
