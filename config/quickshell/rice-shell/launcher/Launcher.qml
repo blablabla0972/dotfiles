@@ -53,16 +53,6 @@ PanelWindow {
         }
     }
 
-    function isPinnedApp(app): bool {
-        if (!app || !app.id) return false;
-        var id = app.id.toLowerCase();
-        var name = (app.name || "").toLowerCase();
-        return id.includes("kitty") || id.includes("alacritty") || id.includes("foot")
-            || id.includes("brave") || id.includes("firefox") || id.includes("chrome") || id.includes("chromium")
-            || id.includes("thunar") || id.includes("nautilus") || id.includes("dolphin")
-            || id.includes("vscode") || id.includes("code") || id.includes("texteditor") || id.includes("micro") || id.includes("vim");
-    }
-
     function matchesCategory(app, category: string): bool {
         if (!category || category === "All") return true;
         if (!app) return false;
@@ -124,41 +114,11 @@ PanelWindow {
             }
         }
 
-        var terminalApp = null;
-        var browserApp = null;
-        var fileManagerApp = null;
-        var editorApp = null;
-        var others = [];
-
-        for (var j = 0; j < valid.length; j++) {
-            var app = valid[j];
-            var id = (app.id || "").toLowerCase();
-            var name = (app.name || "").toLowerCase();
-
-            if (!terminalApp && (id.includes("kitty") || id.includes("alacritty") || id.includes("foot") || name === "terminal")) {
-                terminalApp = app;
-            } else if (!browserApp && (id.includes("brave") || id.includes("firefox") || id.includes("chrome") || id.includes("chromium"))) {
-                browserApp = app;
-            } else if (!fileManagerApp && (id.includes("thunar") || id.includes("nautilus") || id.includes("dolphin") || name === "files")) {
-                fileManagerApp = app;
-            } else if (!editorApp && (id.includes("vscode") || id.includes("code") || id.includes("texteditor") || id.includes("micro") || id.includes("vim"))) {
-                editorApp = app;
-            } else {
-                others.push(app);
-            }
-        }
-
-        var pinned = [];
-        if (terminalApp) pinned.push(terminalApp);
-        if (browserApp) pinned.push(browserApp);
-        if (fileManagerApp) pinned.push(fileManagerApp);
-        if (editorApp) pinned.push(editorApp);
-
-        others.sort(function(x, y) {
+        valid.sort(function(x, y) {
             return (x.name || "").localeCompare(y.name || "");
         });
 
-        return pinned.concat(others);
+        return valid;
     }
 
     // Filter desktop entries based on search query and category
@@ -317,16 +277,11 @@ PanelWindow {
         }
     }
 
-    // Backdrop Scrim
+    // Backdrop Scrim (transparent: no dimming or blur, dismisses launcher on outside click)
     Rectangle {
         id: scrim
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, 0.45)
-        opacity: launcherWindow.visible ? 1.0 : 0.0
-
-        Behavior on opacity {
-            NumberAnimation { duration: 160; easing.type: Easing.OutQuad }
-        }
+        color: "transparent"
 
         TapHandler {
             onTapped: launcherWindow.visible = false
@@ -569,7 +524,6 @@ PanelWindow {
                             required property int index
                             readonly property bool isSelected: launcherWindow.selectedIndex === appDelegate.index
                             readonly property bool isCommand: appDelegate.modelData && appDelegate.modelData.isCommand === true
-                            readonly property bool isPinned: !appDelegate.isCommand && launcherWindow.searchText.trim().length === 0 && launcherWindow.isPinnedApp(appDelegate.modelData)
 
                             width: appList.width
                             height: 48
@@ -671,36 +625,6 @@ PanelWindow {
                                         color: Tokens.text_secondary
                                         elide: Text.ElideRight
                                         visible: text.length > 0
-                                    }
-                                }
-
-                                // Pinned essential badge
-                                Rectangle {
-                                    visible: appDelegate.isPinned
-                                    Layout.preferredHeight: 20
-                                    radius: 10
-                                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.15)
-                                    border.color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.35)
-                                    border.width: 1
-                                    implicitWidth: pinnedBadgeRow.implicitWidth + 12
-
-                                    RowLayout {
-                                        id: pinnedBadgeRow
-                                        anchors.centerIn: parent
-                                        spacing: 4
-
-                                        Text {
-                                            text: "󰐃"
-                                            font.pixelSize: 9
-                                            color: Tokens.accent
-                                        }
-
-                                        Text {
-                                            text: "Pinned"
-                                            font.pixelSize: 10
-                                            font.bold: true
-                                            color: Tokens.accent
-                                        }
                                     }
                                 }
 

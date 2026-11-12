@@ -26,9 +26,10 @@ class QuickshellAppLauncherTest(unittest.TestCase):
         for cat in ["All", "Internet", "Development", "Multimedia", "System", "Settings"]:
             self.assertIn(f'"{cat}"', content)
 
-        # Zero state method and pinned essentials
+        # Zero state method without pinned separation
         self.assertIn("getZeroStateApps()", content)
-        self.assertIn("isPinnedApp", content)
+        self.assertNotIn("isPinnedApp", content)
+        self.assertNotIn('text: "Pinned"', content)
 
     def test_launcher_command_runner(self):
         content = LAUNCHER_QML.read_text()
