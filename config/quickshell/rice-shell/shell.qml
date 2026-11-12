@@ -5,9 +5,13 @@ import Quickshell
 import Quickshell.Io
 import "theme"
 import "bar"
+import "island"
 
 ShellRoot {
     id: root
+
+    // List of active island window instances for IPC dispatch
+    property list<Island> islandInstances: []
 
     // Public IPC Handler for the rice desktop shell
     IpcHandler {
@@ -21,6 +25,28 @@ ShellRoot {
 
         function health(): void {
             console.log("rice health: status=" + status + " screens=" + screenCount + " mode=" + themeMode);
+        }
+
+        function islandToggle(): void {
+            for (var i = 0; i < islandInstances.length; i++) {
+                var island = islandInstances[i];
+                if (island) {
+                    island.isPinned = !island.isPinned;
+                    island.updateMode();
+                }
+            }
+        }
+
+        function islandOsd(icon: string, progress: real): void {
+            for (var i = 0; i < islandInstances.length; i++) {
+                if (islandInstances[i]) islandInstances[i].triggerOsd(icon, progress);
+            }
+        }
+
+        function islandNotify(summary: string, body: string): void {
+            for (var i = 0; i < islandInstances.length; i++) {
+                if (islandInstances[i]) islandInstances[i].triggerNotification(summary, body, "󰂚");
+            }
         }
 
         function toggleLauncher(): void {
@@ -68,8 +94,28 @@ ShellRoot {
         }
     }
 
+    // Dynamic Island overlay instantiated on all active monitors
+    Variants {
+        model: Quickshell.screens
+
+        delegate: Component {
+            Island {
+                id: screenIsland
+                required property var modelData
+                targetScreen: modelData
+
+                Component.onCompleted: {
+                    root.islandInstances.push(screenIsland);
+                }
+                Component.onDestruction: {
+                    var idx = root.islandInstances.indexOf(screenIsland);
+                    if (idx >= 0) root.islandInstances.splice(idx, 1);
+                }
+            }
+        }
+    }
+
     // Conditional Loader for NotificationServer (M6/M9 guard)
-    // Only loads when explicitly requested in isolated tests or upon final cutover
     Loader {
         id: notificationLoader
         active: Quickshell.env("ENABLE_NOTIFICATIONS") === "1"

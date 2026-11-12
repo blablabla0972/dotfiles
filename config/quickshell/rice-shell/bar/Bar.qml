@@ -4,7 +4,6 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Hyprland
 import "../theme"
 
 PanelWindow {
@@ -47,14 +46,14 @@ PanelWindow {
             // Left Area: Workspaces & Launcher
             RowLayout {
                 Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
-                spacing: 6
+                spacing: 10
 
                 // Launcher icon button
                 Rectangle {
-                    width: 28
-                    height: 28
-                    radius: 8
-                    color: launcherHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : "transparent"
+                    width: 26
+                    height: 26
+                    radius: 7
+                    color: launcherHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : "transparent"
 
                     Text {
                         anchors.centerIn: parent
@@ -66,50 +65,34 @@ PanelWindow {
                     HoverHandler { id: launcherHover }
                     TapHandler {
                         onTapped: {
-                            // Will trigger launcher toggle
+                            // Triggers launcher in M5
                         }
                     }
                 }
 
-                // Workspaces pill
-                Row {
-                    spacing: 4
-
-                    Repeater {
-                        model: 5
-
-                        Rectangle {
-                            required property int index
-                            readonly property int wsId: index + 1
-                            readonly property bool isCurrent: Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id === wsId
-
-                            width: isCurrent ? 24 : 8
-                            height: 8
-                            radius: 4
-                            color: isCurrent ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
-
-                            Behavior on width {
-                                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                            }
-
-                            TapHandler {
-                                onTapped: Hyprland.dispatch("workspace " + wsId)
-                            }
-                        }
-                    }
+                // Workspaces Module
+                Workspaces {
+                    Layout.alignment: Qt.AlignVCenter
                 }
             }
 
-            // Center: Flexible spacer to allow Island centering
+            // Center: Reserved empty space for Dynamic Island
             Item {
                 Layout.fillWidth: true
+                Layout.minimumWidth: 260
             }
 
-            // Right Area: Clock Pill
+            // Right Area: System Tray, Status & Clock Pill
             RowLayout {
                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                 spacing: 8
 
+                // Status Tray
+                StatusTray {
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                // Clock Pill
                 Rectangle {
                     height: 24
                     implicitWidth: clockText.implicitWidth + 16
