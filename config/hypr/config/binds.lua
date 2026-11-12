@@ -115,6 +115,8 @@ hl.bind(mainMod .. " + code:86", function() zoomfunction(0.3) end, { repeating =
 ---- LAUNCHER ----
 ------------------
 
+local qsRice = "qs ipc -p ~/.config/quickshell/rice-shell call rice "
+
 hl.bind(mainMod .. " + Return",     hl.dsp.exec_cmd(launchPrefix .. TERMINAL))
 hl.bind(mainMod .. " + E",          hl.dsp.exec_cmd(launchPrefix .. FILE_MANAGER))
 hl.bind(mainMod .. " + T",          hl.dsp.exec_cmd(launchPrefix .. TERMINAL))
@@ -122,33 +124,33 @@ hl.bind(mainMod .. " + C",          hl.dsp.exec_cmd(launchPrefix .. CALCULATOR))
 hl.bind(mainMod .. " + B",          hl.dsp.exec_cmd(launchPrefix .. BROWSER))
 hl.bind(mainMod .. " + W",          hl.dsp.exec_cmd("quickshell -p ~/.config/quickshell/wallpaper-switcher"))
 hl.bind("CONTROL + SHIFT + Escape", hl.dsp.exec_cmd(launchPrefix .. TERMINAL .. " -e btop"))
-hl.bind(mainMod .. " + Z",          hl.dsp.exec_cmd(noctCall .. "settings-toggle"))
-hl.bind(mainMod .. " + X",          hl.dsp.exec_cmd(noctCall .. "panel-toggle control-center"))
-hl.bind(mainMod .. " + Space",      hl.dsp.exec_cmd(noctCall .. "panel-toggle launcher"))
-hl.bind(mainMod .. " + period",     hl.dsp.exec_cmd(noctCall .. "panel-toggle launcher /emo"))
-hl.bind(mainMod .. " + L",          hl.dsp.exec_cmd("noctalia msg session lock"))
-hl.bind(mainMod .. " + ALT + C",    hl.dsp.exec_cmd(noctCall .. "panel-toggle session"))
+hl.bind(mainMod .. " + Z",          hl.dsp.exec_cmd(qsRice .. "toggleDashboard Config 2>/dev/null || " .. noctCall .. "settings-toggle"))
+hl.bind(mainMod .. " + X",          hl.dsp.exec_cmd(qsRice .. "toggleDashboard Home 2>/dev/null || " .. noctCall .. "panel-toggle control-center"))
+hl.bind(mainMod .. " + Space",      hl.dsp.exec_cmd(qsRice .. "toggleLauncher 2>/dev/null || " .. noctCall .. "panel-toggle launcher"))
+hl.bind(mainMod .. " + period",     hl.dsp.exec_cmd(qsRice .. "toggleLauncher 2>/dev/null || " .. noctCall .. "panel-toggle launcher /emo"))
+hl.bind(mainMod .. " + L",          hl.dsp.exec_cmd("pidof hyprlock || hyprlock"))
+hl.bind(mainMod .. " + ALT + C",    hl.dsp.exec_cmd(qsRice .. "toggleSession 2>/dev/null || " .. noctCall .. "panel-toggle session"))
 
 
 ---------------------------
 ---- HARDWARE CONTROLS ----
 ---------------------------
 
--- Audio
-hl.bind("XF86AudioRaiseVolume", hl.dsp.exec_cmd(noctCall .. "volume-up"),   { locked = true, repeating = true })
-hl.bind("XF86AudioLowerVolume", hl.dsp.exec_cmd(noctCall .. "volume-down"), { locked = true, repeating = true })
-hl.bind("XF86AudioMute",        hl.dsp.exec_cmd(noctCall .. "volume-mute"), { locked = true })
-hl.bind("XF86AudioMicMute",     hl.dsp.exec_cmd(noctCall .. "mic-mute"),    { locked = true })
+-- Audio (low-overhead native wpctl with reactive Quickshell OSD)
+hl.bind("XF86AudioRaiseVolume", hl.dsp.exec_cmd("wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+"),   { locked = true, repeating = true })
+hl.bind("XF86AudioLowerVolume", hl.dsp.exec_cmd("wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%-"),   { locked = true, repeating = true })
+hl.bind("XF86AudioMute",        hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"),         { locked = true })
+hl.bind("XF86AudioMicMute",     hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"),       { locked = true })
 
 -- Media
-hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd(noctCall .. "media toggle"),   { locked = true })
-hl.bind("XF86AudioPause", hl.dsp.exec_cmd(noctCall .. "media toggle"),   { locked = true })
-hl.bind("XF86AudioNext",  hl.dsp.exec_cmd(noctCall .. "media next"),     { locked = true })
-hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd(noctCall .. "media previous"), { locked = true })
+hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd("playerctl play-pause 2>/dev/null || " .. noctCall .. "media toggle"),   { locked = true })
+hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause 2>/dev/null || " .. noctCall .. "media toggle"),   { locked = true })
+hl.bind("XF86AudioNext",  hl.dsp.exec_cmd("playerctl next 2>/dev/null || " .. noctCall .. "media next"),           { locked = true })
+hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd("playerctl previous 2>/dev/null || " .. noctCall .. "media previous"),   { locked = true })
 
 -- Brightness
-hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd(noctCall .. "brightness-up"),   { locked = true, repeating = true })
-hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd(noctCall .. "brightness-down"), { locked = true, repeating = true })
+hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd("brightnessctl set +5% && " .. qsRice .. "brightnessChanged 2>/dev/null || true"),   { locked = true, repeating = true })
+hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("brightnessctl set 5%- && " .. qsRice .. "brightnessChanged 2>/dev/null || true"),   { locked = true, repeating = true })
 
 -------------------
 ---- UTILITIES ----
@@ -156,8 +158,8 @@ hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd(noctCall .. "brightness-down"),
 
 -- Screen Capture
 hl.bind(mainMod .. " + P",     hl.dsp.exec_cmd("hyprpicker -a -n"))
-hl.bind("Print",               hl.dsp.exec_cmd(noctCall .. "screenshot-region"))
-hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd(noctCall .. "screenshot-fullscreen"))
+hl.bind("Print",               hl.dsp.exec_cmd("grim -g \"$(slurp)\" - | wl-copy 2>/dev/null || " .. noctCall .. "screenshot-region"))
+hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("grim - | wl-copy 2>/dev/null || " .. noctCall .. "screenshot-fullscreen"))
 
 -- Theming and Wallpaper
 hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd(noctCall .. "panel-toggle wallpaper"))
@@ -166,7 +168,7 @@ hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd(noctCall .. "panel-toggle wal
 hl.bind(mainMod .. " + V", hl.dsp.exec_cmd(noctCall .. "panel-toggle clipboard"))
 
 -- Notifications
-hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(noctCall .. "panel-toggle control-center notifications"))
+hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(qsRice .. "toggleNotifications 2>/dev/null || " .. noctCall .. "panel-toggle control-center notifications"))
 
 -------------------------------
 ---- WORKSPACES & MONITORS ----
