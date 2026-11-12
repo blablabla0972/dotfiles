@@ -14,6 +14,9 @@ PanelWindow {
     color: "transparent"
     implicitHeight: 40
 
+    signal requestLauncher()
+    signal requestDashboard(string tab)
+
     anchors {
         top: true
         left: true
@@ -64,17 +67,7 @@ PanelWindow {
 
                     HoverHandler { id: launcherHover }
                     TapHandler {
-                        onTapped: {
-                            if (typeof root !== "undefined") {
-                                if (root.ipcHandler) {
-                                    root.ipcHandler.toggleLauncher();
-                                } else if (typeof root.toggleLauncher === "function") {
-                                    root.toggleLauncher();
-                                }
-                            } else if (typeof launcherWindow !== "undefined" && typeof launcherWindow.toggle === "function") {
-                                launcherWindow.toggle();
-                            }
-                        }
+                        onTapped: barRoot.requestLauncher()
                     }
                 }
 
@@ -121,17 +114,7 @@ PanelWindow {
 
                     HoverHandler { id: clockHover }
                     TapHandler {
-                        onTapped: {
-                            if (typeof root !== "undefined") {
-                                if (root.ipcHandler) {
-                                    root.ipcHandler.toggleDashboard("Home");
-                                } else if (typeof root.toggleDashboard === "function") {
-                                    root.toggleDashboard("Home");
-                                }
-                            } else if (typeof dashboardWindow !== "undefined" && typeof dashboardWindow.toggle === "function") {
-                                dashboardWindow.toggle("Home");
-                            }
-                        }
+                        onTapped: barRoot.requestDashboard("Home")
                     }
 
                     Timer {

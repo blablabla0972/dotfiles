@@ -162,7 +162,7 @@ PanelWindow {
     }
 
     // Filter desktop entries based on search query and category
-    readonly property var allApps: Quickshell.applications ? Quickshell.applications.values : []
+    readonly property var allApps: DesktopEntries.applications ? DesktopEntries.applications.values : []
     readonly property var filteredApps: {
         var query = searchText.trim();
 

@@ -118,6 +118,14 @@ ShellRoot {
             Bar {
                 required property var modelData
                 targetScreen: modelData
+
+                onRequestLauncher: () => {
+                    root.toggleLauncher();
+                }
+
+                onRequestDashboard: (tab) => {
+                    root.toggleDashboard(tab);
+                }
             }
         }
     }
