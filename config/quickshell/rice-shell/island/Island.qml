@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import "../theme"
+import "../services"
 import "IslandState.js" as IslandState
 
 PanelWindow {
@@ -35,11 +36,15 @@ PanelWindow {
     property var activeAlert: null
     property bool isHovered: hoverHandler.hovered
     property bool isPinned: false
-    property bool hasMedia: false
-    property string mediaTitle: "No Track Playing"
-    property string mediaArtist: ""
-    property real osdProgress: 0.5
-    property string osdIcon: "󰕾"
+
+    // Media bindings from native Mpris service
+    readonly property bool hasMedia: Media.hasPlayer && Media.isPlaying
+    readonly property string mediaTitle: Media.trackTitle
+    readonly property string mediaArtist: Media.trackArtist
+
+    // OSD parameters
+    property real osdProgress: Audio.volume
+    property string osdIcon: Audio.muted ? "󰝟" : "󰕾"
 
     // Synchronize dimensions based on active mode
     readonly property var currentDims: IslandState.targetDimensions(activeMode, activeAlert)
@@ -53,7 +58,15 @@ PanelWindow {
     onIsPinnedChanged: updateMode()
     onActiveAlertChanged: updateMode()
 
-    function triggerOsd(icon, progress): void {
+    // Listen to reactive audio events
+    Connections {
+        target: Audio
+        function onOsdRequested(icon: string, progress: real): void {
+            islandWindow.triggerOsd(icon, progress);
+        }
+    }
+
+    function triggerOsd(icon: string, progress: real): void {
         osdIcon = icon;
         osdProgress = Math.max(0, Math.min(1, progress));
         activeAlert = { type: IslandState.State.OSD };
@@ -61,7 +74,7 @@ PanelWindow {
         dismissTimer.restart();
     }
 
-    function triggerNotification(summary, body, icon): void {
+    function triggerNotification(summary: string, body: string, icon: string): void {
         activeAlert = {
             type: IslandState.State.NOTIFICATION,
             summary: summary,
@@ -166,10 +179,22 @@ PanelWindow {
                     elide: Text.ElideRight
                 }
 
-                Text {
-                    text: "󰏤"
-                    font.pixelSize: 12
-                    color: Tokens.text_secondary
+                Rectangle {
+                    width: 18
+                    height: 18
+                    radius: 9
+                    color: "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: Media.isPlaying ? "󰏤" : "󰐊"
+                        font.pixelSize: 12
+                        color: Tokens.text_secondary
+                    }
+
+                    TapHandler {
+                        onTapped: Media.togglePlaying()
+                    }
                 }
             }
 
@@ -195,7 +220,7 @@ PanelWindow {
 
                     Rectangle {
                         height: parent.height
-                        width: parent.width * islandWindow.osdProgress
+                        width: Math.min(parent.width, parent.width * islandWindow.osdProgress)
                         radius: 3
                         color: Tokens.accent
                     }
@@ -295,14 +320,28 @@ PanelWindow {
                     }
                 }
 
-                // Mini control bar
+                // Playback control buttons
                 RowLayout {
                     Layout.alignment: Qt.AlignHCenter
-                    spacing: 24
+                    spacing: 28
 
-                    Text { text: "󰒮"; font.pixelSize: 16; color: Tokens.text_secondary }
-                    Text { text: "󰐊"; font.pixelSize: 20; color: Tokens.accent }
-                    Text { text: "󰒭"; font.pixelSize: 16; color: Tokens.text_secondary }
+                    Rectangle {
+                        width: 24; height: 24; radius: 12; color: "transparent"
+                        Text { anchors.centerIn: parent; text: "󰒮"; font.pixelSize: 16; color: Tokens.text_secondary }
+                        TapHandler { onTapped: Media.previous() }
+                    }
+
+                    Rectangle {
+                        width: 32; height: 32; radius: 16; color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+                        Text { anchors.centerIn: parent; text: Media.isPlaying ? "󰏤" : "󰐊"; font.pixelSize: 18; color: Tokens.accent }
+                        TapHandler { onTapped: Media.togglePlaying() }
+                    }
+
+                    Rectangle {
+                        width: 24; height: 24; radius: 12; color: "transparent"
+                        Text { anchors.centerIn: parent; text: "󰒭"; font.pixelSize: 16; color: Tokens.text_secondary }
+                        TapHandler { onTapped: Media.next() }
+                    }
                 }
             }
         }

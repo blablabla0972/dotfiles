@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "theme"
+import "services"
 import "bar"
 import "island"
 
@@ -66,19 +67,19 @@ ShellRoot {
         }
 
         function volumeUp(): void {
-            // Handled via native Pipewire service in M4
+            Audio.volumeUp(0.05);
         }
 
         function volumeDown(): void {
-            // Handled via native Pipewire service in M4
+            Audio.volumeDown(0.05);
         }
 
         function volumeMute(): void {
-            // Handled via native Pipewire service in M4
+            Audio.toggleMute();
         }
 
         function brightnessChanged(): void {
-            // OSD trigger in M4
+            islandOsd("󰃠", 0.7);
         }
     }
 
