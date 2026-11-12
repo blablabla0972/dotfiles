@@ -5,6 +5,8 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import "../theme"
+import "../island"
+import "."
 
 PanelWindow {
     id: dashboardWindow
@@ -25,166 +27,251 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-    // Input mask: only active when visible
+    // Input mask: only intercepts pointer events when open/visible
     mask: Region {
         item: dashboardWindow.visible ? scrim : null
     }
 
     property string currentTab: "Home"
+    property bool expanded: false
 
     function toggle(tab): void {
-        if (tab && tab.length > 0) currentTab = tab;
-        visible = !visible;
+        var target = (tab && tab.length > 0) ? tab : "Home";
+        if (!visible) {
+            currentTab = target;
+            closeTimer.stop();
+            visible = true;
+            expanded = true;
+        } else if (currentTab !== target) {
+            currentTab = target;
+        } else {
+            dismiss();
+        }
+    }
+
+    function dismiss(): void {
+        if (!visible) return;
+        expanded = false;
+        closeTimer.restart();
+    }
+
+    Timer {
+        id: closeTimer
+        interval: 260
+        repeat: false
+        onTriggered: {
+            dashboardWindow.visible = false;
+        }
     }
 
     // Escape Key Handler to dismiss
     Item {
         focus: dashboardWindow.visible
         Keys.onEscapePressed: (event) => {
-            dashboardWindow.visible = false;
+            dashboardWindow.dismiss();
             event.accepted = true;
         }
     }
 
-    // Backdrop Scrim with Outside Click Dismissal
+    // Fullscreen Backdrop Scrim with Outside Click Dismissal
     Rectangle {
         id: scrim
         anchors.fill: parent
         color: Qt.rgba(0, 0, 0, 0.45)
-        opacity: dashboardWindow.visible ? 1.0 : 0.0
+        opacity: dashboardWindow.expanded ? 1.0 : 0.0
 
         Behavior on opacity {
-            NumberAnimation { duration: 180 }
+            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
         }
 
         TapHandler {
-            onTapped: dashboardWindow.visible = false
+            onTapped: dashboardWindow.dismiss()
         }
 
-        // Center Modal Card
-        Rectangle {
-            id: dashboardCard
-            anchors.centerIn: parent
-            width: Math.min(960, parent.width - 32)
-            height: Math.min(420, parent.height - 48)
-            radius: 18
-            color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.panelOpacity)
-            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
-            border.width: 1
+        // Morphing Control Center Container anchored to the top bezel
+        Item {
+            id: morphContainer
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: morphShape.width
+            height: morphShape.height
 
-            // Absorb inner taps so they don't dismiss the modal
+            // Absorb inner taps so they don't bubble to the dismiss scrim
             TapHandler {
-                // Prevent bubbling to scrim
+                // Prevent bubbling
             }
 
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 18
-                spacing: 14
+            // Morphing Island Shape with concave Bézier anti-corners meeting top bezel
+            IslandShape {
+                id: morphShape
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                pillWidth: dashboardWindow.expanded ? 760 : 240
+                pillHeight: dashboardWindow.expanded ? 440 : 28
+                antiCornerRadius: 18
+                bottomRadius: 22
+                animDurationWidth: 260
+                animDurationHeight: 250
+                overshoot: 0.1
+                fillColor: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.panelOpacity)
+                borderColor: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.45)
+                showAntiCorners: true
+            }
 
-                // Header Tab Pills
-                RowLayout {
-                    Layout.alignment: Qt.AlignHCenter
-                    spacing: 8
+            // Dashboard Content Layout
+            Item {
+                id: cardContent
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: morphShape.pillWidth
+                height: morphShape.pillHeight
+                clip: true
+                opacity: dashboardWindow.expanded ? 1.0 : 0.0
 
-                    Repeater {
-                        model: ["Home", "System", "Apps", "Config"]
-
-                        Rectangle {
-                            id: tabPill
-                            required property string modelData
-                            readonly property bool isSelected: dashboardWindow.currentTab === modelData
-
-                            width: tabLabel.implicitWidth + 24
-                            height: 32
-                            radius: 16
-                            color: isSelected ? Tokens.accent : (tabHover.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.8) : "transparent")
-
-                            Text {
-                                id: tabLabel
-                                anchors.centerIn: parent
-                                text: tabPill.modelData
-                                font.pixelSize: 12
-                                font.bold: true
-                                color: tabPill.isSelected ? Tokens.on_accent : Tokens.text_primary
-                            }
-
-                            HoverHandler { id: tabHover }
-                            TapHandler {
-                                onTapped: dashboardWindow.currentTab = tabPill.modelData
-                            }
-                        }
-                    }
+                Behavior on opacity {
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                 }
 
-                // Tab View Content
-                Item {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.topMargin: 10
+                    anchors.bottomMargin: 14
+                    anchors.leftMargin: 18
+                    anchors.rightMargin: 18
+                    spacing: 12
 
-                    // 1. Home Tab Content
-                    Home {
-                        anchors.centerIn: parent
-                        visible: dashboardWindow.currentTab === "Home"
+                    // Header: Branding, Tabs, and Dismiss Button
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        // Left Branding / Title
+                        Row {
+                            spacing: 8
+                            Layout.alignment: Qt.AlignVCenter
+
+                            Rectangle {
+                                width: 26
+                                height: 26
+                                radius: 13
+                                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "󰍹"
+                                    font.pixelSize: 14
+                                    color: Tokens.accent
+                                }
+                            }
+
+                            Text {
+                                text: "Control Center"
+                                font.pixelSize: 13
+                                font.bold: true
+                                color: Tokens.text_primary
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Center Tab Navigation Pills
+                        Row {
+                            spacing: 6
+                            Layout.alignment: Qt.AlignHCenter
+
+                            Repeater {
+                                model: [
+                                    { id: "Home", name: "Home", icon: "󰋜" },
+                                    { id: "System", name: "System", icon: "󰍹" },
+                                    { id: "Config", name: "Config", icon: "󰒓" }
+                                ]
+
+                                Rectangle {
+                                    id: tabPill
+                                    required property var modelData
+                                    readonly property bool isSelected: dashboardWindow.currentTab === modelData.id
+
+                                    width: tabRow.implicitWidth + 24
+                                    height: 30
+                                    radius: 15
+                                    color: isSelected ? Tokens.accent : (tabHover.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.8) : "transparent")
+                                    border.color: isSelected ? "transparent" : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
+                                    border.width: isSelected ? 0 : 1
+
+                                    Row {
+                                        id: tabRow
+                                        anchors.centerIn: parent
+                                        spacing: 6
+
+                                        Text {
+                                            text: tabPill.modelData.icon
+                                            font.pixelSize: 12
+                                            color: tabPill.isSelected ? Tokens.on_accent : Tokens.text_primary
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                        Text {
+                                            text: tabPill.modelData.name
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                            color: tabPill.isSelected ? Tokens.on_accent : Tokens.text_primary
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+
+                                    HoverHandler { id: tabHover }
+                                    TapHandler {
+                                        onTapped: dashboardWindow.currentTab = tabPill.modelData.id
+                                    }
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Right Close Button
+                        Rectangle {
+                            width: 28
+                            height: 28
+                            radius: 14
+                            color: closeHover.hovered ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.2) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.6)
+                            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+                            border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "󰅖"
+                                font.pixelSize: 14
+                                color: closeHover.hovered ? Tokens.danger : Tokens.text_secondary
+                            }
+
+                            HoverHandler { id: closeHover }
+                            TapHandler {
+                                onTapped: dashboardWindow.dismiss()
+                            }
+                        }
                     }
 
-                    // 2. System Tab Placeholder
-                    ColumnLayout {
-                        anchors.centerIn: parent
-                        visible: dashboardWindow.currentTab === "System"
-                        spacing: 8
+                    // Tab View Body
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
 
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "󰍹 System Overview"
-                            font.pixelSize: 22
-                            color: Tokens.accent
+                        Home {
+                            anchors.fill: parent
+                            visible: dashboardWindow.currentTab === "Home"
                         }
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "CPU, Memory, and Storage telemetry"
-                            font.pixelSize: 12
-                            color: Tokens.text_secondary
-                        }
-                    }
 
-                    // 3. Apps Tab Placeholder
-                    ColumnLayout {
-                        anchors.centerIn: parent
-                        visible: dashboardWindow.currentTab === "Apps"
-                        spacing: 8
-
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "󰀻 Applications"
-                            font.pixelSize: 22
-                            color: Tokens.accent
+                        System {
+                            anchors.fill: parent
+                            visible: dashboardWindow.currentTab === "System"
                         }
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "Browse installed desktop applications"
-                            font.pixelSize: 12
-                            color: Tokens.text_secondary
-                        }
-                    }
 
-                    // 4. Config Tab Placeholder
-                    ColumnLayout {
-                        anchors.centerIn: parent
-                        visible: dashboardWindow.currentTab === "Config"
-                        spacing: 8
-
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "󰒓 Configuration"
-                            font.pixelSize: 22
-                            color: Tokens.accent
-                        }
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "Desktop shell & theme preferences"
-                            font.pixelSize: 12
-                            color: Tokens.text_secondary
+                        Config {
+                            anchors.fill: parent
+                            visible: dashboardWindow.currentTab === "Config"
                         }
                     }
                 }

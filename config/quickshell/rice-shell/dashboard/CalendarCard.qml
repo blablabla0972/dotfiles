@@ -7,8 +7,8 @@ import "../theme"
 Rectangle {
     id: root
 
-    implicitWidth: 220
-    implicitHeight: 180
+    implicitWidth: 200
+    implicitHeight: 210
     radius: 14
     color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)

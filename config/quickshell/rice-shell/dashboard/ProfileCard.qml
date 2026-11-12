@@ -8,8 +8,8 @@ import "../theme"
 Rectangle {
     id: root
 
-    implicitWidth: 220
-    implicitHeight: 110
+    implicitWidth: 200
+    implicitHeight: 95
     radius: 14
     color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
@@ -17,8 +17,8 @@ Rectangle {
 
     RowLayout {
         anchors.fill: parent
-        anchors.margins: 14
-        spacing: 12
+        anchors.margins: 12
+        spacing: 10
 
         // User Avatar Circle
         Rectangle {

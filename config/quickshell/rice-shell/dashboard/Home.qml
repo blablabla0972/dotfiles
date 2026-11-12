@@ -7,17 +7,17 @@ import "../theme"
 Item {
     id: root
 
-    implicitWidth: Math.min(940, parent ? parent.width - 24 : 940)
-    implicitHeight: 310
+    implicitWidth: 724
+    implicitHeight: 370
 
     RowLayout {
         anchors.fill: parent
-        spacing: 12
+        spacing: 10
 
         // Left Column: Profile (top) + Calendar (bottom)
         ColumnLayout {
             Layout.fillHeight: true
-            Layout.preferredWidth: 220
+            Layout.preferredWidth: 200
             spacing: 10
 
             ProfileCard {
@@ -34,7 +34,7 @@ Item {
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumWidth: 380
+            Layout.minimumWidth: 260
             spacing: 10
 
             ClockCard {
@@ -50,7 +50,7 @@ Item {
         // Right Column: Quick Settings & Toggles
         ColumnLayout {
             Layout.fillHeight: true
-            Layout.preferredWidth: 230
+            Layout.preferredWidth: 220
 
             QuickSettings {
                 Layout.fillWidth: true

@@ -31,6 +31,8 @@ PanelWindow {
         item: islandShape
     }
 
+    signal requestDashboard(string tab)
+
     // State properties
     property string activeMode: "idle"
     property var activeAlert: null
@@ -123,10 +125,12 @@ PanelWindow {
             onTapped: {
                 if (islandWindow.activeMode === IslandState.State.EXPANDED) {
                     islandWindow.isPinned = false;
-                } else if (islandWindow.activeMode === IslandState.State.MEDIA || islandWindow.hasMedia) {
-                    islandWindow.isPinned = true;
+                    islandWindow.updateMode();
+                } else if (islandWindow.activeMode === IslandState.State.MEDIA || islandWindow.activeMode === IslandState.State.IDLE) {
+                    islandWindow.requestDashboard("Home");
+                } else {
+                    islandWindow.requestDashboard("Home");
                 }
-                islandWindow.updateMode();
             }
         }
 

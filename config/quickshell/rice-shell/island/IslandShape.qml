@@ -14,15 +14,28 @@ Item {
     property color borderColor: "#43474e"
     property bool showAntiCorners: true
 
+    property int animDurationWidth: 240
+    property int animDurationHeight: 220
+    property real overshoot: 0.6
+    property int easingTypeWidth: overshoot > 0 ? Easing.OutBack : Easing.OutCubic
+    property int easingTypeHeight: Easing.OutCubic
+
     width: pillWidth + (showAntiCorners ? antiCornerRadius * 2 : 0)
     height: pillHeight
 
     // Smooth geometry morphing transitions
     Behavior on pillWidth {
-        NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.6 }
+        NumberAnimation {
+            duration: root.animDurationWidth
+            easing.type: root.easingTypeWidth
+            easing.overshoot: root.overshoot
+        }
     }
     Behavior on pillHeight {
-        NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+        NumberAnimation {
+            duration: root.animDurationHeight
+            easing.type: root.easingTypeHeight
+        }
     }
 
     // Main Central Pill
@@ -33,6 +46,10 @@ Item {
         width: root.pillWidth
         height: root.pillHeight
         radius: root.bottomRadius
+        bottomLeftRadius: root.bottomRadius
+        bottomRightRadius: root.bottomRadius
+        topLeftRadius: 0
+        topRightRadius: 0
         color: root.fillColor
         border.color: Qt.rgba(root.borderColor.r, root.borderColor.g, root.borderColor.b, 0.4)
         border.width: 1

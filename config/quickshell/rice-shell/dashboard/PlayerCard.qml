@@ -8,8 +8,8 @@ import "../services"
 Rectangle {
     id: root
 
-    implicitWidth: 440
-    implicitHeight: 170
+    implicitWidth: 280
+    implicitHeight: 210
     radius: 14
     color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)

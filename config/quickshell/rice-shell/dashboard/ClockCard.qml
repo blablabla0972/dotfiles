@@ -7,8 +7,8 @@ import "../theme"
 Rectangle {
     id: root
 
-    implicitWidth: 440
-    implicitHeight: 120
+    implicitWidth: 280
+    implicitHeight: 95
     radius: 14
     color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
@@ -25,12 +25,12 @@ Rectangle {
 
     ColumnLayout {
         anchors.centerIn: parent
-        spacing: 4
+        spacing: 2
 
         Text {
             Layout.alignment: Qt.AlignHCenter
             text: Qt.formatDateTime(root.now, "hh:mm")
-            font.pixelSize: 46
+            font.pixelSize: 36
             font.bold: true
             color: Tokens.text_primary
         }

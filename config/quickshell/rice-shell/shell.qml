@@ -132,6 +132,10 @@ ShellRoot {
                 required property var modelData
                 targetScreen: modelData
 
+                onRequestDashboard: (tab) => {
+                    root.toggleDashboard(tab);
+                }
+
                 Component.onCompleted: {
                     root.islandInstances.push(screenIsland);
                 }
