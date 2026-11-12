@@ -41,3 +41,10 @@
 | Stabilization 2026-11-11: Measure real RAM/CPU usage | done | 16 snapshots/16.96s: Brave 2170.7 MiB PSS, Noctalia 99.3, Hyprland 98.2; pressure avg10 zero; uncontrolled-session limits documented |
 | Stabilization 2026-11-11: Audit wallpaper/theme pipeline | done | Single transaction owner, lock/ack/rollback/cache reviewed; 9/9 configured native outputs covered by 26 snapshot paths; no reproduced defect, no speculative refactor |
 | Stabilization 2026-11-11: Refine dashboard only if justified | done | No defect or measured benefit; dashboard/carousel/top bar/Show Desktop/WIP unchanged; no visual acceptance claimed |
+| Control center motion 2026-11-12: Explore and compare approaches | done | Actual rice-shell Dashboard squeezes its three-column layout during width/height animation; stable-content reveal recommended |
+| Control center motion 2026-11-12: Approve design | done | User selected option 1; preserve final layout, palette, transparent backdrop and sidecars |
+| Control center motion 2026-11-12: Record design and implementation plan | done | 2026-11-12-control-center-motion-design.md and 2026-11-12-control-center-motion.md |
+| Control center motion 2026-11-12: Prepare isolated worktree | done | feat/control-center-motion at fbee0cc; wt-prep 2/2; existing native QML input baseline 2/2 passes |
+| Control center motion 2026-11-12: Native motion regressions | in progress | tests/test_dashboard_motion.py; test actual geometry, timers, interrupted close and early dismiss |
+| Control center motion 2026-11-12: Reversible fixed-content reveal | pending | Dashboard.qml only; no shared IslandShape defaults or tab-body changes |
+| Control center motion 2026-11-12: Full verification and live preview | pending | Validator, unittest, diff, native QML and compositor checks; Quickshell-only preview with rollback |
