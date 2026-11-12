@@ -34,7 +34,7 @@ function targetDimensions(state, details) {
         case State.MEDIA:
             return { width: 240, height: 32, radius: 16 };
         case State.OSD:
-            return { width: 220, height: 34, radius: 16 };
+            return { width: 260, height: 42, radius: 21 };
         case State.NOTIFICATION:
             return { width: 320, height: 56, radius: 18 };
         case State.EXPANDED:

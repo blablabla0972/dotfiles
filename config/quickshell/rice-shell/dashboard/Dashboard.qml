@@ -95,7 +95,16 @@ PanelWindow {
         }
 
         TapHandler {
-            onTapped: dashboardWindow.dismiss()
+            onTapped: (eventPoint) => {
+                var p = eventPoint.position;
+                var minX = morphContainer.x;
+                var maxX = morphContainer.x + morphContainer.width;
+                var minY = morphContainer.y;
+                var maxY = morphContainer.y + morphShape.pillHeight;
+                if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) {
+                    dashboardWindow.dismiss();
+                }
+            }
         }
 
         // Morphing Control Center Container anchored to the top bezel
@@ -106,9 +115,10 @@ PanelWindow {
             width: morphShape.width
             height: morphShape.height
 
-            // Absorb inner taps so they don't bubble to the dismiss scrim
-            TapHandler {
-                // Prevent bubbling
+            // Absorb inner clicks so they never trigger outside-click dismissal
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {}
             }
 
             // Morphing Island Shape with concave Bézier anti-corners meeting top bezel

@@ -181,32 +181,58 @@ PanelWindow {
                 }
             }
 
-            // 3. OSD Volume/Brightness Content
+            // 2. OSD Volume/Brightness Content (Refined & Modernized)
             RowLayout {
                 visible: islandWindow.activeMode === IslandState.State.OSD
                 anchors.fill: parent
-                anchors.leftMargin: 14
-                anchors.rightMargin: 14
-                spacing: 8
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                spacing: 10
 
-                Text {
-                    text: islandWindow.osdIcon
-                    font.pixelSize: 14
-                    color: Tokens.accent
+                // Icon Badge Container
+                Rectangle {
+                    width: 26
+                    height: 26
+                    radius: 13
+                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: islandWindow.osdIcon
+                        font.pixelSize: 15
+                        color: Tokens.accent
+                    }
                 }
 
+                // Volume Progress Track
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 6
-                    radius: 3
-                    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.8)
+                    height: 8
+                    radius: 4
+                    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.85)
+                    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+                    border.width: 1
 
                     Rectangle {
                         height: parent.height
-                        width: Math.min(parent.width, parent.width * islandWindow.osdProgress)
-                        radius: 3
+                        width: Math.min(parent.width, Math.max(parent.height, parent.width * islandWindow.osdProgress))
+                        radius: 4
                         color: Tokens.accent
+
+                        Behavior on width {
+                            NumberAnimation { duration: 90; easing.type: Easing.OutQuad }
+                        }
                     }
+                }
+
+                // Value Percentage Text
+                Text {
+                    Layout.alignment: Qt.AlignVCenter
+                    text: Math.round(islandWindow.osdProgress * 100) + "%"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: Tokens.text_secondary
                 }
             }
 

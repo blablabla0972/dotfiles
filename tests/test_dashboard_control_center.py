@@ -111,6 +111,20 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
         self.assertIn("Reload Rice Shell", content)
         self.assertIn("Reload Hyprland", content)
 
+    def test_inner_clicks_do_not_dismiss(self):
+        content = DASHBOARD_QML.read_text()
+        # Ensure scrim TapHandler checks bounds and does not dismiss on inner clicks
+        self.assertIn("minX = morphContainer.x", content)
+        self.assertIn("maxX = morphContainer.x + morphContainer.width", content)
+        self.assertIn("p.x < minX || p.x > maxX", content)
+
+    def test_osd_volume_layout_refinements(self):
+        content = ISLAND_QML.read_text()
+        # Ensure modernized OSD volume layout with badge icon, 8px track, and percentage text
+        self.assertIn("islandWindow.osdIcon", content)
+        self.assertIn("islandWindow.osdProgress", content)
+        self.assertIn("islandWindow.osdProgress * 100", content)
+
 
 if __name__ == "__main__":
     unittest.main()
