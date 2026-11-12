@@ -215,7 +215,8 @@ class MatugenSafetyTest(unittest.TestCase):
         env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.config),
                    XDG_CACHE_HOME=str(self.root / 'cache'),
                    XDG_STATE_HOME=str(self.root / 'state'), XDG_DATA_HOME=str(self.root / 'data'),
-                   XDG_RUNTIME_DIR=str(self.root / 'runtime'))
+                   XDG_RUNTIME_DIR=str(self.root / 'runtime'),
+                   THEME_BACKEND='noctalia')
         for key in ('HYPRLAND_INSTANCE_SIGNATURE', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'):
             env.pop(key, None)
         self.env_patch = patch.dict(os.environ, env, clear=True)
