@@ -4,65 +4,52 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import "../services"
 import "../theme"
 
 Item {
     id: root
 
     implicitWidth: 724
-    implicitHeight: 370
+    implicitHeight: width < 700 ? 700 : 370
+    readonly property int layoutColumns: configGrid.columns
 
-    property string themeCommandResult: ""
-    property var pendingCommands: []
-
-    Process {
-        id: cmdProcess
-        onRunningChanged: {
-            if (!running) Qt.callLater(root.startNextCommand);
-        }
-        onExited: (exitCode) => {
-            if (exitCode !== 0) root.themeCommandResult = "Command failed (exit " + exitCode + ")";
-        }
-    }
+    readonly property string themeCommandResult: ThemeCommandQueue.result
+    readonly property bool themeCommandRunning: ThemeCommandQueue.running
+    readonly property int pendingCommandCount: ThemeCommandQueue.pendingCount
 
     function queueCommand(command: var): void {
-        pendingCommands.push(command);
-        startNextCommand();
-    }
-
-    function startNextCommand(): void {
-        if (cmdProcess.running || pendingCommands.length === 0) return;
-        cmdProcess.command = pendingCommands.shift();
-        themeCommandResult = "";
-        cmdProcess.running = true;
+        ThemeCommandQueue.queueCommand(command);
     }
 
     function switchTheme(mode: string): void {
-        var scriptPath = Quickshell.env("HOME") + "/.config/hypr/scripts/generate-theme.py";
-        queueCommand(["python3", scriptPath, "--theme-mode-changed", "--mode", mode]);
+        ThemeCommandQueue.switchTheme(mode);
     }
 
     function regenerateTheme(): void {
-        var scriptPath = Quickshell.env("HOME") + "/.config/hypr/scripts/generate-theme.py";
-        queueCommand(["python3", scriptPath, "--wallpaper-changed"]);
+        ThemeCommandQueue.regenerateTheme();
     }
 
     function reloadShell(): void {
-        Quickshell.reload(false);
+        ThemeCommandQueue.requestShellReload();
     }
 
     function reloadHyprland(): void {
-        queueCommand(["hyprctl", "reload"]);
+        ThemeCommandQueue.reloadHyprland();
     }
 
-    RowLayout {
+    GridLayout {
+        id: configGrid
         anchors.fill: parent
-        spacing: 12
+        columns: root.width < 700 ? 1 : 2
+        rowSpacing: 12
+        columnSpacing: 12
 
         // Left Section: Theme & Appearance
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumWidth: 0
             radius: 14
             color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
             border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
@@ -272,6 +259,18 @@ Item {
                     }
                 }
 
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.themeCommandResult.length > 0
+                        || root.themeCommandRunning || root.pendingCommandCount > 0
+                    text: root.themeCommandResult.length > 0 ? root.themeCommandResult
+                        : (root.themeCommandRunning ? "Applying appearance changes…" : "Changes queued…")
+                    font.pixelSize: 9
+                    color: root.themeCommandResult.indexOf("failed") >= 0
+                        ? Tokens.danger : Tokens.text_secondary
+                    wrapMode: Text.Wrap
+                }
+
                 Item { Layout.fillHeight: true }
 
                 // Mode Footer
@@ -296,6 +295,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumWidth: 0
             radius: 14
             color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
             border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)

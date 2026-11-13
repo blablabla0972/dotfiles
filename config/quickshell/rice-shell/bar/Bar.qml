@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Networking
 import "../theme"
@@ -98,6 +99,8 @@ PanelWindow {
             // Workspaces Module
             Workspaces {
                 Layout.alignment: Qt.AlignVCenter
+                targetMonitor: Hyprland.monitorFor(barRoot.targetScreen)
+                workspaceList: Hyprland.workspaces.values
             }
         }
     }

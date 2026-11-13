@@ -9,11 +9,36 @@ import "theme"
 import "services"
 import "bar"
 import "island"
+import "island/IslandState.js" as IslandState
 import "dashboard"
 import "launcher"
 
 ShellRoot {
     id: root
+    reloadableId: "riceShellRoot"
+
+    PersistentProperties {
+        id: retainedNotificationHistory
+        reloadableId: "riceNotificationHistory"
+        property string entriesJson: "[]"
+    }
+
+    Connections {
+        target: retainedNotificationHistory
+        function onReloaded(): void {
+            var entries = [];
+            try { entries = JSON.parse(retainedNotificationHistory.entriesJson); }
+            catch (error) { console.warn("Discarding invalid retained notification history"); }
+            DesktopControls.restoreNotificationHistory(entries);
+        }
+    }
+
+    Connections {
+        target: DesktopControls
+        function onNotificationHistoryChanged(): void {
+            retainedNotificationHistory.entriesJson = JSON.stringify(DesktopControls.notificationHistory);
+        }
+    }
 
     // Lists of active window instances for multi-monitor IPC dispatch
     property list<Island> islandInstances: []
@@ -22,6 +47,11 @@ ShellRoot {
 
     // Expose IPC handler reference and convenience dispatchers for child components
     property alias ipcHandler: riceIpc
+
+    Connections {
+        target: ThemeCommandQueue
+        function onReloadRequested(): void { Quickshell.reload(false); }
+    }
 
     // A bar click targets its own monitor; IPC and keyboard shortcuts target focus.
     function instanceOnScreen(instances: var, requestedScreen: var): var {
@@ -38,14 +68,89 @@ ShellRoot {
         return null;
     }
 
+    function dispatchOsd(icon: string, progress: real, kind: string): void {
+        var island = instanceOnScreen(islandInstances, null);
+        if (island) island.triggerOsd(icon, progress, kind);
+    }
+
+    function hasInteractiveModal(): bool {
+        for (var i = 0; i < islandInstances.length; i++) {
+            if (islandInstances[i] && islandInstances[i].dashboardExpanded) return true;
+        }
+        for (var j = 0; j < launcherInstances.length; j++) {
+            if (launcherInstances[j] && launcherInstances[j].visible) return true;
+        }
+        for (var k = 0; k < powerMenuInstances.length; k++) {
+            if (powerMenuInstances[k] && powerMenuInstances[k].visible) return true;
+        }
+        return false;
+    }
+
+    function dismissOtherModals(target: var): void {
+        for (var i = 0; i < islandInstances.length; i++) {
+            var island = islandInstances[i];
+            if (!island) continue;
+            if (island !== target) island.dismissDashboard();
+            island.isPinned = false;
+        }
+        for (var j = 0; j < launcherInstances.length; j++) {
+            var launcher = launcherInstances[j];
+            if (launcher && launcher !== target) launcher.dismiss();
+        }
+        for (var k = 0; k < powerMenuInstances.length; k++) {
+            var powerMenu = powerMenuInstances[k];
+            if (powerMenu && powerMenu !== target) powerMenu.dismissMenu();
+        }
+    }
+
     function toggleLauncher(screen: var): void {
         var inst = instanceOnScreen(launcherInstances, screen);
-        if (inst) inst.toggle();
+        if (!inst) return;
+        if (inst.visible) {
+            inst.dismiss();
+            return;
+        }
+        dismissOtherModals(inst);
+        inst.toggle();
     }
 
     function toggleDashboard(tab: string, screen: var): void {
         var inst = instanceOnScreen(islandInstances, screen);
-        if (inst) inst.toggleDashboard(tab || "Home");
+        if (!inst) return;
+        var targetTab = IslandState.normalizeDashboardTab(tab || "Home");
+        if (tab && targetTab !== tab)
+            console.warn("Unknown Dashboard tab '" + tab + "'; opening Home");
+        if (inst.dashboardExpanded && inst.dashboardCurrentTab === targetTab) {
+            inst.toggleDashboard(targetTab);
+            return;
+        }
+        dismissOtherModals(inst);
+        inst.toggleDashboard(targetTab);
+    }
+
+    function togglePowerMenu(screen: var): void {
+        var inst = instanceOnScreen(powerMenuInstances, screen);
+        if (!inst) return;
+        if (inst.visible) {
+            inst.toggle();
+            return;
+        }
+        dismissOtherModals(inst);
+        inst.toggle();
+    }
+
+    function toggleSideDrawer(type: string, screen: var): void {
+        var inst = instanceOnScreen(islandInstances, screen);
+        if (!inst) return;
+        var drawer = IslandState.normalizeSideDrawer(type);
+        if (!drawer) {
+            console.warn("Ignoring unknown side drawer: " + type);
+            return;
+        }
+        dismissOtherModals(inst);
+        if (!inst.dashboardExpanded || inst.dashboardCurrentTab !== "Home")
+            inst.toggleDashboard("Home");
+        inst.toggleSideDrawer(drawer);
     }
 
     // Public IPC Handler for the rice desktop shell
@@ -72,7 +177,7 @@ ShellRoot {
         function toggleDnd(): void { DesktopControls.doNotDisturb = !DesktopControls.doNotDisturb; }
         function toggleNightLight(): void { DesktopControls.toggleNightLight(); }
         function toggleCaffeine(): void { DesktopControls.toggleCaffeine(); }
-        function reloadShell(): void { Quickshell.reload(false); }
+        function reloadShell(): void { ThemeCommandQueue.requestShellReload(); }
 
         function health(): void {
             console.log("rice health: status=" + status + " screens=" + screenCount + " mode=" + themeMode);
@@ -87,8 +192,7 @@ ShellRoot {
         }
 
         function islandOsd(icon: string, progress: real): void {
-            var island = root.instanceOnScreen(islandInstances, null);
-            if (island) island.triggerOsd(icon, progress);
+            root.dispatchOsd(icon, progress, "volume");
         }
 
         function islandNotify(summary: string, body: string): void {
@@ -116,8 +220,7 @@ ShellRoot {
         }
 
         function toggleSideDrawer(type: string): void {
-            var inst = root.instanceOnScreen(islandInstances, null);
-            if (inst) inst.toggleSideDrawer(type || "wifi");
+            root.toggleSideDrawer(type || "wifi", null);
         }
 
         function toggleNotifications(): void {
@@ -129,8 +232,7 @@ ShellRoot {
         }
 
         function togglePowerMenu(): void {
-            var inst = root.instanceOnScreen(powerMenuInstances, null);
-            if (inst) inst.toggle();
+            root.togglePowerMenu(null);
         }
 
         function volumeUp(): void {
@@ -239,17 +341,24 @@ ShellRoot {
     }
 
     Connections {
+        target: Audio
+        function onOsdRequested(icon: string, progress: real): void {
+            root.dispatchOsd(icon, progress, "volume");
+        }
+    }
+
+    Connections {
         target: DesktopControls
         function onErrorOccurred(message: string): void { riceIpc.islandNotify("Control Center", message); }
         function onBrightnessRefreshed(level: real, showOsd: bool): void {
-            if (showOsd) riceIpc.islandOsd("󰃠", level);
+            if (showOsd) root.dispatchOsd("󰃠", level, "brightness");
         }
     }
 
     // Receive desktop notifications and apply the shared DND state.
     Loader {
         id: notificationLoader
-        active: true
+        active: Quickshell.env("ENABLE_NOTIFICATIONS") !== "0"
         source: "overlays/Notifications.qml"
         onLoaded: item.notificationReceived.connect(riceIpc.islandNotification)
     }

@@ -9,9 +9,37 @@ QtObject {
     id: root
 
     readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")
-    property string adaptiveRaw: ""
     property var parsedData: ({})
-    readonly property bool isValid: parsedData && parsedData.schema_version === 1 && parsedData.colors
+    readonly property bool isValid: isValidCandidate(parsedData)
+
+    function isValidCandidate(data): bool {
+        if (!data || typeof data !== "object" || Array.isArray(data)
+            || data.schema_version !== 1 || (data.mode !== "dark" && data.mode !== "light"))
+            return false;
+
+        var roles = ["background", "surface_low", "surface", "surface_high", "text_primary",
+            "text_secondary", "accent", "on_accent", "outline", "focus_ring", "danger"];
+        if (!data.colors || typeof data.colors !== "object" || Array.isArray(data.colors)) return false;
+        for (var i = 0; i < roles.length; i++) {
+            var color = data.colors[roles[i]];
+            if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) return false;
+        }
+
+        if (data.materials !== undefined) {
+            if (!data.materials || typeof data.materials !== "object" || Array.isArray(data.materials))
+                return false;
+            var materialNames = ["bar", "panel", "notification"];
+            for (var m = 0; m < materialNames.length; m++) {
+                var material = data.materials[materialNames[m]];
+                if (material === undefined) continue;
+                if (!material || typeof material !== "object" || Array.isArray(material)) return false;
+                if (material.opacity !== undefined
+                    && (typeof material.opacity !== "number" || !isFinite(material.opacity)
+                        || material.opacity < 0 || material.opacity > 1)) return false;
+            }
+        }
+        return true;
+    }
 
     // Semantic Palette Roles with WCAG-safe fallbacks
     readonly property color background: isValid ? parsedData.colors.background : "#121318"
@@ -27,23 +55,27 @@ QtObject {
     readonly property color danger: isValid ? parsedData.colors.danger : "#ffb4ab"
 
     // Material opacities
-    readonly property real barOpacity: (isValid && parsedData.materials && parsedData.materials.bar)
+    readonly property real barOpacity: (isValid && parsedData.materials && parsedData.materials.bar
+        && parsedData.materials.bar.opacity !== undefined)
         ? parsedData.materials.bar.opacity : 0.85
-    readonly property real panelOpacity: (isValid && parsedData.materials && parsedData.materials.panel)
+    readonly property real panelOpacity: (isValid && parsedData.materials && parsedData.materials.panel
+        && parsedData.materials.panel.opacity !== undefined)
         ? parsedData.materials.panel.opacity : 0.92
 
     readonly property string mode: (isValid && parsedData.mode) ? parsedData.mode : "dark"
 
     function reloadTheme(): void {
+        var raw = themeFile.text();
+        if (typeof raw !== "string" || raw.trim().length === 0) return;
         try {
-            if (themeFile.text().trim().length > 0) {
-                var data = JSON.parse(themeFile.text());
-                if (data && data.schema_version === 1) {
-                    root.parsedData = data;
-                }
+            var candidate = JSON.parse(raw);
+            if (isValidCandidate(candidate)) {
+                root.parsedData = candidate;
+            } else {
+                console.warn("Ignoring invalid adaptive theme palette");
             }
         } catch (e) {
-            // Keep existing or fallback
+            console.warn("Ignoring malformed adaptive theme palette");
         }
     }
 
@@ -53,9 +85,6 @@ QtObject {
         watchChanges: true
         printErrors: false
         onLoaded: root.reloadTheme()
-        onFileChanged: {
-            reload();
-            root.reloadTheme();
-        }
+        onFileChanged: reload()
     }
 }

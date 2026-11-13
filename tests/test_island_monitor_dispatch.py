@@ -11,6 +11,20 @@ import unittest
 SHELL = Path(__file__).resolve().parents[1] / "config/quickshell/rice-shell/shell.qml"
 
 
+def extract_qml_block(source, marker):
+    start = source.index(marker)
+    opening = source.index("{", start)
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index + 1]
+    raise AssertionError(f"unterminated QML block: {marker}")
+
+
 @unittest.skipUnless(shutil.which("qml6"), "qml6 required")
 class IslandMonitorDispatchTest(unittest.TestCase):
     def test_feedback_only_appears_on_focused_monitor(self):
@@ -19,16 +33,19 @@ class IslandMonitorDispatchTest(unittest.TestCase):
                              source.index("    function toggleLauncher(")]
         feedback_fns = source[source.index("        function islandOsd("):
                               source.index("        function toggleLauncher()")]
+        audio_connection = extract_qml_block(source, "Connections {\n        target: Audio")
+        audio_connection = audio_connection.replace("target: Audio", "target: root.audio")
 
         # Replace the external Hyprland singleton with an isolated test object.
         instance_fn = instance_fn.replace("Hyprland.focusedMonitor", "fakeHyprland.focusedMonitor")
         self.assertIn("fakeHyprland.focusedMonitor", instance_fn)
-        self.assertEqual(feedback_fns.count("root.instanceOnScreen(islandInstances, null)"), 3)
+        self.assertEqual(feedback_fns.count("root.instanceOnScreen(islandInstances, null)"), 2)
 
         harness = """import QtQuick
 Item {
     id: root
     property var islandInstances: [left, right]
+    property QtObject audio: QtObject { signal osdRequested(string icon, real progress) }
     QtObject {
         id: fakeHyprland
         property var focusedMonitor: ({ name: "DP-2" })
@@ -38,7 +55,9 @@ Item {
         property var targetScreen: ({ name: "HDMI-A-1" })
         property int osds: 0
         property int alerts: 0
-        function triggerOsd(icon, progress) { osds++; }
+        property real lastProgress: -1
+        property string lastKind: ""
+        function triggerOsd(icon, progress, kind) { osds++; lastProgress = progress; lastKind = kind; }
         function triggerNotification(summary, body, app, icon) { alerts++; }
     }
     QtObject {
@@ -46,7 +65,9 @@ Item {
         property var targetScreen: ({ name: "DP-2" })
         property int osds: 0
         property int alerts: 0
-        function triggerOsd(icon, progress) { osds++; }
+        property real lastProgress: -1
+        property string lastKind: ""
+        function triggerOsd(icon, progress, kind) { osds++; lastProgress = progress; lastKind = kind; }
         function triggerNotification(summary, body, app, icon) { alerts++; }
     }
 """ + instance_fn + """
@@ -54,21 +75,30 @@ Item {
         id: riceIpc
 """ + feedback_fns + """
     }
+""" + audio_connection + """
     function check(ok, message) {
         if (!ok) { console.error("MONITOR_DISPATCH_FAIL: " + message); Qt.exit(1); throw new Error(message); }
     }
     Component.onCompleted: Qt.callLater(() => {
+        audio.osdRequested("volume", 1.25);
+        check(left.osds === 0 && right.osds === 1, "Audio signal did not target focused monitor once");
+        check(right.lastProgress === 1.25 && right.lastKind === "volume", "Audio OSD data was altered");
+
         riceIpc.islandOsd("brightness", 0.65);
         riceIpc.islandNotify("Error", "details");
         riceIpc.islandNotification("Hello", "body", "app", "icon");
         check(left.osds === 0 && left.alerts === 0, "unfocused monitor received feedback");
-        check(right.osds === 1 && right.alerts === 2, "focused monitor missed feedback");
+        check(right.osds === 2 && right.alerts === 2, "focused monitor missed feedback");
 
         fakeHyprland.focusedMonitor = { name: "HDMI-A-1" };
+        audio.osdRequested("volume", 0.3);
+        check(left.osds === 1 && right.osds === 2, "Audio focus switch failed");
+        check(left.lastProgress === 0.3 && left.lastKind === "volume", "switched Audio OSD targeted wrong state");
+
         riceIpc.islandOsd("volume", 0.3);
         riceIpc.islandNotification("Hello", "body", "app", "icon");
-        check(left.osds === 1 && left.alerts === 1, "focus switch failed");
-        check(right.osds === 1 && right.alerts === 2, "previous monitor received feedback");
+        check(left.osds === 2 && left.alerts === 1, "focus switch failed");
+        check(right.osds === 2 && right.alerts === 2, "previous monitor received feedback");
 
         fakeHyprland.focusedMonitor = null;
         riceIpc.islandNotify("Fallback", "body");
@@ -76,7 +106,7 @@ Item {
         root.islandInstances = [];
         riceIpc.islandOsd("brightness", 0.9);
         riceIpc.islandNotification("None", "body", "app", "icon");
-        check(left.osds === 1 && right.osds === 1, "detached monitors received feedback");
+        check(left.osds === 2 && right.osds === 2, "detached monitors received feedback");
         Qt.exit(73);
     });
 }

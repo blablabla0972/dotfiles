@@ -20,6 +20,7 @@ class NotificationCenterTest(unittest.TestCase):
                 (base / folder).mkdir()
 
             source = CENTER_QML.read_text()
+            self.assertEqual(source.count("textFormat: Text.PlainText"), 3)
             self.assertIn("id: notificationList", source)
             (base / "dashboard/NotificationCenter.qml").write_text(
                 source.replace("    ColumnLayout {", "    readonly property alias probeCount: notificationList.count\n\n    ColumnLayout {", 1)

@@ -115,7 +115,6 @@ config/quickshell/rice-shell/
   ├── launcher/
   │   └── Launcher.qml           # Searchable application launcher
   ├── overlays/
-  │   ├── Osd.qml                # Volume & brightness HUD (delegates to island when visible)
   │   └── Notifications.qml      # Freedesktop notification popup toasts & history (loaded conditionally)
   ├── services/
   │   ├── Audio.qml              # Pipewire sink/source helper

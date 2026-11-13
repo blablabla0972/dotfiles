@@ -6,7 +6,7 @@
 **Compositor**: Hyprland 0.57.0 (Lua frontend)  
 **Shell Engine**: Quickshell 0.3.2 (Qt 6.9.3)  
 **Idle & Lock**: hypridle v0.1.8, hyprlock v0.9.7  
-**Status**: **ALL TESTS PASS (222/222)**, Live Cutover **ACTIVE & HEALTHY**
+**Status**: Historical validation snapshot from 2026-11-12; its test count and live-session status are not current verification.
 
 ---
 
@@ -102,15 +102,10 @@ Dispatched 4 parallel research subagents and 1 independent reviewer:
    - Resolved by wrapping sink and source in `PwObjectTracker { objects: [Pipewire.defaultAudioSink, Pipewire.defaultAudioSource].filter(Boolean) }`.
 5. **D-Bus Notification Singleton Collision**:
    - Running Noctalia and Quickshell cannot both own `org.freedesktop.Notifications`.
-   - Resolved by guarding Quickshell `NotificationServer` with `Loader { active: Quickshell.env("ENABLE_NOTIFICATIONS") === "1" }`.
+   - Normal rice startup enables notifications. `shell.qml` uses `Loader { active: Quickshell.env("ENABLE_NOTIFICATIONS") !== "0" }`; isolated previews can set `ENABLE_NOTIFICATIONS=0`. Autostart checks the exact rice-shell config and `rice health` before falling back, and never starts Noctalia while an unhealthy rice instance still owns the service.
 
 ---
 
 ## 5. Rollback Verification
 
-Rollback verified in under 3 seconds:
-```bash
-killall quickshell hypridle
-/home/admin/.local/bin/noctalia -d
-```
-Noctalia v5.4.1 binary, configs, launcher, and assets remain 100% intact.
+The rollback note in this 2026-11-12 snapshot is historical, not a current runbook. Its former broad process-kill example is omitted because it could stop the independent wallpaper switcher. Use the scoped procedure in `CUTOVER_ROLLBACK.md`; no rollback or live cutover was run for this worktree. Noctalia binaries, configs, launcher, and assets were not modified.

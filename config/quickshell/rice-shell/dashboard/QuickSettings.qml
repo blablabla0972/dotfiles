@@ -82,7 +82,7 @@ Rectangle {
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: Math.min(parent.width, Math.max(0, parent.width * Audio.volume))
+                width: Math.min(parent.width, Math.max(0, parent.width * Math.min(1, Audio.volume)))
                 color: Audio.muted ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4) : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.22)
             }
 
@@ -99,25 +99,33 @@ Rectangle {
                 }
 
                 Text {
-                    text: "Volume"
+                    text: Audio.available ? "Volume" : "Volume unavailable"
                     font.pixelSize: 11
                     font.bold: true
-                    color: Tokens.text_primary
+                    color: Audio.available ? Tokens.text_primary : Tokens.text_secondary
                 }
 
                 Item { Layout.fillWidth: true }
 
                 Text {
-                    text: Audio.muted ? "Muted" : Math.round(Audio.volume * 100) + "%"
+                    text: !Audio.available ? "—" : (Audio.muted ? "Muted" : Math.round(Audio.volume * 100) + "%")
                     font.pixelSize: 11
                     font.bold: true
                     color: Tokens.text_secondary
+                }
+
+                Text {
+                    text: Audio.available && !Audio.muted && Audio.volume > 1 ? "+" : ""
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: Tokens.accent
                 }
             }
 
             // Continuous Drag & Click Handler
             MouseArea {
                 anchors.fill: parent
+                enabled: Audio.available
                 cursorShape: Qt.PointingHandCursor
                 function updateVolume(mouse) {
                     var ratio = Math.max(0.0, Math.min(1.0, mouse.x / volTrack.width));

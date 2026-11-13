@@ -4,7 +4,6 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import "../theme"
 
@@ -36,11 +35,6 @@ PanelWindow {
     property string selectedCategory: "All"
 
     readonly property var categories: ["All", "Internet", "Development", "Multimedia", "System", "Settings"]
-
-    // Process fallback for command execution
-    Process {
-        id: cmdProcess
-    }
 
     function getCategoryIcon(cat: string): string {
         switch (cat) {
@@ -139,7 +133,7 @@ PanelWindow {
             }];
         }
 
-        // 2. Zero-state: empty search query shows pinned essentials followed by curated list
+        // 2. Zero-state: valid apps in the selected category, sorted alphabetically
         if (query.length === 0) {
             return getZeroStateApps();
         }
@@ -190,15 +184,10 @@ PanelWindow {
 
     function toggle(): void {
         visible = !visible;
-        if (visible) {
-            searchText = "";
-            selectedIndex = 0;
-            selectedCategory = "All";
-            searchInput.text = "";
-            searchInput.forceActiveFocus();
-            if (appList) appList.positionViewAtBeginning();
-            if (categoryList) categoryList.positionViewAtBeginning();
-        }
+    }
+
+    function dismiss(): void {
+        visible = false;
     }
 
     function cycleCategory(step: int): void {
@@ -207,7 +196,7 @@ PanelWindow {
         if (idx < 0) idx = 0;
         var nextIdx = (idx + step + count) % count;
         selectedCategory = categories[nextIdx];
-        selectedIndex = 0;
+        selectedIndex = filteredApps.length > 0 ? 0 : -1;
         if (appList) appList.positionViewAtBeginning();
         if (categoryList) categoryList.positionViewAtIndex(nextIdx, ListView.Contain);
     }
@@ -219,27 +208,14 @@ PanelWindow {
         }
         if (cleanCmd.length === 0) return;
 
-        var terminal = Quickshell.env("TERMINAL") || "kitty";
+        var terminal = (Quickshell.env("TERMINAL") || "").trim() || "kitty";
         var args = ["uwsm", "app", "--", terminal, "-e", "bash", "-c", cleanCmd];
         try {
-            if (typeof Quickshell.execute === "function") {
-                Quickshell.execute(args);
-            } else if (typeof Quickshell.execDetached === "function") {
-                Quickshell.execDetached(args);
-            } else {
-                cmdProcess.command = args;
-                cmdProcess.running = true;
-            }
+            Quickshell.execDetached(args);
+            launcherWindow.visible = false;
         } catch (e) {
             console.warn("Command execution failed: " + e);
-            try {
-                cmdProcess.command = args;
-                cmdProcess.running = true;
-            } catch (e2) {
-                console.warn("Fallback process execution failed: " + e2);
-            }
         }
-        launcherWindow.visible = false;
     }
 
     function launchSelected(): void {
@@ -249,17 +225,21 @@ PanelWindow {
             return;
         }
 
-        if (filteredApps.length > 0 && selectedIndex >= 0 && selectedIndex < filteredApps.length) {
-            var item = filteredApps[selectedIndex];
-            if (item) {
-                if (item.isCommand) {
-                    executeCommand(item.command);
-                } else if (typeof item.execute === "function") {
-                    item.execute();
-                    launcherWindow.visible = false;
-                }
+        if (filteredApps.length === 0 || selectedIndex < 0 || selectedIndex >= filteredApps.length) return;
+
+        var item = filteredApps[selectedIndex];
+        if (item) {
+            if (item.isCommand) {
+                executeCommand(item.command);
+            } else if (typeof item.execute === "function") {
+                item.execute();
+                launcherWindow.visible = false;
             }
         }
+    }
+
+    onFilteredAppsChanged: {
+        selectedIndex = filteredApps.length === 0 ? -1 : Math.max(0, Math.min(selectedIndex, filteredApps.length - 1));
     }
 
     onSelectedIndexChanged: {
@@ -271,10 +251,12 @@ PanelWindow {
     onVisibleChanged: {
         if (visible) {
             searchText = "";
-            selectedIndex = 0;
             selectedCategory = "All";
             searchInput.text = "";
+            selectedIndex = filteredApps.length > 0 ? 0 : -1;
             searchInput.forceActiveFocus();
+            if (appList) appList.positionViewAtBeginning();
+            if (categoryList) categoryList.positionViewAtBeginning();
         }
     }
 
@@ -351,7 +333,7 @@ PanelWindow {
 
                             onTextChanged: {
                                 launcherWindow.searchText = text;
-                                launcherWindow.selectedIndex = 0;
+                                launcherWindow.selectedIndex = launcherWindow.filteredApps.length > 0 ? 0 : -1;
                                 if (appList) appList.positionViewAtBeginning();
                             }
 
@@ -496,7 +478,7 @@ PanelWindow {
                         TapHandler {
                             onTapped: {
                                 launcherWindow.selectedCategory = catPill.modelData;
-                                launcherWindow.selectedIndex = 0;
+                                launcherWindow.selectedIndex = launcherWindow.filteredApps.length > 0 ? 0 : -1;
                                 if (appList) appList.positionViewAtBeginning();
                                 categoryList.positionViewAtIndex(catPill.index, ListView.Contain);
                                 searchInput.forceActiveFocus();

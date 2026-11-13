@@ -1,6 +1,6 @@
 # Compatibility Matrix: Noctalia v5.4.1 → Quickshell Shell
 
-**Branch**: `quickshell`  
+**Baseline**: `c01214c` (changes reviewed in an isolated feature worktree)
 **Compositor**: Hyprland 0.57.0 (Lua Config)  
 **Shell Engine**: Quickshell 0.3.2
 
@@ -14,8 +14,8 @@
 | **Dynamic Island** | *None (New Feature)* | `rice-shell/island/Island.qml` | Shape with cubic anti-corners, 5 states: `idle`, `media`, `volume/brightness`, `notification`, `expanded` | M3 |
 | **App Launcher** | `noctalia msg panel-toggle launcher` | `rice-shell/launcher/Launcher.qml` | `DesktopEntry.execute()` or `uwsm app --`, Esc/click-away dismiss | M5 |
 | **Control Center** | `noctalia msg panel-toggle control-center` | `rice-shell/dashboard/Dashboard.qml` | Responsive 3-col Home (Profile+Calendar, Clock+Media, Brightness+Quick Toggles) + Tabs | M5 |
-| **Audio Volume OSD**| `noctalia msg volume-*` | `rice-shell/island/` or `overlays/Osd.qml` | Native `Quickshell.Services.Pipewire` reactive observation | M3 / M4 |
-| **Brightness OSD** | `noctalia msg brightness-*` | `rice-shell/island/` or `overlays/Osd.qml` | `brightnessctl` bounded subprocess / IPC | M3 / M4 |
+| **Audio Volume OSD**| `noctalia msg volume-*` | `rice-shell/island/Island.qml` | Native `Quickshell.Services.Pipewire` reactive observation | M3 / M4 |
+| **Brightness OSD** | `noctalia msg brightness-*` | `rice-shell/island/Island.qml` | `brightnessctl` bounded subprocess / IPC | M3 / M4 |
 | **Media Player** | `noctalia msg media *` | `rice-shell/services/Media.qml` | Native `Quickshell.Services.Mpris` | M4 |
 | **Notifications** | Native daemon (`org.freedesktop.Notifications`) | `rice-shell/overlays/Notifications.qml` | `Quickshell.Services.Notifications` (tested isolated via `dbus-run-session`) | M6 |
 | **Screen Lock** | `noctalia msg session lock` | `hyprlock` (direct) | Wayland `ext-session-lock-v1` via `hyprlock.conf` | M7 |
@@ -31,15 +31,15 @@
 
 | Key Combination | Current Command | New Command / Quickshell IPC |
 | :--- | :--- | :--- |
-| `SUPER + Space` | `noctalia msg panel-toggle launcher` | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleLauncher` |
-| `SUPER + .` | `noctalia msg panel-toggle launcher /emo` | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleEmoji` |
-| `SUPER + X` | `noctalia msg panel-toggle control-center` | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleDashboard` |
-| `SUPER + Z` | `noctalia msg settings-toggle` | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleDashboard quick` |
-| `SUPER + L` | `noctalia msg session lock` | `pidof hyprlock \|\| hyprlock` (robust direct lock invocation) |
-| `SUPER + ALT + C` | `noctalia msg panel-toggle session` | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleSession` |
-| `SUPER + A` | `noctalia msg panel-toggle control-center notifications` | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleNotifications` |
-| `SUPER + V` | `noctalia msg panel-toggle clipboard` | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleClipboard` |
-| `SUPER + Tab` | `noctalia msg window-switcher` | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleWindowSwitcher` |
+| `SUPER + Space` | Quickshell launcher | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleLauncher` |
+| `SUPER + .` | Quickshell launcher (same action; no emoji IPC) | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleLauncher` |
+| `SUPER + X` | Dashboard Home | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleDashboard Home` |
+| `SUPER + Z` | Dashboard Config | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleDashboard Config` |
+| `SUPER + L` | Lock screen | `pidof hyprlock \|\| hyprlock` |
+| `SUPER + ALT + C` | Power menu | `qs ipc -p ~/.config/quickshell/rice-shell call rice togglePowerMenu` |
+| `SUPER + A` | Dashboard Notifications | `qs ipc -p ~/.config/quickshell/rice-shell call rice toggleNotifications` |
+| `SUPER + V` | Clipboard history via `cliphist` in the terminal | `cliphist list | fzf --reverse | cliphist decode | wl-copy` |
+| `SUPER + Tab` | Cycle to the next window | Hyprland `window.cycle_next()` bind |
 | `XF86AudioRaiseVolume` | `noctalia msg volume-up` | `wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+` (zero-overhead repeating, reactive OSD) |
 | `XF86AudioLowerVolume` | `noctalia msg volume-down` | `wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%-` (zero-overhead repeating, reactive OSD) |
 | `XF86AudioMute` | `noctalia msg volume-mute` | `wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle` |

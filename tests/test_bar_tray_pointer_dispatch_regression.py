@@ -37,6 +37,7 @@ assert.ok(close > open, 'tray handler must have a closing brace');
 const calls = [];
 const item = {
     hasMenu: true,
+    onlyMenu: false,
     menu: 'mock-menu',
     activate: () => calls.push('primary'),
     secondaryActivate: () => calls.push('secondary'),
@@ -57,13 +58,27 @@ function check(button, expected) {
 check(context.Qt.LeftButton, ['primary']);
 check(context.Qt.MiddleButton, ['secondary']);
 check(context.Qt.RightButton, [['menu', 'mock-menu', 31, 7]]);
+item.onlyMenu = true;
+check(context.Qt.LeftButton, [['menu', 'mock-menu', 31, 7]]);
 item.hasMenu = false;
 check(context.Qt.RightButton, []);
+check(context.Qt.LeftButton, []);
 """
         result = subprocess.run(
             ["node", "-e", js, str(TRAY)], capture_output=True, text=True, check=False
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_context_menu_handles_submenus_states_and_screen_bounds(self):
+        source = (TRAY.parent / "TrayContextMenu.qml").read_text()
+        self.assertIn("QsMenuOpener", source)
+        self.assertIn("modelData.hasChildren", source)
+        self.assertIn("modelData.isSeparator", source)
+        self.assertIn("modelData.enabled && !menuRow.modelData.isSeparator", source)
+        self.assertIn("modelData.checkState === Qt.Unchecked", source)
+        self.assertIn("modelData.checkState === Qt.PartiallyChecked", source)
+        self.assertIn("anchorWindow.height - root.height - 8", source)
+        self.assertIn("anchorWindow.width - root.width - 8", source)
 
 
 if __name__ == "__main__":

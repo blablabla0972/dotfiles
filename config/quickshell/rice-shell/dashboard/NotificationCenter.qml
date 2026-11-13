@@ -91,6 +91,7 @@ Item {
 
                             Text {
                                 width: parent.width - entryTime.width - 10
+                                textFormat: Text.PlainText
                                 text: entry.modelData.summary
                                 font.pixelSize: 13
                                 font.bold: true
@@ -109,6 +110,7 @@ Item {
                         Text {
                             width: parent.width
                             visible: text.length > 0
+                            textFormat: Text.PlainText
                             text: entry.modelData.appName
                             font.pixelSize: 11
                             color: Tokens.accent
@@ -118,6 +120,7 @@ Item {
                         Text {
                             width: parent.width
                             visible: text.length > 0
+                            textFormat: Text.PlainText
                             text: entry.modelData.body
                             font.pixelSize: 12
                             color: Tokens.text_secondary

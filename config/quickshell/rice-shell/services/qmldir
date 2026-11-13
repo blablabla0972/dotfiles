@@ -1,3 +1,4 @@
 singleton Audio 1.0 Audio.qml
 singleton Media 1.0 Media.qml
 singleton DesktopControls 1.0 DesktopControls.qml
+singleton ThemeCommandQueue 1.0 ThemeCommandQueue.qml

@@ -41,28 +41,82 @@ Rectangle {
     property string passwordText: ""
     property string statusMessage: ""
     property bool isConnecting: false
+    property var scanOwnedDevice: null
     property bool isScanning: wifiDevice ? wifiDevice.scannerEnabled : false
     property bool scanRequested: true
 
     Binding {
-        target: root.wifiDevice
+        target: root.scanOwnedDevice
         property: "scannerEnabled"
-        value: root.visible && root.scanRequested && Networking.wifiEnabled
-        when: root.wifiDevice !== null
+        value: root.visible && root.scanRequested
+        when: root.scanOwnedDevice !== null
+    }
+
+    onWifiDeviceChanged: {
+        if (scanOwnedDevice && scanOwnedDevice !== wifiDevice) {
+            stopScan();
+        }
+        if (!wifiDevice) {
+            if (isConnecting) {
+                isConnecting = false;
+                pendingNetwork = null;
+                pendingAction = "";
+            }
+            statusMessage = "Wi-Fi adapter unavailable";
+            selectedNetwork = null;
+            passwordText = "";
+            scanRestartTimer.stop();
+        } else if (visible) {
+            startScan();
+        }
     }
 
     onVisibleChanged: {
         if (visible) {
-            scan();
-        } else if (!root.isConnecting) {
-            root.selectedNetwork = null;
+            startScan();
+        } else {
+            stopScan();
+            if (!root.isConnecting) {
+                root.selectedNetwork = null;
+            }
             root.passwordText = "";
+        }
+    }
+
+    Component.onDestruction: {
+        stopScan();
+        root.selectedNetwork = null;
+        root.passwordText = "";
+    }
+
+    function cancelPassword(): void {
+        root.selectedNetwork = null;
+        root.passwordText = "";
+    }
+
+    function startScan(): void {
+        root.statusMessage = root.wifiDevice ? "" : "Wi-Fi adapter unavailable";
+        if (!root.wifiDevice) return;
+        if (!root.wifiDevice.scannerEnabled) {
+            root.scanOwnedDevice = root.wifiDevice;
+        }
+        root.scanRequested = true;
+    }
+
+    function stopScan(): void {
+        var owned = root.scanOwnedDevice;
+        root.scanOwnedDevice = null;
+        if (owned && owned.scannerEnabled) {
+            owned.scannerEnabled = false;
         }
     }
 
     function scan(): void {
         root.statusMessage = root.wifiDevice ? "" : "Wi-Fi adapter unavailable";
-        if (!root.wifiDevice || !Networking.wifiEnabled) return;
+        if (!root.wifiDevice) return;
+        if (!root.wifiDevice.scannerEnabled) {
+            root.scanOwnedDevice = root.wifiDevice;
+        }
         root.scanRequested = false;
         scanRestartTimer.restart();
     }
@@ -71,6 +125,20 @@ Rectangle {
         id: scanRestartTimer
         interval: 180
         onTriggered: root.scanRequested = true
+    }
+
+    Timer {
+        id: actionTimeout
+        interval: 30000
+        repeat: false
+        running: root.isConnecting
+        onTriggered: {
+            root.isConnecting = false;
+            root.pendingNetwork = null;
+            root.pendingAction = "";
+            root.statusMessage = "Connection timed out";
+            root.passwordText = "";
+        }
     }
 
     Connections {
@@ -95,10 +163,36 @@ Rectangle {
             }
         }
 
+        function onStateChangingChanged(): void {
+            if (!root.pendingNetwork) return;
+            if (!root.pendingNetwork.stateChanging) {
+                if (root.pendingNetwork.connected) {
+                    root.isConnecting = false;
+                    root.statusMessage = "Connected to " + root.pendingNetwork.name;
+                    root.selectedNetwork = null;
+                    root.passwordText = "";
+                    root.pendingNetwork = null;
+                    root.pendingAction = "";
+                } else if (root.pendingAction === "disconnect") {
+                    root.isConnecting = false;
+                    root.statusMessage = "Disconnected from " + root.pendingNetwork.name;
+                    root.pendingNetwork = null;
+                    root.pendingAction = "";
+                } else if (root.pendingAction === "connect") {
+                    root.isConnecting = false;
+                    root.statusMessage = "Could not connect to " + root.pendingNetwork.name;
+                    root.passwordText = "";
+                    root.pendingNetwork = null;
+                    root.pendingAction = "";
+                }
+            }
+        }
+
         function onConnectionFailed(reason): void {
             if (!root.pendingNetwork) return;
 
             root.isConnecting = false;
+            root.passwordText = "";
             if (reason === ConnectionFailReason.NoSecrets && root.supportsPsk(root.pendingNetwork)) {
                 root.selectedNetwork = root.pendingNetwork;
                 root.statusMessage = "Incorrect password or authentication required";
@@ -127,7 +221,19 @@ Rectangle {
     }
 
     function connectNetwork(net, withPassword): void {
-        if (!net || root.isConnecting) return;
+        if (!net) return;
+
+        if (root.isConnecting) {
+            if (root.pendingNetwork === net) {
+                if (typeof net.disconnect === "function") net.disconnect();
+                root.isConnecting = false;
+                root.pendingNetwork = null;
+                root.pendingAction = "";
+                root.statusMessage = "Connection cancelled";
+                root.passwordText = "";
+            }
+            return;
+        }
 
         if (net.stateChanging) {
             root.pendingNetwork = net;
@@ -200,7 +306,7 @@ Rectangle {
                 }
 
                 HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.closeRequested() }
+                TapHandler { onTapped: { root.cancelPassword(); root.closeRequested(); } }
             }
 
             Text {

@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import "../theme"
+import "../island/IslandState.js" as IslandState
 import "."
 
 Item {
@@ -10,6 +11,8 @@ Item {
 
     required property Item surface
     required property Item shape
+    property var cardDimensions: ({ width: 760, height: 440, radius: 22,
+        sideBySide: true, drawerOverlay: false, drawerWidth: 300 })
     property string currentTab: "Home"
     property bool expanded: false
     property bool closing: false
@@ -20,6 +23,7 @@ Item {
     property string renderedSideDrawer: ""
     onCurrentTabChanged: {
         activeSideDrawer = "";
+        tabScroll.contentY = 0;
         if (expanded) {
             tabEntranceProgress = 0;
             tabEntranceAnimation.restart();
@@ -29,13 +33,23 @@ Item {
         if (activeSideDrawer.length > 0) renderedSideDrawer = activeSideDrawer;
     }
     readonly property bool sideDrawerOpen: expanded && activeSideDrawer.length > 0
-    // Keep the fixed 760px card on-screen when the drawer opens on a narrow monitor.
-    readonly property real drawerOffset: Math.min(sideDrawerContainer.width * 0.52,
-        Math.max(0, (width - 760) / 2))
+    readonly property bool drawerOverlay: !cardDimensions.sideBySide
+    readonly property real drawerOffset: drawerOverlay ? 0 : Math.min(156, sideDrawerContainer.width * 0.52)
+    readonly property real activeContentHeight: {
+        var loaded = currentTab === "Home" ? homeLoader.item
+            : currentTab === "System" ? systemLoader.item
+            : currentTab === "Notifications" ? notificationLoader.item : configLoader.item;
+        return loaded ? Math.max(0, loaded.implicitHeight) : 370;
+    }
     readonly property bool wifiLoaded: wifiLoader.item !== null
     readonly property bool bluetoothLoaded: bluetoothLoader.item !== null
     visible: expanded || closing
     focus: expanded
+    onExpandedChanged: {
+        if (expanded) Qt.callLater(() => {
+            if (dashboardWindow.expanded) dashboardWindow.forceActiveFocus();
+        });
+    }
 
     NumberAnimation {
         id: tabEntranceAnimation
@@ -61,11 +75,18 @@ Item {
     }
 
     function toggleSideDrawer(type: string): void {
-        activeSideDrawer = activeSideDrawer === type ? "" : type;
+        var drawer = IslandState.normalizeSideDrawer(type);
+        if (!drawer) {
+            console.warn("Ignoring unknown side drawer: " + type);
+            return;
+        }
+        activeSideDrawer = activeSideDrawer === drawer ? "" : drawer;
     }
 
     function toggle(tab): void {
-        var target = tab || "Home";
+        var target = IslandState.normalizeDashboardTab(tab || "Home");
+        if (typeof tab === "string" && tab.length > 0 && tab !== target)
+            console.warn("Unknown Dashboard tab '" + tab + "'; opening Home");
         if (expanded && currentTab === target) {
             dismiss();
         } else {
@@ -113,9 +134,8 @@ Item {
         Item {
             id: cardContent
             anchors.horizontalCenter: parent.horizontalCenter
-            // Keep the layout stable; the parent clips the reveal instead of resizing cards.
-            width: 760
-            height: 440
+            width: dashboardWindow.cardDimensions.width
+            height: dashboardWindow.cardDimensions.height
             y: -18 * (1 - dashboardWindow.revealProgress)
             opacity: Math.max(0, (dashboardWindow.revealProgress - 0.15) / 0.85)
             enabled: dashboardWindow.expanded && opacity > 0.9
@@ -154,6 +174,7 @@ Item {
                         }
 
                         Text {
+                            visible: dashboardWindow.cardDimensions.width >= 680
                             text: "Control Center"
                             font.pixelSize: 13
                             font.bold: true
@@ -206,6 +227,7 @@ Item {
                                     }
 
                                     Text {
+                                        visible: dashboardWindow.cardDimensions.width >= 680
                                         text: tabPill.modelData.name
                                         font.pixelSize: 12
                                         font.bold: true
@@ -256,39 +278,59 @@ Item {
                     Item {
                         id: tabStage
                         anchors.fill: parent
+                        clip: true
                         opacity: dashboardWindow.tabEntranceProgress
                         enabled: dashboardWindow.tabEntranceProgress >= 0.8
                         transform: Translate { y: dashboardWindow.tabEntranceOffset }
 
-                        Loader {
-                            id: homeLoader
+                        Flickable {
+                            id: tabScroll
                             anchors.fill: parent
-                            active: dashboardWindow.visible && dashboardWindow.currentTab === "Home"
-                            visible: dashboardWindow.currentTab === "Home"
-                            sourceComponent: Home {
-                                onRequestSideDrawer: (type) => dashboardWindow.toggleSideDrawer(type)
+                            clip: true
+                            contentWidth: width
+                            contentHeight: Math.max(height, dashboardWindow.activeContentHeight)
+                            boundsBehavior: Flickable.StopAtBounds
+                            interactive: contentHeight > height
+
+                            Item {
+                                id: tabContent
+                                width: tabScroll.width
+                                height: tabScroll.contentHeight
+
+                                Loader {
+                                    id: homeLoader
+                                    anchors.fill: parent
+                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "Home"
+                                    visible: dashboardWindow.currentTab === "Home"
+                                    sourceComponent: Home {
+                                        onRequestSideDrawer: (type) => dashboardWindow.toggleSideDrawer(type)
+                                    }
+                                }
+
+                                Loader {
+                                    id: systemLoader
+                                    anchors.fill: parent
+                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "System"
+                                    visible: dashboardWindow.currentTab === "System"
+                                    sourceComponent: System {}
+                                }
+
+                                Loader {
+                                    id: notificationLoader
+                                    anchors.fill: parent
+                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "Notifications"
+                                    visible: dashboardWindow.currentTab === "Notifications"
+                                    sourceComponent: NotificationCenter {}
+                                }
+
+                                Loader {
+                                    id: configLoader
+                                    anchors.fill: parent
+                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "Config"
+                                    visible: dashboardWindow.currentTab === "Config"
+                                    sourceComponent: Config {}
+                                }
                             }
-                        }
-
-                        Loader {
-                            anchors.fill: parent
-                            active: dashboardWindow.visible && dashboardWindow.currentTab === "System"
-                            visible: dashboardWindow.currentTab === "System"
-                            sourceComponent: System {}
-                        }
-
-                        Loader {
-                            anchors.fill: parent
-                            active: dashboardWindow.visible && dashboardWindow.currentTab === "Notifications"
-                            visible: dashboardWindow.currentTab === "Notifications"
-                            sourceComponent: NotificationCenter {}
-                        }
-
-                        Loader {
-                            anchors.fill: parent
-                            active: dashboardWindow.visible && dashboardWindow.currentTab === "Config"
-                            visible: dashboardWindow.currentTab === "Config"
-                            sourceComponent: Config {}
                         }
                     }
                 }
@@ -296,14 +338,15 @@ Item {
         }
     }
 
-    // Sidecar stays fully within the monitor. If there is insufficient room
-    // beside the fixed-width card, overlap its edge rather than clip the drawer.
+    // Narrow screens use the drawer as an in-card page; wide screens show a sidecar.
     Item {
         id: sideDrawerContainer
         anchors.top: morphContainer.top
-        x: Math.max(0, Math.min(morphContainer.x + morphContainer.width + 12,
-            dashboardWindow.width - 300))
-        width: dashboardWindow.sideDrawerOpen ? 300 : 0
+        x: dashboardWindow.drawerOverlay ? morphContainer.x
+            : morphContainer.x + morphContainer.width + 12
+        width: dashboardWindow.sideDrawerOpen
+            ? (dashboardWindow.drawerOverlay ? dashboardWindow.cardDimensions.width
+                : dashboardWindow.cardDimensions.drawerWidth) : 0
         height: morphContainer.height
         clip: true
         visible: width > 0
@@ -324,8 +367,7 @@ Item {
         }
 
         Item {
-            width: 300
-            height: sideDrawerContainer.height
+            anchors.fill: parent
 
             Loader {
                 id: wifiLoader

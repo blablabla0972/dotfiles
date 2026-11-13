@@ -40,8 +40,8 @@ def _write_harness(directory):
         property string lastBody: ""
         property bool doNotDisturb: false
         property var notificationHistory: []
-        function recordNotification(summary, body, appName, appIcon) {
-            notificationHistory = [{ summary: summary, body: body, appName: appName }].concat(notificationHistory);
+        function recordNotification(id, summary, body, appName, appIcon, lastGeneration) {
+            notificationHistory = [{ id: id, summary: summary, body: body, appName: appName }].concat(notificationHistory);
         }
     }
 
@@ -58,6 +58,8 @@ QtObject {
     property bool keepOnReload: true
     property bool bodySupported: false
     property bool bodyMarkupSupported: false
+    property bool bodyImagesSupported: false
+    property bool bodyHyperlinksSupported: false
     property bool actionsSupported: false
     function deliver(n) { State.lastNotification = n; notification(n); }
     Component.onCompleted: {
@@ -76,6 +78,7 @@ QtObject {
     signal closed()
     property bool tracked: false
     property bool lastGeneration: false
+    property int id: 1
     property real expireTimeout: 1000
     property string summary: "Summary"
     property string body: "Body"

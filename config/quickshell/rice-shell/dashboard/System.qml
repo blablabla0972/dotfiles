@@ -10,19 +10,40 @@ Item {
     id: root
 
     implicitWidth: 724
-    implicitHeight: 370
+    implicitHeight: width < 700 ? 600 : 370
+    readonly property int layoutColumns: metricsGrid.columns
 
     property var sample: ({})
     property var cpuHistory: []
     property bool sampleHealthy: false
-    readonly property bool hasSample: sample.hostname !== undefined
-    readonly property int cpuPct: sample.cpu_pct ?? 0
-    readonly property int ramPct: sample.ram_pct ?? 0
-    readonly property int diskPct: sample.disk_pct ?? 0
-    readonly property bool cpuAvailable: hasSample && typeof sample.cpu_pct === "number"
-    readonly property color cpuColor: cpuPct >= 85 ? Tokens.danger : Tokens.accent
+    readonly property bool hasSample: sample && typeof sample === "object" && Object.keys(sample).length > 0
+    readonly property var cpuPct: validPercent(sample.cpu_pct) ? sample.cpu_pct : null
+    readonly property var ramPct: validPercent(sample.ram_pct) ? sample.ram_pct : null
+    readonly property var diskPct: validPercent(sample.disk_pct) ? sample.disk_pct : null
+    readonly property bool cpuAvailable: cpuPct !== null
+    readonly property color cpuColor: cpuPct === null ? Tokens.text_secondary
+        : cpuPct >= 85 ? Tokens.danger : Tokens.accent
     readonly property color cardColor: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
     readonly property string cpuModel: (sample.cpu_model || "Processor").replace(/\(R\)|\(TM\)/g, "").replace(/ @ .+$/, "")
+
+    function validPercent(value): bool {
+        return typeof value === "number" && isFinite(value) && value >= 0 && value <= 100;
+    }
+
+    function validSnapshot(data): bool {
+        if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+        if (data.hostname !== undefined && typeof data.hostname !== "string") return false;
+        if (data.uptime !== undefined && data.uptime !== null && typeof data.uptime !== "string") return false;
+        var hasKnownField = typeof data.hostname === "string";
+        var metrics = ["cpu_pct", "ram_pct", "disk_pct"];
+        for (var i = 0; i < metrics.length; i++) {
+            var key = metrics[i];
+            if (data[key] === undefined) continue;
+            hasKnownField = true;
+            if (data[key] !== null && !root.validPercent(data[key])) return false;
+        }
+        return hasKnownField;
+    }
 
     Timer {
         id: processRestart
@@ -72,17 +93,16 @@ Item {
             onRead: line => {
                 try {
                     const data = JSON.parse(line);
-                    if (!data || typeof data.ram_pct !== "number"
-                        || typeof data.disk_pct !== "number" || typeof data.uptime !== "string") {
+                    if (!root.validSnapshot(data)) {
                         root.sampleHealthy = false;
                         return;
                     }
                     root.sample = data;
                     root.sampleHealthy = true;
                     sampleWatchdog.restart();
-                    if (typeof data.cpu_pct === "number") {
-                        root.cpuHistory = root.cpuHistory.concat([data.cpu_pct]).slice(-30);
-                    }
+                    root.cpuHistory = root.cpuHistory.concat([
+                        root.validPercent(data.cpu_pct) ? data.cpu_pct : null
+                    ]).slice(-30);
                 } catch (e) {
                     root.sampleHealthy = false;
                 }
@@ -149,15 +169,19 @@ Item {
             }
         }
 
-        RowLayout {
+        GridLayout {
+            id: metricsGrid
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 10
+            columns: root.width < 700 ? 1 : 2
+            rowSpacing: 10
+            columnSpacing: 10
 
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredWidth: 360
+                Layout.minimumWidth: 0
                 radius: 12
                 color: root.cardColor
 
@@ -274,31 +298,31 @@ Item {
                                 const dx = w / 29;
                                 const start = pad + w - dx * (values.length - 1);
                                 const yAt = v => pad + h * (1 - v / 100);
-                                ctx.beginPath();
-                                ctx.moveTo(start, pad + h);
-                                for (let i = 0; i < values.length; i++)
-                                    ctx.lineTo(start + i * dx, yAt(values[i]));
-                                ctx.lineTo(pad + w, pad + h);
-                                ctx.closePath();
-                                const fill = ctx.createLinearGradient(0, pad, 0, pad + h);
-                                fill.addColorStop(0, Qt.rgba(graphColor.r, graphColor.g, graphColor.b, 0.30));
-                                fill.addColorStop(1, Qt.rgba(graphColor.r, graphColor.g, graphColor.b, 0.03));
-                                ctx.fillStyle = fill;
-                                ctx.fill();
-
                                 ctx.strokeStyle = graphColor;
                                 ctx.lineWidth = 1.8;
                                 ctx.lineJoin = "round";
                                 ctx.lineCap = "round";
                                 ctx.beginPath();
-                                ctx.moveTo(start, yAt(values[0]));
-                                for (let i = 1; i < values.length; i++)
-                                    ctx.lineTo(start + i * dx, yAt(values[i]));
+                                let segmentOpen = false;
+                                for (let i = 0; i < values.length; i++) {
+                                    if (!root.validPercent(values[i])) {
+                                        segmentOpen = false;
+                                        continue;
+                                    }
+                                    const x = start + i * dx;
+                                    const y = yAt(values[i]);
+                                    if (segmentOpen) ctx.lineTo(x, y);
+                                    else ctx.moveTo(x, y);
+                                    segmentOpen = true;
+                                }
                                 ctx.stroke();
-                                ctx.fillStyle = graphColor;
-                                ctx.beginPath();
-                                ctx.arc(pad + w, yAt(values[values.length - 1]), 2.6, 0, Math.PI * 2);
-                                ctx.fill();
+                                const latest = values[values.length - 1];
+                                if (root.validPercent(latest)) {
+                                    ctx.fillStyle = graphColor;
+                                    ctx.beginPath();
+                                    ctx.arc(pad + w, yAt(latest), 2.6, 0, Math.PI * 2);
+                                    ctx.fill();
+                                }
                             }
                         }
 
@@ -334,6 +358,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredWidth: 354
+                Layout.minimumWidth: 0
                 spacing: 10
 
                 Repeater {
@@ -349,8 +374,9 @@ Item {
                         readonly property string available: memory ? (root.sample.ram_available || "—") + " available"
                             : (root.sample.disk_free || "—") + " free"
                         readonly property string detail: memory ? "RAM" : (root.sample.filesystem || "—").toUpperCase() + " · /"
-                        readonly property int percent: memory ? root.ramPct : root.diskPct
-                        readonly property color valueColor: percent >= 90 ? Tokens.danger : Tokens.accent
+                        readonly property var percent: memory ? root.ramPct : root.diskPct
+                        readonly property color valueColor: percent === null ? Tokens.text_secondary
+                            : percent >= 90 ? Tokens.danger : Tokens.accent
 
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -379,7 +405,7 @@ Item {
                                 }
                                 Item { Layout.fillWidth: true }
                                 Text {
-                                    text: root.hasSample ? card.percent + "%" : "—"
+                                    text: card.percent === null ? "—" : card.percent + "%"
                                     font.pixelSize: 13
                                     font.weight: Font.DemiBold
                                     font.features: { "tnum": 1 }
@@ -412,7 +438,8 @@ Item {
                                 color: Tokens.surface
                                 clip: true
                                 Rectangle {
-                                    width: parent.width * Math.max(0, Math.min(1, card.percent / 100))
+                                    width: card.percent === null ? 0
+                                        : parent.width * Math.max(0, Math.min(1, card.percent / 100))
                                     height: parent.height
                                     radius: 3
                                     color: card.valueColor
@@ -445,14 +472,16 @@ Item {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 52
+            Layout.preferredHeight: root.width < 700 ? 72 : 52
             radius: 12
             color: root.cardColor
 
-            RowLayout {
+            GridLayout {
                 anchors.fill: parent
                 anchors.margins: 13
-                spacing: 13
+                columns: root.width < 700 ? 2 : 3
+                rowSpacing: 2
+                columnSpacing: 13
 
                 Repeater {
                     model: [
@@ -465,11 +494,12 @@ Item {
                         required property int index
                         required property var modelData
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         Layout.preferredWidth: index === 1 ? 250 : 180
-                        spacing: 13
+                        spacing: 8
 
                         Rectangle {
-                            visible: detailRow.index > 0
+                            visible: detailRow.index > 0 && root.width >= 700
                             width: 1
                             height: 23
                             color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)

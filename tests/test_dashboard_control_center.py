@@ -1,5 +1,6 @@
 """Tests for Dynamic Island Control Center (Dashboard) and Telemetry."""
 import importlib.util
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,8 @@ import subprocess
 import tempfile
 import unittest
 import select
+from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 TELEMETRY_SCRIPT = ROOT / "config/quickshell/rice-shell/dashboard/telemetry.py"
@@ -15,7 +18,9 @@ DASHBOARD_QML = ROOT / "config/quickshell/rice-shell/dashboard/Dashboard.qml"
 SYSTEM_QML = ROOT / "config/quickshell/rice-shell/dashboard/System.qml"
 CONFIG_QML = ROOT / "config/quickshell/rice-shell/dashboard/Config.qml"
 QUICKSETTINGS_QML = ROOT / "config/quickshell/rice-shell/dashboard/QuickSettings.qml"
+MEDIA_QML = ROOT / "config/quickshell/rice-shell/services/Media.qml"
 DESKTOP_CONTROLS_QML = ROOT / "config/quickshell/rice-shell/services/DesktopControls.qml"
+THEME_COMMAND_QUEUE_QML = ROOT / "config/quickshell/rice-shell/services/ThemeCommandQueue.qml"
 ISLAND_QML = ROOT / "config/quickshell/rice-shell/island/Island.qml"
 ISLAND_SHAPE_QML = ROOT / "config/quickshell/rice-shell/island/IslandShape.qml"
 SHELL_QML = ROOT / "config/quickshell/rice-shell/shell.qml"
@@ -25,6 +30,32 @@ BT_DRAWER_QML = ROOT / "config/quickshell/rice-shell/dashboard/BluetoothDrawer.q
 
 
 class TelemetryScriptTest(unittest.TestCase):
+    def test_missing_resources_are_reported_as_unavailable(self):
+        spec = importlib.util.spec_from_file_location("rice_telemetry_missing", TELEMETRY_SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        for meminfo in ("", "MemTotal: 0 kB\nMemAvailable: 0 kB\n", "MemTotal: 1024 kB\n"):
+            with self.subTest(meminfo=meminfo):
+                def fake_open(path, *args, **kwargs):
+                    if path == "/proc/meminfo":
+                        return StringIO(meminfo)
+                    raise OSError("missing proc data")
+
+                zero_capacity = SimpleNamespace(f_blocks=0, f_frsize=4096, f_bfree=0, f_bavail=0)
+                with patch("builtins.open", side_effect=fake_open), \
+                        patch.object(module, "cpu_times", return_value=(100, 50)), \
+                        patch.object(module.time, "sleep"), \
+                        patch.object(module.os, "statvfs", return_value=zero_capacity):
+                    data = module.get_telemetry()
+
+                self.assertIsNone(data["uptime"])
+                self.assertIsNone(data["ram_pct"])
+                self.assertIsNone(data["disk_pct"])
+                self.assertIsNone(data["disk_used"])
+                self.assertIsNone(data["disk_total"])
+                json.dumps(data, allow_nan=False)
+
     def test_native_system_view_marks_stalled_stream_stale(self):
         shell_dir = SYSTEM_QML.parents[1]
         with tempfile.TemporaryDirectory(prefix="rice-system-stale-test-") as directory:
@@ -99,7 +130,7 @@ ShellRoot {
                 'marker = pathlib.Path(os.environ["RICE_TEST_RUN_MARKER"])\n'
                 'first = not marker.exists()\n'
                 'marker.write_text("started")\n'
-                'data = {"cpu_pct": None if first else 42, "ram_pct": 40, "disk_pct": 50, "uptime": "1h", "hostname": "stub"}\n'
+                'data = {"cpu_pct": None if first else 42, "ram_pct": None if first else 40, "disk_pct": None if first else 50, "uptime": None if first else "1h", "hostname": "stub"}\n'
                 'print(json.dumps(data), flush=True)\n'
                 'time.sleep(0.6 if first else 3)\n'
             )
@@ -115,8 +146,8 @@ ShellRoot {
     Timer {
         interval: 300; running: true; repeat: false
         onTriggered: {
-            if (!system.sampleHealthy || system.cpuAvailable)
-                console.error("SYSTEM_RECOVERY_FAIL: partial snapshot marked stale or CPU available");
+            if (!system.sampleHealthy || system.cpuAvailable || system.ramPct !== null || system.diskPct !== null)
+                console.error("SYSTEM_RECOVERY_FAIL: partial snapshot marked stale or unavailable metrics became values");
             else console.log("SYSTEM_PARTIAL_PASS");
         }
     }
@@ -228,6 +259,14 @@ ShellRoot {
         interval: 900; running: true; repeat: false
         onTriggered: {
             if (!system.sampleHealthy) console.error("SYSTEM_NATIVE_FAIL: no sample");
+            if (system.layoutColumns !== 2 || system.implicitHeight !== 370)
+                console.error("SYSTEM_LAYOUT_FAIL: normal viewport did not retain two columns");
+            system.width = 680;
+            if (system.layoutColumns !== 1 || system.implicitHeight !== 600)
+                console.error("SYSTEM_LAYOUT_FAIL: narrow viewport did not stack and grow");
+            system.width = 724;
+            if (system.layoutColumns !== 2 || system.implicitHeight !== 370)
+                console.error("SYSTEM_LAYOUT_FAIL: restored viewport did not return to normal");
             system.visible = false;
         }
     }
@@ -260,7 +299,84 @@ ShellRoot {
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, output[-1300:])
         self.assertNotIn("SYSTEM_NATIVE_FAIL", output, output[-1300:])
+        self.assertNotIn("SYSTEM_LAYOUT_FAIL", output, output[-1300:])
         self.assertIn("SYSTEM_NATIVE_PASS", output, output[-1300:])
+
+    def test_config_stacks_at_narrow_width_and_restores(self):
+        if not shutil.which("quickshell"):
+            self.skipTest("quickshell binary unavailable")
+        with tempfile.TemporaryDirectory(prefix="rice-config-responsive-") as directory:
+            isolated = Path(directory)
+            for folder in ("dashboard", "theme", "services"):
+                (isolated / folder).mkdir()
+            shutil.copyfile(CONFIG_QML, isolated / "dashboard/Config.qml")
+            (isolated / "theme/qmldir").write_text("singleton Tokens 1.0 Tokens.qml\n")
+            (isolated / "theme/Tokens.qml").write_text('''pragma Singleton
+import QtQuick
+QtObject {
+    property color accent: "#78baff"
+    property color danger: "#ff6677"
+    property color on_accent: "#101010"
+    property color outline: "#667080"
+    property color surface: "#20242b"
+    property color surface_high: "#303641"
+    property color text_primary: "#ffffff"
+    property color text_secondary: "#b9c1ce"
+    property string mode: "dark"
+    function reloadTheme() {}
+}
+''')
+            (isolated / "services/qmldir").write_text(
+                "singleton ThemeCommandQueue 1.0 ThemeCommandQueue.qml\n")
+            (isolated / "services/ThemeCommandQueue.qml").write_text('''pragma Singleton
+import QtQuick
+QtObject {
+    property string result: ""
+    property bool running: false
+    property int pendingCount: 0
+    function queueCommand(command) {}
+    function switchTheme(mode) {}
+    function regenerateTheme() {}
+    function requestShellReload() {}
+    function reloadHyprland() {}
+}
+''')
+            (isolated / "shell.qml").write_text('''import QtQuick
+import Quickshell
+import "./dashboard"
+ShellRoot {
+    FloatingWindow {
+        width: 760; height: 720; visible: true
+        Config { id: config; width: 724; height: 370 }
+    }
+    Timer {
+        interval: 120; running: true; repeat: false
+        onTriggered: {
+            if (config.layoutColumns !== 2 || config.implicitHeight !== 370)
+                console.error("CONFIG_LAYOUT_FAIL: normal viewport mismatch");
+            config.width = 680;
+            if (config.layoutColumns !== 1 || config.implicitHeight !== 700)
+                console.error("CONFIG_LAYOUT_FAIL: narrow viewport mismatch");
+            config.width = 724;
+            if (config.layoutColumns !== 2 || config.implicitHeight !== 370)
+                console.error("CONFIG_LAYOUT_FAIL: restored viewport mismatch");
+            else console.log("CONFIG_LAYOUT_PASS");
+            Qt.quit();
+        }
+    }
+}
+''')
+            env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QSG_RHI_BACKEND="software",
+                       XDG_RUNTIME_DIR=str(isolated / "runtime"), XDG_CONFIG_HOME=str(isolated / "config"))
+            (isolated / "runtime").mkdir()
+            result = subprocess.run(
+                ["quickshell", "--path", str(isolated / "shell.qml"), "--no-color"],
+                capture_output=True, text=True, timeout=6, env=env,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output[-1400:])
+            self.assertNotIn("CONFIG_LAYOUT_FAIL", output, output[-1400:])
+            self.assertIn("CONFIG_LAYOUT_PASS", output, output[-1400:])
 
     def test_watch_mode_streams_without_restarting_and_exits_on_stop(self):
         process = subprocess.Popen(
@@ -506,7 +622,10 @@ fi
         # Theme switcher
         self.assertIn("Dark Mode", content)
         self.assertIn("Light Mode", content)
-        self.assertIn("--theme-mode-changed", content)
+        queue = THEME_COMMAND_QUEUE_QML.read_text()
+        self.assertIn("--theme-mode-changed", queue)
+        self.assertIn("reloadPending", queue)
+        self.assertIn("pendingCommands", queue)
         # Reload shell buttons
         self.assertIn("Reload Rice Shell", content)
         self.assertIn("Reload Hyprland", content)
@@ -566,6 +685,14 @@ fi
         self.assertIn("Media.previous", content)
         self.assertIn("Media.togglePlaying", content)
         self.assertIn("Media.next", content)
+        self.assertIn("Media.activePlayer.canSeek && Media.length > 0", content)
+        self.assertIn("textFormat: Text.PlainText", content)
+
+        player_card = (ROOT / "config/quickshell/rice-shell/dashboard/PlayerCard.qml").read_text()
+        self.assertIn("sourceSize.width: Math.min(840", player_card)
+        self.assertIn("Media.activePlayer.canSeek && Media.length > 0", player_card)
+        self.assertIn("Media.canToggle", player_card)
+        self.assertIn("textFormat: Text.PlainText", player_card)
 
         # Scrim outside-click and escape dismissal
         self.assertIn("id: scrim", content)
@@ -575,6 +702,184 @@ fi
         self.assertIn("id: contentViewport", content)
         self.assertIn("id: hoverDwell", content)
         self.assertIn("function islandToggle()", SHELL_QML.read_text())
+
+    def test_player_card_loads_and_disables_seek_without_duration_or_capability(self):
+        if not shutil.which("qml6"):
+            self.skipTest("qml6 binary unavailable")
+        with tempfile.TemporaryDirectory(prefix="rice-player-card-") as directory:
+            isolated = Path(directory)
+            for folder in ("dashboard", "theme", "services"):
+                (isolated / folder).mkdir()
+            source = (ROOT / "config/quickshell/rice-shell/dashboard/PlayerCard.qml").read_text()
+            source = source.replace(
+                "id: root\n", "id: root\n    readonly property alias probeSeekEnabled: playerSeekArea.enabled\n", 1)
+            (isolated / "dashboard/PlayerCard.qml").write_text(source)
+            (isolated / "theme/qmldir").write_text("singleton Tokens 1.0 Tokens.qml\n")
+            (isolated / "theme/Tokens.qml").write_text('''pragma Singleton
+import QtQuick
+QtObject {
+    property color accent: "#78baff"
+    property color danger: "#ff6677"
+    property color outline: "#667080"
+    property color surface: "#20242b"
+    property color surface_high: "#303641"
+    property color text_primary: "#ffffff"
+    property color text_secondary: "#b9c1ce"
+}
+''')
+            (isolated / "services/qmldir").write_text("singleton Media 1.0 Media.qml\n")
+            (isolated / "services/Media.qml").write_text('''pragma Singleton
+import QtQuick
+QtObject {
+    property bool hasPlayer: true
+    property bool isPlaying: false
+    property bool canToggle: true
+    property bool canPrev: true
+    property bool canNext: true
+    property string trackTitle: "<b>Example track</b>"
+    property string trackArtist: "Example artist"
+    property string trackAlbum: "Example album"
+    property string trackArtUrl: ""
+    property real position: 10
+    property real length: 60
+    property real progress: position / length
+    property QtObject activePlayer: QtObject {
+        property bool canSeek: true
+        property bool positionSupported: true
+    }
+    function formatTime(value) { return "0:10"; }
+    function setPosition(value) {}
+    function previous() {}
+    function togglePlaying() {}
+    function next() {}
+}
+''')
+            (isolated / "Main.qml").write_text('''import QtQuick
+import QtQuick.Window
+import "./dashboard"
+import "./services"
+Window {
+    visible: true
+    width: 280; height: 220
+    PlayerCard { id: card; anchors.fill: parent }
+    Timer {
+        interval: 100; running: true; repeat: false
+        onTriggered: {
+            if (!card.probeSeekEnabled) console.error("PLAYER_SEEK_FAIL: capable player was disabled");
+            if (card.artworkScale < 1 || card.artworkScale > 3)
+                console.error("PLAYER_ARTWORK_FAIL: source scale was not bounded");
+            Media.activePlayer.canSeek = false;
+            if (card.probeSeekEnabled) console.error("PLAYER_SEEK_FAIL: non-seekable player remained enabled");
+            Media.activePlayer.canSeek = true;
+            Media.length = 0;
+            if (card.probeSeekEnabled) console.error("PLAYER_SEEK_FAIL: unknown duration remained enabled");
+            Qt.quit();
+        }
+    }
+}
+''')
+            env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
+            result = subprocess.run(
+                ["qml6", "-f", str(isolated / "Main.qml"), "--quit-after", "1500"],
+                capture_output=True, text=True, env=env, timeout=5,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output)
+            self.assertNotIn("PLAYER_SEEK_FAIL", output, output[-1400:])
+            self.assertNotIn("PLAYER_ARTWORK_FAIL", output, output[-1400:])
+
+    def test_media_service_rejects_invalid_position_and_unknown_duration_seeks(self):
+        if not shutil.which("quickshell"):
+            self.skipTest("quickshell binary unavailable")
+        with tempfile.TemporaryDirectory(prefix="rice-media-service-") as directory:
+            isolated = Path(directory)
+            (isolated / "services").mkdir()
+            source = MEDIA_QML.read_text()
+            source = source.replace("import Quickshell\n", "")
+            source = source.replace("import Quickshell.Services.Mpris\n", "import \".\"\n")
+            source = source.replace("MprisPlayer activePlayer", "QtObject activePlayer")
+            (isolated / "services/Media.qml").write_text(source)
+            (isolated / "services/qmldir").write_text(
+                "singleton Media 1.0 Media.qml\nsingleton Mpris 1.0 Mpris.qml\n")
+            (isolated / "services/Mpris.qml").write_text('''pragma Singleton
+import QtQuick
+QtObject {
+    property QtObject player: QtObject {
+        property bool isPlaying: false
+        property bool canTogglePlaying: true
+        property bool canPlay: true
+        property bool canPause: true
+        property bool canGoNext: true
+        property bool canGoPrevious: true
+        property bool canSeek: true
+        property bool positionSupported: true
+        property string trackTitle: "Track"
+        property string trackArtist: "Artist"
+        property string trackAlbum: "Album"
+        property string trackArtUrl: ""
+        property real position: 10
+        property real length: 60
+        function togglePlaying() {}
+        function pause() {}
+        function play() {}
+        function next() {}
+        function previous() {}
+    }
+    property var players: ({ values: [player] })
+}
+''')
+            (isolated / "Main.qml").write_text('''import QtQuick
+import Quickshell
+import "./services"
+ShellRoot {
+    FloatingWindow {
+        visible: true
+        width: 100; height: 100
+        Timer {
+            interval: 80; running: true; repeat: false
+            onTriggered: {
+                if (Media.length !== 60 || Math.abs(Media.progress - 1 / 6) > 0.001)
+                    console.error("MEDIA_PROGRESS_FAIL: initial position was not normalized");
+                Media.setPosition(30);
+                if (Mpris.player.position !== 30)
+                    console.error("MEDIA_SEEK_FAIL: supported seek was not dispatched");
+                Mpris.player.position = 12;
+                Mpris.player.length = 0;
+                Media.setPosition(40);
+                if (Mpris.player.position !== 12)
+                    console.error("MEDIA_SEEK_FAIL: unknown duration changed position");
+                Mpris.player.length = 60;
+                Mpris.player.canSeek = false;
+                Media.setPosition(40);
+                if (Mpris.player.position !== 12)
+                    console.error("MEDIA_SEEK_FAIL: non-seekable player changed position");
+                Mpris.player.canSeek = true;
+                Mpris.player.position = Infinity;
+                if (Media.position !== 0 || Media.progress !== 0
+                    || Media.formatTime(Infinity) !== "0:00")
+                    console.error("MEDIA_PROGRESS_FAIL: nonfinite values escaped normalization");
+                Qt.quit();
+            }
+        }
+    }
+}
+''')
+            runtime = isolated / "runtime"
+            runtime.mkdir(mode=0o700)
+            env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
+                       NO_AT_BRIDGE="1", XDG_RUNTIME_DIR=str(runtime),
+                       XDG_CONFIG_HOME=str(isolated / "config"),
+                       XDG_CACHE_HOME=str(isolated / "cache"))
+            for name in ("WAYLAND_DISPLAY", "QT_WAYLAND_DISPLAY", "DISPLAY"):
+                env.pop(name, None)
+            result = subprocess.run(
+                ["quickshell", "--path", str(isolated / "Main.qml"), "--no-color"],
+                capture_output=True, text=True, env=env, timeout=5,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output)
+            self.assertNotIn("MEDIA_PROGRESS_FAIL", output, output[-1400:])
+            self.assertNotIn("MEDIA_SEEK_FAIL", output, output[-1400:])
 
     def test_native_bluetooth_drawer_instantiates_and_tracks_device_state(self):
         shell_dir = BT_DRAWER_QML.parents[1]
@@ -741,6 +1046,328 @@ ShellRoot {
         self.assertIn("BluetoothDrawer", dash_content)
         self.assertIn("id: wifiLoader", dash_content)
         self.assertIn("id: bluetoothLoader", dash_content)
+
+    def test_wifi_drawer_scanner_preserves_foreign_scan_ownership_and_clears_passwords(self):
+        if not shutil.which("quickshell"):
+            self.skipTest("quickshell binary unavailable")
+        shell_dir = WIFI_DRAWER_QML.parents[1]
+        with tempfile.TemporaryDirectory(prefix="rice-wifi-hardening-test-") as directory:
+            isolated = Path(directory)
+            for relative in ("dashboard/WifiDrawer.qml", "theme/Tokens.qml", "theme/qmldir"):
+                destination = isolated / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(shell_dir / relative, destination)
+
+            drawer_path = isolated / "dashboard/WifiDrawer.qml"
+            content = drawer_path.read_text()
+            # Inject fake wifi device and network for deterministic offline testing
+            replacement = '''
+    QtObject {
+        id: fakeNet
+        property string name: "RiceAP"
+        property real signalStrength: 0.85
+        property bool connected: false
+        property bool known: false
+        property int security: 2 // Wpa2Psk
+        property bool stateChanging: false
+        property int state: 0
+        signal connectionFailed(int reason)
+        function connect(): void { stateChanging = true; }
+        function connectWithPsk(key): void { stateChanging = true; }
+        function disconnect(): void { stateChanging = true; }
+    }
+    QtObject {
+        id: fakeNetModel
+        property var values: [fakeNet]
+    }
+    QtObject {
+        id: fakeDev
+        property string name: "wlan0"
+        property int type: 2
+        property bool scannerEnabled: false
+        property var networks: fakeNetModel
+    }
+    property var fakeDevRef: fakeDev
+    property var fakeNetRef: fakeNet
+    property var testWifiDeviceOverride: fakeDev
+    readonly property var wifiDevice: testWifiDeviceOverride'''
+            self.assertIn("readonly property var wifiDevice: {", content)
+            idx = content.index("    readonly property var wifiDevice: {")
+            end_idx = content.index("    }\n    readonly property var networks:", idx) + 6
+            content = content[:idx] + replacement + "\n" + content[end_idx:]
+            drawer_path.write_text(content)
+
+            shell_path = isolated / "shell.qml"
+            shell_path.write_text('''
+import QtQuick
+import Quickshell
+import "./dashboard"
+ShellRoot {
+    FloatingWindow {
+        width: 440; height: 500; visible: true
+        WifiDrawer { id: drawer; visible: false }
+
+        Timer { interval: 60; running: true; repeat: false; onTriggered: {
+            // 1. Foreign scan ownership preservation:
+            // If another component had already enabled scanner, closing drawer must not disable it.
+            drawer.fakeDevRef.scannerEnabled = true;
+            drawer.visible = true;
+            drawer.visible = false;
+            if (!drawer.fakeDevRef.scannerEnabled) console.error("WIFI_FOREIGN_SCAN_FAIL: foreign scan stopped on close");
+            else console.log("WIFI_FOREIGN_SCAN_PASS");
+
+            // 2. Own scan ownership:
+            // When drawer starts scan, closing drawer restores scannerEnabled = false.
+            drawer.fakeDevRef.scannerEnabled = false;
+            drawer.visible = true;
+            if (!drawer.fakeDevRef.scannerEnabled) console.error("WIFI_OWN_SCAN_START_FAIL");
+            drawer.visible = false;
+            if (drawer.fakeDevRef.scannerEnabled) console.error("WIFI_OWN_SCAN_STOP_FAIL: own scan not stopped on close");
+            else console.log("WIFI_OWN_SCAN_PASS");
+
+            // 3. Password clearing on hide/cancel/success/failed/destroy:
+            drawer.visible = true;
+            drawer.selectedNetwork = drawer.fakeNetRef;
+            drawer.passwordText = "supersecret";
+            drawer.isConnecting = true;
+            // Hide while operation is in flight - password must be cleared!
+            drawer.visible = false;
+            if (drawer.passwordText !== "") console.error("WIFI_PASSWORD_HIDE_FAIL: password retained on hide: " + drawer.passwordText);
+            else console.log("WIFI_PASSWORD_HIDE_PASS");
+
+            // Cancel password clears password and selection
+            drawer.visible = true;
+            drawer.selectedNetwork = drawer.fakeNetRef;
+            drawer.passwordText = "secret2";
+            if (typeof drawer.cancelPassword === "function") drawer.cancelPassword();
+            else { drawer.selectedNetwork = null; drawer.passwordText = ""; }
+            if (drawer.passwordText !== "" || drawer.selectedNetwork !== null) console.error("WIFI_PASSWORD_CANCEL_FAIL");
+            else console.log("WIFI_PASSWORD_CANCEL_PASS");
+
+            // 4. Adapter disappearance while connecting resets pending state
+            drawer.isConnecting = true;
+            drawer.pendingNetwork = drawer.fakeNetRef;
+            drawer.testWifiDeviceOverride = null;
+            if (drawer.isConnecting || drawer.pendingNetwork !== null) console.error("WIFI_ADAPTER_DISAPPEAR_FAIL: still connecting after adapter removed");
+            else console.log("WIFI_ADAPTER_DISAPPEAR_PASS");
+
+            // 5. StateChanging cancellation / disconnect handling
+            drawer.testWifiDeviceOverride = drawer.fakeDevRef;
+            drawer.pendingNetwork = drawer.fakeNetRef;
+            drawer.pendingAction = "connect";
+            drawer.isConnecting = true;
+            drawer.fakeNetRef.stateChanging = true;
+            drawer.fakeNetRef.stateChanging = false;
+            if (drawer.isConnecting) console.error("WIFI_STATE_CHANGING_STUCK_FAIL");
+            else console.log("WIFI_STATE_CHANGING_PASS");
+
+            Qt.quit();
+        } }
+    }
+}
+''')
+            env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QSG_RHI_BACKEND="software")
+            result = subprocess.run(
+                ["quickshell", "--path", str(shell_path), "--no-color"],
+                capture_output=True, text=True, timeout=8, env=env,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output[-1200:])
+            self.assertNotIn("WIFI_FOREIGN_SCAN_FAIL", output, output[-1200:])
+            self.assertNotIn("WIFI_PASSWORD_HIDE_FAIL", output, output[-1200:])
+            self.assertNotIn("WIFI_ADAPTER_DISAPPEAR_FAIL", output, output[-1200:])
+            self.assertNotIn("WIFI_STATE_CHANGING_STUCK_FAIL", output, output[-1200:])
+            self.assertIn("WIFI_FOREIGN_SCAN_PASS", output, output[-1200:])
+            self.assertIn("WIFI_PASSWORD_HIDE_PASS", output, output[-1200:])
+            self.assertIn("WIFI_ADAPTER_DISAPPEAR_PASS", output, output[-1200:])
+            self.assertIn("WIFI_STATE_CHANGING_PASS", output, output[-1200:])
+
+    def test_bluetooth_drawer_target_mac_correlation_and_validation(self):
+        if not shutil.which("quickshell"):
+            self.skipTest("quickshell binary unavailable")
+        shell_dir = BT_DRAWER_QML.parents[1]
+        with tempfile.TemporaryDirectory(prefix="rice-bluetooth-hardening-test-") as directory:
+            isolated = Path(directory)
+            for relative in ("dashboard/BluetoothDrawer.qml", "theme/Tokens.qml", "theme/qmldir"):
+                destination = isolated / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(shell_dir / relative, destination)
+
+            drawer_path = isolated / "dashboard/BluetoothDrawer.qml"
+            content = drawer_path.read_text()
+            original = "    readonly property var btAdapter: Bluetooth.defaultAdapter"
+            fake = '''
+    QtObject { id: testDevA; property string address: "01:02:03:04:05:06"; property string name: "Device A"; property bool connected: false; property bool paired: false }
+    QtObject { id: testModel; property var values: [testDevA] }
+    QtObject { id: testAdapter; property bool enabled: true; property bool discovering: false; property var devices: testModel }
+    readonly property var btAdapter: testAdapter'''
+            self.assertEqual(content.count(original), 1)
+            drawer_path.write_text(content.replace(original, fake))
+
+            shell_path = isolated / "shell.qml"
+            shell_path.write_text('''
+import QtQuick
+import Quickshell
+import "./dashboard"
+ShellRoot {
+    FloatingWindow {
+        width: 440; height: 500; visible: true
+        BluetoothDrawer { id: drawer; visible: true }
+
+        Timer { interval: 60; running: true; repeat: false; onTriggered: {
+            // 1. MAC Validation: reject malformed or command-injection MACs
+            drawer.connectDevice({ mac: "invalid-mac; echo pwned", name: "Malicious", paired: false, connected: false });
+            if (drawer.isConnecting) console.error("BT_INVALID_MAC_FAIL: allowed invalid MAC");
+            else console.log("BT_INVALID_MAC_PASS");
+
+            // 2. Target MAC Correlation: output from unrelated device must NOT advance active action
+            drawer.connectDevice({ mac: "01:02:03:04:05:06", name: "Device A", paired: true, connected: false });
+            drawer.actionStage = "connect";
+            // Unrelated device connects
+            drawer.handleAgentOutput("[CHG] Device 11:22:33:44:55:66 Connected: yes\\n");
+            if (!drawer.isConnecting || drawer.actionStage !== "connect") console.error("BT_UNRELATED_MAC_FAIL: unrelated device marked active device connected");
+            else console.log("BT_UNRELATED_MAC_PASS");
+
+            // Unrelated device passkey prompt
+            drawer.handleAgentOutput("[agent] Confirm passkey 999999 (Device 11:22:33:44:55:66)\\n");
+            if (drawer.pairingPromptType !== "") console.error("BT_UNRELATED_PROMPT_FAIL: unrelated device triggered pairing prompt");
+            else console.log("BT_UNRELATED_PROMPT_PASS");
+
+            // Target device connects
+            drawer.handleAgentOutput("[CHG] Device 01:02:03:04:05:06 Connected: yes\\n");
+            if (drawer.isConnecting) console.error("BT_TARGET_MAC_FAIL: target device did not complete connection");
+            else console.log("BT_TARGET_MAC_PASS");
+
+            // 3. Passkey validation: reject non-6-digit passkey
+            drawer.pairingPromptType = "passkey";
+            drawer.pairingInputText = "123\\nmalicious";
+            drawer.answerPairing(true);
+            if (drawer.pairingPromptType !== "passkey") console.error("BT_INVALID_PASSKEY_FAIL: accepted invalid passkey");
+            else console.log("BT_INVALID_PASSKEY_PASS");
+
+            Qt.quit();
+        } }
+    }
+}
+''')
+            env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QSG_RHI_BACKEND="software")
+            result = subprocess.run(
+                ["quickshell", "--path", str(shell_path), "--no-color"],
+                capture_output=True, text=True, timeout=8, env=env,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output[-1200:])
+            self.assertNotIn("BT_INVALID_MAC_FAIL", output, output[-1200:])
+            self.assertNotIn("BT_UNRELATED_MAC_FAIL", output, output[-1200:])
+            self.assertNotIn("BT_UNRELATED_PROMPT_FAIL", output, output[-1200:])
+            self.assertNotIn("BT_TARGET_MAC_FAIL", output, output[-1200:])
+            self.assertNotIn("BT_INVALID_PASSKEY_FAIL", output, output[-1200:])
+            self.assertIn("BT_INVALID_MAC_PASS", output, output[-1200:])
+            self.assertIn("BT_UNRELATED_MAC_PASS", output, output[-1200:])
+            self.assertIn("BT_UNRELATED_PROMPT_PASS", output, output[-1200:])
+            self.assertIn("BT_TARGET_MAC_PASS", output, output[-1200:])
+            self.assertIn("BT_INVALID_PASSKEY_PASS", output, output[-1200:])
+
+    def test_desktop_controls_brightness_hardening(self):
+        if not shutil.which("quickshell"):
+            self.skipTest("quickshell binary unavailable")
+        with tempfile.TemporaryDirectory(prefix="rice-desktop-controls-test-") as directory:
+            isolated = Path(directory)
+            services = isolated / "services"
+            services.mkdir()
+            (services / "qmldir").write_text("singleton DesktopControls 1.0 DesktopControls.qml\n")
+            shutil.copyfile(DESKTOP_CONTROLS_QML, services / "DesktopControls.qml")
+
+            bin_dir = isolated / "bin"
+            bin_dir.mkdir()
+            fake_brightnessctl = bin_dir / "brightnessctl"
+            fake_brightnessctl.write_text('''#!/bin/sh
+if [ "$1" = "-m" ]; then
+    if [ -f "$RICE_BRIGHTNESS_ABSENT" ]; then
+        echo "No backlight device found" >&2
+        exit 1
+    fi
+    printf 'mock,backlight,100,50%%\\n'
+elif [ "$1" = "set" ]; then
+    if [ -f "$RICE_BRIGHTNESS_FAIL_WRITE" ]; then
+        echo "Write failed" >&2
+        exit 1
+    fi
+    printf '%s\\n' "$2" >> "$RICE_BRIGHTNESS_LOG"
+fi
+''')
+            fake_brightnessctl.chmod(0o755)
+
+            shell_path = isolated / "shell.qml"
+            shell_path.write_text('''
+import QtQuick
+import Quickshell
+import "./services"
+ShellRoot {
+    property var lastError: ""
+    Connections {
+        target: DesktopControls
+        function onErrorOccurred(msg) { lastError = msg; }
+    }
+
+    Timer { interval: 50; running: true; repeat: false; onTriggered: {
+        // 1. Non-finite brightness handling
+        DesktopControls.brightnessLevel = 0.5;
+        DesktopControls.setBrightness(NaN);
+        if (isNaN(DesktopControls.brightnessLevel)) console.error("DESKTOP_NONFINITE_FAIL: NaN brightness accepted");
+        else console.log("DESKTOP_NONFINITE_PASS");
+
+        // 2. Reader absent device / no-match clears pending OSD
+        DesktopControls.refreshBrightness(true);
+        if (!DesktopControls.brightnessOsdPending) console.error("DESKTOP_OSD_PENDING_INIT_FAIL");
+    } }
+
+    Timer { interval: 350; running: true; repeat: false; onTriggered: {
+        // After reader finishes on absent device, brightnessOsdPending must be cleared!
+        if (DesktopControls.brightnessOsdPending) console.error("DESKTOP_ABSENT_OSD_FAIL: brightnessOsdPending stuck true on absent device");
+        else console.log("DESKTOP_ABSENT_OSD_PASS");
+
+        // 3. Writer failure handles error and clears pending OSD
+        DesktopControls.brightnessOsdPending = true;
+        DesktopControls.setBrightness(0.9);
+        DesktopControls.flushBrightness();
+    } }
+
+    Timer { interval: 650; running: true; repeat: false; onTriggered: {
+        if (lastError === "") console.error("DESKTOP_WRITE_FAIL_ERR_MISSING: errorOccurred not emitted on write failure");
+        else console.log("DESKTOP_WRITE_FAIL_PASS");
+        if (DesktopControls.brightnessOsdPending) console.error("DESKTOP_WRITE_FAIL_OSD_FAIL: brightnessOsdPending stuck true after writer failure");
+        else console.log("DESKTOP_WRITE_OSD_PASS");
+
+        Qt.quit();
+    } }
+}
+''')
+            env = dict(
+                os.environ,
+                QT_QPA_PLATFORM="offscreen",
+                QSG_RHI_BACKEND="software",
+                PATH=str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                RICE_BRIGHTNESS_ABSENT=str(isolated / "absent"),
+                RICE_BRIGHTNESS_FAIL_WRITE=str(isolated / "fail_write"),
+                RICE_BRIGHTNESS_LOG=str(isolated / "brightness.log"),
+            )
+            (isolated / "absent").touch()
+            (isolated / "fail_write").touch()
+            result = subprocess.run(
+                ["quickshell", "--path", str(shell_path), "--no-color"],
+                capture_output=True, text=True, timeout=8, env=env,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output[-1200:])
+            self.assertNotIn("DESKTOP_NONFINITE_FAIL", output, output[-1200:])
+            self.assertNotIn("DESKTOP_ABSENT_OSD_FAIL", output, output[-1200:])
+            self.assertNotIn("DESKTOP_WRITE_FAIL_ERR_MISSING", output, output[-1200:])
+            self.assertNotIn("DESKTOP_WRITE_FAIL_OSD_FAIL", output, output[-1200:])
+            self.assertIn("DESKTOP_NONFINITE_PASS", output, output[-1200:])
+            self.assertIn("DESKTOP_ABSENT_OSD_PASS", output, output[-1200:])
+            self.assertIn("DESKTOP_WRITE_FAIL_PASS", output, output[-1200:])
+            self.assertIn("DESKTOP_WRITE_OSD_PASS", output, output[-1200:])
 
 
 if __name__ == "__main__":

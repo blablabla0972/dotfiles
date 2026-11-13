@@ -2,6 +2,7 @@ pragma Singleton
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
 QtObject {
@@ -20,11 +21,29 @@ QtObject {
     signal errorOccurred(string message)
     signal brightnessRefreshed(real level, bool showOsd)
 
-    function recordNotification(summary: string, body: string, appName: string, appIcon: string): void {
-        notificationHistory = [{
+    function recordNotification(notificationId: int, summary: string, body: string,
+                                appName: string, appIcon: string, lastGeneration: bool): void {
+        var existingIndex = -1;
+        for (var i = 0; i < notificationHistory.length; i++) {
+            if (notificationHistory[i].id === notificationId) {
+                existingIndex = i;
+                break;
+            }
+        }
+        if (lastGeneration && existingIndex >= 0) return;
+
+        var entry = {
+            id: notificationId,
             summary: summary, body: body, appName: appName, appIcon: appIcon,
             time: Qt.formatTime(new Date(), "hh:mm")
-        }].concat(notificationHistory).slice(0, 50);
+        };
+        var history = notificationHistory.slice();
+        if (existingIndex >= 0) history.splice(existingIndex, 1);
+        notificationHistory = [entry].concat(history).slice(0, 50);
+    }
+
+    function restoreNotificationHistory(entries): void {
+        notificationHistory = Array.isArray(entries) ? entries.slice(0, 50) : [];
     }
 
     function clearNotificationHistory(): void { notificationHistory = []; }
@@ -40,6 +59,10 @@ QtObject {
     }
 
     function setBrightness(level: real): void {
+        if (!isFinite(level) || isNaN(level)) {
+            refreshBrightness(false);
+            return;
+        }
         var value = Math.max(0.05, Math.min(1, level));
         brightnessLevel = value;
         pendingBrightnessPercent = Math.round(value * 100);
@@ -62,6 +85,14 @@ QtObject {
     }
 
     property Process brightnessWriter: Process {
+        onExited: (code) => {
+            if (code !== 0) {
+                root.pendingBrightnessPercent = -1;
+                root.brightnessOsdPending = false;
+                root.errorOccurred("Failed to set brightness");
+                root.brightnessReader.running = true;
+            }
+        }
         onRunningChanged: {
             if (running) return;
             if (root.pendingBrightnessPercent >= 0) root.brightnessWriteTimer.restart();
@@ -77,10 +108,19 @@ QtObject {
         stdout: StdioCollector {
             onStreamFinished: {
                 var match = text.match(/(?:^|,)(\d+(?:\.\d+)?)%/);
-                if (!match || root.brightnessReadQueued) return;
+                if (!match) {
+                    root.brightnessOsdPending = false;
+                    return;
+                }
+                if (root.brightnessReadQueued) return;
                 var value = Math.max(0, Math.min(1, Number(match[1]) / 100));
                 root.brightnessLevel = value;
                 root.brightnessRefreshed(value, root.brightnessOsdPending);
+                root.brightnessOsdPending = false;
+            }
+        }
+        onExited: (code) => {
+            if (code !== 0) {
                 root.brightnessOsdPending = false;
             }
         }

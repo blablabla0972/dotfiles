@@ -9,8 +9,10 @@ QtObject {
     id: root
 
     readonly property PwNode sink: Pipewire.defaultAudioSink
-    readonly property real volume: sink && sink.audio ? sink.audio.volume : 0.0
-    readonly property bool muted: sink && sink.audio ? sink.audio.muted : false
+    readonly property bool available: sink !== null && sink.audio !== null
+    readonly property real volume: available && isFinite(sink.audio.volume)
+        ? Math.max(0, Math.min(1.5, sink.audio.volume)) : 0.0
+    readonly property bool muted: available ? sink.audio.muted : false
 
     // Track and bind PipeWire audio nodes so volume & mute properties are read/writeable
     property PwObjectTracker _tracker: PwObjectTracker {
@@ -22,16 +24,16 @@ QtObject {
     // Watch volume and mute changes reactively
     onVolumeChanged: {
         var icon = root.muted ? "󰝟" : (root.volume > 0.5 ? "󰕾" : (root.volume > 0.05 ? "󰖀" : "󰕿"));
-        root.osdRequested(icon, root.muted ? 0.0 : root.volume);
+        if (root.available) root.osdRequested(icon, root.muted ? 0.0 : root.volume);
     }
 
     onMutedChanged: {
         var icon = root.muted ? "󰝟" : (root.volume > 0.5 ? "󰕾" : "󰖀");
-        root.osdRequested(icon, root.muted ? 0.0 : root.volume);
+        if (root.available) root.osdRequested(icon, root.muted ? 0.0 : root.volume);
     }
 
     function setVolume(v: real): void {
-        if (root.sink && root.sink.audio) {
+        if (root.available && isFinite(v)) {
             root.sink.audio.volume = Math.max(0.0, Math.min(1.5, v));
         }
     }

@@ -21,8 +21,11 @@ PopupWindow {
     color: "transparent"
     visible: false
     grabFocus: true
-    implicitWidth: 244
-    implicitHeight: Math.min(menuList.implicitHeight + 16, 520)
+    implicitWidth: anchorWindow
+        ? Math.max(1, Math.min(244, anchorWindow.width - 16)) : 244
+    implicitHeight: anchorWindow
+        ? Math.max(1, Math.min(menuList.implicitHeight + 16, 520, anchorWindow.height - 16))
+        : Math.min(menuList.implicitHeight + 16, 520)
 
     onVisibleChanged: {
         if (!visible) {
@@ -36,7 +39,9 @@ PopupWindow {
         rect.x: root.anchorWindow
             ? Math.max(8, Math.min(root.clickX, root.anchorWindow.width - root.width - 8))
             : 8
-        rect.y: Math.max(8, root.clickY + 6)
+        rect.y: root.anchorWindow
+            ? Math.max(8, Math.min(root.clickY + 6, root.anchorWindow.height - root.height - 8))
+            : 8
         rect.width: 1
         rect.height: 1
     }
@@ -180,6 +185,8 @@ PopupWindow {
                                     width: 16
                                     height: 16
                                     source: menuRow.modelData.icon || ""
+                                    sourceSize.width: 32
+                                    sourceSize.height: 32
                                     visible: Boolean(menuRow.modelData.icon)
                                     fillMode: Image.PreserveAspectFit
                                 }
@@ -197,7 +204,9 @@ PopupWindow {
                             Text {
                                 text: menuRow.modelData.hasChildren
                                     ? "›"
-                                    : menuRow.modelData.checkState === Qt.Checked ? "✓" : ""
+                                    : menuRow.modelData.checkState === Qt.Checked ? "✓"
+                                    : menuRow.modelData.checkState === Qt.Unchecked ? "□"
+                                    : menuRow.modelData.checkState === Qt.PartiallyChecked ? "−" : ""
                                 color: Tokens.accent
                                 font.pixelSize: 17
                                 horizontalAlignment: Text.AlignRight

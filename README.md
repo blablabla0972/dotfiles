@@ -72,7 +72,7 @@ Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục w
 
 ## Hệ sinh thái và đường chạy mặc định
 
-`config/hypr/config/autostart.lua` ưu tiên chạy `quickshell -d -p ~/.config/quickshell/rice-shell` và khởi động `hypridle` với `hypridle.conf`. Noctalia chỉ là fallback khi không chạy được Quickshell; cấu hình và state Noctalia vẫn được giữ để khôi phục hệ cũ.
+`config/hypr/config/autostart.lua` gọi `config/hypr/scripts/start-rice-shell.sh`. Script kiểm tra đúng config `rice-shell`, chờ IPC `rice health` sẵn sàng rồi mới xác nhận khởi động; wallpaper switcher chạy riêng không chặn shell. Noctalia chỉ được khởi động khi Quickshell không còn instance rice nào. Rice bật notification mặc định; chạy preview với `ENABLE_NOTIFICATIONS=0` để không chiếm `org.freedesktop.Notifications`. Cấu hình và state Noctalia vẫn được giữ để khôi phục hệ cũ.
 
 ### Noctalia legacy / khôi phục
 

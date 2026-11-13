@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import "../theme"
 import "../services"
 
@@ -17,6 +18,7 @@ Rectangle {
     clip: true
 
     readonly property bool hasArtwork: Media.hasPlayer && Media.trackArtUrl.length > 0 && artImage.status === Image.Ready
+    readonly property real artworkScale: Math.min(3, Math.max(1, Screen.devicePixelRatio || 1))
 
     // MPRIS positions are fetched on demand; update only while this card is visible.
     Timer {
@@ -35,6 +37,8 @@ Rectangle {
         id: artImage
         anchors.fill: parent
         source: Media.trackArtUrl
+        sourceSize.width: Math.min(840, Math.ceil(root.width * root.artworkScale))
+        sourceSize.height: Math.min(660, Math.ceil(root.height * root.artworkScale))
         fillMode: Image.PreserveAspectCrop
         visible: Media.hasPlayer && Media.trackArtUrl.length > 0
         asynchronous: true
@@ -128,6 +132,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: Media.hasPlayer ? Media.trackTitle : "No Active Player"
+                textFormat: Text.PlainText
                 font.pixelSize: 15
                 font.bold: true
                 color: Tokens.text_primary
@@ -137,6 +142,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: Media.hasPlayer ? (Media.trackArtist || "Unknown Artist") : "Play media to control"
+                textFormat: Text.PlainText
                 font.pixelSize: 12
                 color: Tokens.text_secondary
                 elide: Text.ElideRight
@@ -145,6 +151,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: Media.hasPlayer ? Media.trackAlbum : ""
+                textFormat: Text.PlainText
                 font.pixelSize: 10
                 color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.7)
                 elide: Text.ElideRight
@@ -165,6 +172,7 @@ Rectangle {
                 height: 4
                 radius: 2
                 color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.85)
+                opacity: Media.activePlayer && Media.activePlayer.canSeek && Media.length > 0 ? 1 : 0.5
 
                 Rectangle {
                     height: parent.height
@@ -176,18 +184,32 @@ Rectangle {
                         NumberAnimation { duration: 300 }
                     }
                 }
+
+                MouseArea {
+                    id: playerSeekArea
+                    anchors.fill: parent
+                    anchors.topMargin: -7
+                    anchors.bottomMargin: -7
+                    enabled: Media.hasPlayer && Media.activePlayer !== null
+                        && Media.activePlayer.canSeek && Media.length > 0
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: (mouse) => Media.setPosition(
+                        Math.max(0, Math.min(1, mouse.x / parent.width)) * Media.length)
+                }
             }
 
             RowLayout {
                 Layout.fillWidth: true
                 Text {
                     text: Media.isPlaying ? "Playing" : "Paused"
+                    textFormat: Text.PlainText
                     font.pixelSize: 9
                     color: Tokens.text_secondary
                 }
                 Item { Layout.fillWidth: true }
                 Text {
                     text: Media.isPlaying ? "MPRIS" : "Ready"
+                    textFormat: Text.PlainText
                     font.pixelSize: 9
                     color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.7)
                 }
@@ -214,8 +236,9 @@ Rectangle {
                     font.pixelSize: 16
                     color: prevHover.hovered ? Tokens.accent : Tokens.text_primary
                 }
-                HoverHandler { id: prevHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Media.previous() }
+                opacity: Media.canPrev ? 1 : 0.45
+                HoverHandler { id: prevHover; enabled: Media.hasPlayer && Media.canPrev; cursorShape: Qt.PointingHandCursor }
+                TapHandler { enabled: Media.hasPlayer && Media.canPrev; onTapped: Media.previous() }
             }
 
             // Play / Pause
@@ -226,6 +249,7 @@ Rectangle {
                 color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, playHover.hovered ? 0.35 : 0.22)
                 border.color: Tokens.accent
                 border.width: 1.5
+                opacity: Media.canToggle ? 1 : 0.45
 
                 Text {
                     anchors.centerIn: parent
@@ -233,8 +257,8 @@ Rectangle {
                     font.pixelSize: 20
                     color: Tokens.accent
                 }
-                HoverHandler { id: playHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Media.togglePlaying() }
+                HoverHandler { id: playHover; enabled: Media.hasPlayer && Media.canToggle; cursorShape: Qt.PointingHandCursor }
+                TapHandler { enabled: Media.hasPlayer && Media.canToggle; onTapped: Media.togglePlaying() }
             }
 
             // Next
@@ -252,8 +276,9 @@ Rectangle {
                     font.pixelSize: 16
                     color: nextHover.hovered ? Tokens.accent : Tokens.text_primary
                 }
-                HoverHandler { id: nextHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Media.next() }
+                opacity: Media.canNext ? 1 : 0.45
+                HoverHandler { id: nextHover; enabled: Media.hasPlayer && Media.canNext; cursorShape: Qt.PointingHandCursor }
+                TapHandler { enabled: Media.hasPlayer && Media.canNext; onTapped: Media.next() }
             }
         }
     }

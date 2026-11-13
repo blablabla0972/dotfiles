@@ -31,12 +31,21 @@ class DashboardMotionTests(unittest.TestCase):
         for name in ('IslandShape.qml', 'IslandState.js'):
             shutil.copy2(SHELL / 'island' / name, base / 'island' / name)
         # Only hardware-backed bodies and palette loading are replaced.
-        for name in ('Home', 'System', 'Config', 'NotificationCenter', 'WifiDrawer', 'BluetoothDrawer'):
+        for name in ('System', 'Config', 'NotificationCenter', 'WifiDrawer', 'BluetoothDrawer'):
             body = ('import QtQuick\nItem { signal requestSideDrawer(string type); '
                     'signal closeRequested(); '
                     + ('TextInput { objectName: "wifiPassword"; text: "password" }'
                        if name == 'WifiDrawer' else '') + ' }\n')
             (base / f'dashboard/{name}.qml').write_text(body)
+        shutil.copy2(SHELL / 'dashboard/Home.qml', base / 'dashboard/Home.qml')
+        for name, width, height in (
+                ('ProfileCard', 200, 95), ('CalendarCard', 200, 210),
+                ('ClockCard', 280, 95), ('PlayerCard', 280, 220)):
+            (base / f'dashboard/{name}.qml').write_text(
+                f'import QtQuick\nRectangle {{ implicitWidth: {width}; implicitHeight: {height} }}\n')
+        (base / 'dashboard/QuickSettings.qml').write_text(
+            'import QtQuick\nRectangle { implicitWidth: 220; implicitHeight: 310; '
+            'signal requestSideDrawer(string type) }\n')
         (base / 'theme/qmldir').write_text('singleton Tokens 1.0 Tokens.qml\n')
         colors = ('surface', 'surface_high', 'outline', 'accent', 'on_accent',
                   'text_primary', 'text_secondary', 'danger')
@@ -79,12 +88,14 @@ QtObject {
 import QtQuick
 QtObject {
     property real volume: 0.5
+    property bool available: true
     property bool muted: false
     signal osdRequested(string icon, real progress)
 }
 ''')
         dashboard_source = (SHELL / 'dashboard/Dashboard.qml').read_text()
         dashboard_observations = '''
+    property bool dashboardActiveFocus: dashboardWindow.activeFocus
     property real contentWidth: cardContent.width
     property real contentHeight: cardContent.height
     property real contentY: cardContent.y
@@ -94,6 +105,12 @@ QtObject {
     property real drawerX: sideDrawerContainer.x
     property real morphX: morphContainer.x
     property bool homeLoaded: homeLoader.item !== null
+    property real homeContentHeight: homeLoader.item ? homeLoader.item.implicitHeight : 0
+    property int homeLayoutColumns: homeLoader.item ? homeLoader.item.layoutColumns : 0
+    property real tabContentHeight: tabScroll.contentHeight
+    property real tabViewportHeight: tabScroll.height
+    property real tabContentWidth: tabScroll.contentWidth
+    property bool tabScrollInteractive: tabScroll.interactive
     property real tabOpacity: tabStage.opacity
     property real tabOffset: dashboardWindow.tabEntranceOffset
     property bool tabInputEnabled: tabStage.enabled
@@ -115,6 +132,10 @@ QtObject {
         source = re.sub(r'    mask: Region \{.*?\n    \}\n', '', source, count=1, flags=re.S)
         observations = '''
     width: 1920; height: 1080
+    property var targetScreen: QtObject {
+        property int width: islandWindow.width
+        property int height: islandWindow.height
+    }
     property real contentWidth: dashboard.contentWidth
     property real contentHeight: dashboard.contentHeight
     property real contentY: dashboard.contentY
@@ -127,10 +148,19 @@ QtObject {
     property bool viewportClips: dashboard.viewportClips
     property real drawerWidth: dashboard.drawerWidth
     property real drawerX: dashboard.drawerX
+    property real dashboardCardWidth: dashboard.cardDimensions.width
+    property real dashboardCardHeight: dashboard.cardDimensions.height
+    property bool drawerOverlay: dashboard.drawerOverlay
     property real morphX: dashboard.morphX
     property bool wifiLoaded: dashboard.wifiLoaded
     property bool bluetoothLoaded: dashboard.bluetoothLoaded
     property bool homeLoaded: dashboard.homeLoaded
+    property real homeContentHeight: dashboard.homeContentHeight
+    property int homeLayoutColumns: dashboard.homeLayoutColumns
+    property real tabContentHeight: dashboard.tabContentHeight
+    property real tabViewportHeight: dashboard.tabViewportHeight
+    property real tabContentWidth: dashboard.tabContentWidth
+    property bool tabScrollInteractive: dashboard.tabScrollInteractive
     property real tabOpacity: dashboard.tabOpacity
     property real tabOffset: dashboard.tabOffset
     property bool tabInputEnabled: dashboard.tabInputEnabled
@@ -138,6 +168,7 @@ QtObject {
     property string tabName: dashboard.currentTab
     property bool dashboardVisible: dashboard.visible
     property bool expanded: dashboard.expanded
+    property bool dashboardActiveFocus: dashboard.activeFocus
     property bool sideDrawerOpen: dashboard.sideDrawerOpen
     property bool scrimInteractive: islandWindow.modalOpen
     property string alertType: activeAlert ? activeAlert.type : ""
@@ -149,10 +180,17 @@ QtObject {
     property bool alertTimerRunning: dismissTimer.running
     property int alertTimeout: dismissTimer.interval
     property int positionTickCount: Media.activePlayer.tickCount
+    property real osdValue: osdProgress
+    property real osdFillValue: osdFill
+    property string osdType: osdKind
     function toggle(tab) { toggleDashboard(tab); }
     function dismiss() { dismissDashboard(); }
     function notify(summary) { triggerNotification(summary, "Body", "Test", ""); }
     function osd() { triggerOsd("vol", 0.5); }
+    function osdVolume125() { triggerOsd("vol", 1.25); }
+    function osdVolume150() { triggerOsd("vol", 1.5); }
+    function osdBrightnessOverflow() { triggerOsd("brightness", 1.25, "brightness"); }
+    function osdInvalid() { triggerOsd("vol", NaN); }
     function pin() { isPinned = true; }
     function unpin() { collapse(); }
     function simulateMedia() {
@@ -176,6 +214,7 @@ QtObject {
         cpp = r'''
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QQmlError>
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QTest>
@@ -186,6 +225,11 @@ QtObject {
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
     QQmlApplicationEngine engine;
+    QObject::connect(&engine, &QQmlApplicationEngine::warnings,
+                     [](const QList<QQmlError> &warnings) {
+        for (const auto &warning : warnings)
+            fprintf(stderr, "%s\n", qPrintable(warning.toString()));
+    });
     engine.load(QUrl::fromLocalFile(argv[1]));
     if (engine.rootObjects().isEmpty()) return 2;
     auto w = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
@@ -194,17 +238,23 @@ int main(int argc, char **argv) {
         QJsonObject row;
         for (auto key : {"contentWidth", "contentHeight", "contentY", "contentOpacity",
                          "panelWidth", "panelHeight", "panelY", "drawerWidth", "drawerX", "morphX", "widthDuration", "heightDuration",
-                         "tabOpacity", "tabOffset"})
+                         "tabOpacity", "tabOffset", "dashboardCardWidth", "dashboardCardHeight",
+                         "homeContentHeight", "homeLayoutColumns", "tabContentHeight",
+                         "tabViewportHeight", "tabContentWidth"})
             row[key] = w->property(key).toDouble();
         for (auto key : {"dashboardVisible", "expanded", "viewportClips", "sideDrawerOpen",
-                         "scrimInteractive", "pinned", "hoverActive", "hoverPointer",
+                         "dashboardActiveFocus", "scrimInteractive", "pinned", "hoverActive", "hoverPointer",
                          "wifiLoaded", "bluetoothLoaded", "homeLoaded",
-                         "alertTimerRunning", "tabInputEnabled", "drawerHitTest"})
+                         "alertTimerRunning", "tabInputEnabled", "drawerHitTest", "drawerOverlay",
+                         "tabScrollInteractive"})
             row[key] = w->property(key).toBool();
         for (auto key : {"alertType", "alertSummary", "mode", "tabName"})
             row[key] = w->property(key).toString();
         row["alertTimeout"] = w->property("alertTimeout").toInt();
         row["positionTickCount"] = w->property("positionTickCount").toInt();
+        row["osdValue"] = w->property("osdValue").toDouble();
+        row["osdFillValue"] = w->property("osdFillValue").toDouble();
+        row["osdType"] = w->property("osdType").toString();
         results[name] = row;
     };
     auto toggle = [&]() {
@@ -229,11 +279,24 @@ int main(int argc, char **argv) {
     QTest::qWait(210); snapshot("bluetoothDrawerOpened");
     QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("wifi")));
     QTest::qWait(210); snapshot("wifiDrawerRestored");
-    w->setWidth(1024); QTest::qWait(200); snapshot("drawerNarrowViewport");
-    w->setWidth(1920); QTest::qWait(200);
+    w->setWidth(1280); QTest::qWait(360); snapshot("drawer1280Viewport");
+    w->setWidth(1080); QTest::qWait(360); snapshot("drawer1080Viewport");
+    w->setWidth(960); QTest::qWait(360); snapshot("drawer960Viewport");
+    w->setWidth(768); QTest::qWait(360); snapshot("drawer768Viewport");
+    w->setWidth(640); QTest::qWait(360); snapshot("drawer640Viewport");
+    w->setHeight(360); QTest::qWait(360); snapshot("drawer640x360Viewport");
+    w->setWidth(1920); w->setHeight(1080); QTest::qWait(360);
     QMetaObject::invokeMethod(w, "toggle", Q_ARG(QVariant, QVariant("System")));
     QTest::qWait(30); snapshot("systemTabEntering");
     QTest::qWait(240); snapshot("systemTabSettled");
+    QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("unknown")));
+    QTest::qWait(30); snapshot("unknownDrawerIgnored");
+    QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("wifi")));
+    QTest::qWait(240); snapshot("systemDrawerRoutesHome");
+    QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("wifi")));
+    QTest::qWait(210);
+    QMetaObject::invokeMethod(w, "toggle", Q_ARG(QVariant, QVariant("System")));
+    QTest::qWait(240);
     QMetaObject::invokeMethod(w, "toggle", Q_ARG(QVariant, QVariant("Home")));
     QTest::qWait(240); snapshot("homeTabRestored");
     QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("wifi")));
@@ -255,6 +318,10 @@ int main(int argc, char **argv) {
     toggle(); QTest::qWait(400); snapshot("mediaDashboard");
     dismiss(); QTest::qWait(400); snapshot("mediaReturn");
     QMetaObject::invokeMethod(w, "osd"); snapshot("osdFromMedia");
+    QMetaObject::invokeMethod(w, "osdVolume125"); snapshot("osdVolume125");
+    QMetaObject::invokeMethod(w, "osdVolume150"); snapshot("osdVolume150");
+    QMetaObject::invokeMethod(w, "osdBrightnessOverflow"); snapshot("osdBrightnessOverflow");
+    QMetaObject::invokeMethod(w, "osdInvalid"); snapshot("osdInvalid");
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Before dashboard")));
     snapshot("notificationReplacesOsd");
     QMetaObject::invokeMethod(w, "osd"); snapshot("notificationWinsOverOsd");
@@ -337,7 +404,7 @@ int main(int argc, char **argv) {
         result = subprocess.run([str(base / 'check'), str(base / 'island/main.qml')],
                                 env=environment(base), capture_output=True, text=True, timeout=40)
         if result.returncode:
-            raise AssertionError(f'Qt harness exit {result.returncode}: {result.stderr}')
+            raise AssertionError(f'Qt harness exit {result.returncode}: {result.stdout}{result.stderr}')
         cls.rows = json.loads(result.stdout)
         cls.stderr = result.stderr
         # Optional artifact for reviewing the observed geometry, not a test dependency.
@@ -403,6 +470,18 @@ int main(int argc, char **argv) {
         self.assertEqual(row['drawerWidth'], 300)
         self.assertEqual((row['contentWidth'], row['contentHeight']), (760, 440))
 
+    def test_unknown_drawer_is_ignored_and_non_home_drawer_returns_home(self):
+        unknown = self.rows['unknownDrawerIgnored']
+        self.assertEqual(unknown['tabName'], 'System')
+        self.assertFalse(unknown['sideDrawerOpen'], unknown)
+        routed = self.rows['systemDrawerRoutesHome']
+        self.assertEqual(routed['tabName'], 'Home')
+        self.assertTrue(routed['sideDrawerOpen'], routed)
+
+    def test_dashboard_takes_focus_on_open_and_releases_it_on_close(self):
+        self.assertTrue(self.rows['opened']['dashboardActiveFocus'], self.rows['opened'])
+        self.assertFalse(self.rows['closing45']['dashboardActiveFocus'], self.rows['closing45'])
+
     def test_tab_switch_enters_smoothly_and_restores_interaction(self):
         entering = self.rows['systemTabEntering']
         settled = self.rows['systemTabSettled']
@@ -457,12 +536,36 @@ int main(int argc, char **argv) {
         self.assertEqual(self.rows['unpinnedMediaNoTicks']['positionTickCount'],
                          self.rows['hoverDismissedInPlace']['positionTickCount'])
 
-    def test_drawer_remains_on_screen_at_1024px(self):
-        row = self.rows['drawerNarrowViewport']
+    def test_drawer_uses_overlay_at_1080px(self):
+        row = self.rows['drawer1080Viewport']
         self.assertEqual(row['contentWidth'], 760)
-        self.assertGreaterEqual(row['morphX'], -1)
+        self.assertTrue(row['drawerOverlay'])
+        self.assertEqual(row['drawerWidth'], row['dashboardCardWidth'])
         self.assertGreaterEqual(row['drawerX'], 0)
-        self.assertLessEqual(row['drawerX'] + row['drawerWidth'], 1024)
+        self.assertLessEqual(row['drawerX'] + row['drawerWidth'], 1080)
+
+    def test_responsive_dashboard_geometry_at_narrow_viewports(self):
+        for name, screen_width, width, height, overlay in (
+                ('drawer1280Viewport', 1280, 760, 440, False),
+                ('drawer960Viewport', 960, 760, 440, True),
+                ('drawer768Viewport', 768, 730, 440, True),
+                ('drawer640Viewport', 640, 602, 440, True),
+                ('drawer640x360Viewport', 640, 602, 344, True)):
+            row = self.rows[name]
+            self.assertEqual((row['dashboardCardWidth'], row['dashboardCardHeight']), (width, height), row)
+            self.assertEqual(row['drawerOverlay'], overlay, row)
+            self.assertGreaterEqual(row['drawerX'], 0, row)
+            self.assertLessEqual(row['drawerX'] + row['drawerWidth'], screen_width, row)
+
+        normal = self.rows['drawer1280Viewport']
+        self.assertEqual(normal['homeLayoutColumns'], 3, normal)
+        self.assertEqual(normal['homeContentHeight'], 370, normal)
+        narrow = self.rows['drawer768Viewport']
+        self.assertEqual(narrow['homeLayoutColumns'], 2, narrow)
+        self.assertEqual(narrow['homeContentHeight'], 650, narrow)
+        self.assertLessEqual(narrow['tabContentWidth'], narrow['contentWidth'], narrow)
+        self.assertGreater(narrow['tabContentHeight'], narrow['tabViewportHeight'], narrow)
+        self.assertTrue(narrow['tabScrollInteractive'], narrow)
 
     def test_home_content_unloads_when_dashboard_closes(self):
         self.assertTrue(self.rows['opening45']['homeLoaded'])
@@ -483,6 +586,19 @@ int main(int argc, char **argv) {
         self.assertTrue(self.rows['drawerEscape']['wifiLoaded'])
         self.assertFalse(self.rows['dashboardEscape']['sideDrawerOpen'])
         self.assertFalse(self.rows['drawerUnloadedAfterClose']['wifiLoaded'])
+
+    def test_osd_amplification_retains_value_but_clamps_visual_fill(self):
+        amplified = self.rows['osdVolume125']
+        self.assertEqual(amplified['osdType'], 'volume')
+        self.assertEqual(amplified['osdValue'], 1.25)
+        self.assertEqual(amplified['osdFillValue'], 1)
+        self.assertEqual(self.rows['osdVolume150']['osdValue'], 1.5)
+        self.assertEqual(self.rows['osdVolume150']['osdFillValue'], 1)
+        self.assertEqual(self.rows['osdBrightnessOverflow']['osdType'], 'brightness')
+        self.assertEqual(self.rows['osdBrightnessOverflow']['osdValue'], 1)
+        self.assertEqual(self.rows['osdBrightnessOverflow']['osdFillValue'], 1)
+        self.assertEqual(self.rows['osdInvalid']['osdValue'], 0)
+        self.assertEqual(self.rows['osdInvalid']['osdFillValue'], 0)
 
     def test_transient_priority_and_lifetimes(self):
         self.assertEqual(self.rows['osdFromMedia']['alertType'], 'volume')

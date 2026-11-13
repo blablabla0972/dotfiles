@@ -23,8 +23,8 @@ Row {
             id: trayItemDelegate
             required property SystemTrayItem modelData
 
-            width: 20
-            height: 20
+            width: 24
+            height: 24
 
             Rectangle {
                 anchors.fill: parent
@@ -39,9 +39,11 @@ Row {
             Image {
                 id: trayIcon
                 anchors.centerIn: parent
-                width: 16
-                height: 16
+                width: 18
+                height: 18
                 source: trayItemDelegate.modelData.icon || ""
+                sourceSize.width: 36
+                sourceSize.height: 36
                 asynchronous: true
                 fillMode: Image.PreserveAspectFit
             }
@@ -52,12 +54,14 @@ Row {
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                 onTapped: (eventPoint, button) => {
                     if (button === Qt.LeftButton) {
-                        if (trayItemDelegate.modelData.onlyMenu && trayItemDelegate.modelData.hasMenu) {
-                            trayContextMenu.openMenu(
-                                trayItemDelegate.modelData.menu,
-                                Math.round(eventPoint.scenePosition.x),
-                                Math.round(eventPoint.scenePosition.y)
-                            );
+                        if (trayItemDelegate.modelData.onlyMenu) {
+                            if (trayItemDelegate.modelData.hasMenu) {
+                                trayContextMenu.openMenu(
+                                    trayItemDelegate.modelData.menu,
+                                    Math.round(eventPoint.scenePosition.x),
+                                    Math.round(eventPoint.scenePosition.y)
+                                );
+                            }
                         } else {
                             trayItemDelegate.modelData.activate();
                         }

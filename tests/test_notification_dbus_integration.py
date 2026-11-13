@@ -5,6 +5,7 @@ logs to observe real Notification objects. No user session bus or shell is used.
 """
 
 import os
+import json
 from pathlib import Path
 import queue
 import re
@@ -19,6 +20,7 @@ import unittest
 
 SOURCE = Path(__file__).resolve().parents[1] / "config/quickshell/rice-shell/overlays/Notifications.qml"
 SHELL_SOURCE = SOURCE.parent.parent / "shell.qml"
+DESKTOP_CONTROLS = SOURCE.parent.parent / "services/DesktopControls.qml"
 REQUIRED_TOOLS = ("dbus-run-session", "quickshell", "gdbus")
 
 
@@ -46,13 +48,18 @@ def _make_config(directory):
                     }""",
         1,
     )
+    record_call = '''DesktopControls.recordNotification(notif.id, DesktopControls.lastSummary,
+            DesktopControls.lastBody, notif.appName || "", notif.appIcon || "", notif.lastGeneration);'''
+    if source.count(record_call) != 1:
+        raise AssertionError("Notification history call changed; update D-Bus probe")
+    source = source.replace(
+        record_call,
+        record_call + '\n            console.log("DBUS_PROBE_HISTORY", JSON.stringify(DesktopControls.notificationHistory));',
+        1,
+    )
     (directory / "overlays/Notifications.qml").write_text(source)
     (directory / "services/qmldir").write_text("singleton DesktopControls 1.0 DesktopControls.qml\n")
-    (directory / "services/DesktopControls.qml").write_text(
-        'pragma Singleton\nimport QtQuick\nQtObject { property string lastSummary: ""; '
-        'property string lastBody: ""; property bool doNotDisturb: false; '
-        'function recordNotification(summary, body, appName, appIcon) {} }\n'
-    )
+    shutil.copyfile(DESKTOP_CONTROLS, directory / "services/DesktopControls.qml")
     (directory / "theme/Stub.qml").write_text("import QtQuick\nQtObject {}\n")
     shell_source = SHELL_SOURCE.read_text()
     ipc_start = shell_source.index("        function islandNotification(")
@@ -69,9 +76,24 @@ def _make_config(directory):
         """import QtQuick
 import Quickshell
 import Quickshell.Io
+import "./services"
 
 ShellRoot {
     id: root
+    reloadableId: "riceShellRoot"
+    PersistentProperties {
+        id: retainedNotificationHistory
+        reloadableId: "riceNotificationHistory"
+        property string entriesJson: "[]"
+    }
+    Connections {
+        target: retainedNotificationHistory
+        function onReloaded() { DesktopControls.restoreNotificationHistory(JSON.parse(retainedNotificationHistory.entriesJson)); }
+    }
+    Connections {
+        target: DesktopControls
+        function onNotificationHistoryChanged() { retainedNotificationHistory.entriesJson = JSON.stringify(DesktopControls.notificationHistory); }
+    }
     property var islandInstances: [mockIsland]
     function instanceOnScreen(instances: var, requestedScreen: var): var { return instances.length ? instances[0] : null; }
     Item {
@@ -85,9 +107,12 @@ ShellRoot {
         id: riceIpc
         target: "notification_regression"
         function reloadShell(): void { Quickshell.reload(false); }
+        function setDnd(enabled: bool): void { DesktopControls.doNotDisturb = enabled; }
 """ + island_dispatch + "\n    }\n\n" + notification_loader + "\n" + """
 
-    Component.onCompleted: console.log("DBUS_PROBE_READY")
+    Component.onCompleted: {
+        console.log("DBUS_PROBE_READY");
+    }
 }
 """
     )
@@ -139,17 +164,25 @@ def _call(env, *args):
     return result.stdout.strip()
 
 
-def _notify(env, summary, timeout_ms):
+def _notify(env, summary, timeout_ms, replaces_id=0, body="body"):
     output = _call(
         env, "gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
         "--object-path", "/org/freedesktop/Notifications", "--method",
-        "org.freedesktop.Notifications.Notify", "RegressionTest", "0", "", summary,
-        "body", "[]", "{}", f"int32 {timeout_ms}",
+        "org.freedesktop.Notifications.Notify", "RegressionTest", str(replaces_id), "", summary,
+        body, "[]", "{}", f"int32 {timeout_ms}",
     )
     match = re.fullmatch(r"\(uint32 (\d+),\)", output)
     if not match:
         raise AssertionError(f"Unexpected D-Bus Notify reply: {output}")
     return int(match.group(1))
+
+
+def _history(lines):
+    for line in reversed(lines):
+        match = re.search(r"DBUS_PROBE_HISTORY (\[.*\])$", line)
+        if match:
+            return json.loads(match.group(1))
+    return []
 
 
 def _integration_child():
@@ -165,6 +198,7 @@ def _integration_child():
         env.update(
             QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
             QSG_RHI_BACKEND="software", NO_AT_BRIDGE="1",
+            QS_NO_RELOAD_POPUP="1",
             XDG_RUNTIME_DIR=str(directory / "runtime"),
             XDG_CONFIG_HOME=str(directory / "config"),
             XDG_CACHE_HOME=str(directory / "cache"),
@@ -250,9 +284,63 @@ def _integration_child():
                 3, "manual close of a non-expiring notification", shell, monitor,
             )
 
+            replacement_id = _notify(env, "replacement-before", 8000, body="<b>before</b>")
+            capture.until(
+                lambda lines: any(item.get("summary") == "replacement-before" for item in _history(lines)),
+                3, "notification enters retained history", shell,
+            )
+            returned_id = _notify(env, "replacement-after", 8000, replaces_id=replacement_id,
+                                  body="<b>after</b>\nsecond line")
+            if returned_id != replacement_id:
+                raise AssertionError("D-Bus replacement must retain the notification ID")
+            capture.until(
+                lambda lines: any(item.get("summary") == "replacement-after" for item in _history(lines)),
+                3, "replacement updates retained history", shell,
+            )
+            replacement_history = [item for item in _history(capture.lines)
+                                   if item.get("id") == replacement_id]
+            if len(replacement_history) != 1 or replacement_history[0].get("summary") != "replacement-after":
+                raise AssertionError("Same-ID replacement must update one history item, not append a duplicate")
+
+            identical_ids = [
+                _notify(env, "identical-text", 8000),
+                _notify(env, "identical-text", 8000),
+            ]
+            capture.until(
+                lambda lines: sum(item.get("summary") == "identical-text" for item in _history(lines)) == 2,
+                3, "same-text independent notifications enter history separately", shell,
+            )
+            identical_history = [item for item in _history(capture.lines)
+                                 if item.get("summary") == "identical-text"]
+            if len({item.get("id") for item in identical_history}) != 2 or set(
+                    item.get("id") for item in identical_history) != set(identical_ids):
+                raise AssertionError("Distinct notifications with identical text must keep separate IDs")
+
+            timer_id = _notify(env, "timer-before", 1200)
+            capture.until(
+                lambda lines: any(item.get("summary") == "timer-before" for item in _history(lines)),
+                3, "notification timer probe starts", shell,
+            )
+            time.sleep(0.35)
+            _notify(env, "timer-after", 1800, replaces_id=timer_id)
+            capture.until(
+                lambda lines: any(item.get("summary") == "timer-after" for item in _history(lines)),
+                3, "replacement refreshes notification data", shell,
+            )
+            capture.drain(1.1)
+            if any("NotificationClosed" in line and f"uint32 {timer_id}," in line
+                   for line in capture.lines):
+                raise AssertionError("Replacement did not restart the updated expiration timer")
+            capture.until(
+                lambda lines: any("NotificationClosed" in line and
+                                  f"uint32 {timer_id}, uint32 1" in line for line in lines),
+                1.2, "replacement timeout expires from update time", shell, monitor,
+            )
+
             reload_id = _notify(env, "reload-probe", 8000)
             capture.until(lambda lines: any("DBUS_PROBE_TRACKED reload-probe true" in line for line in lines),
                           3, "notification tracked before reload", shell)
+            history_before_reload = _history(capture.lines)
             _call(env, "quickshell", "--path", str(shell_path), "ipc", "--pid", str(shell.pid),
                   "call", "notification_regression", "reloadShell")
             capture.until(lambda lines: sum("DBUS_PROBE_READY" in line for line in lines) >= 2,
@@ -267,6 +355,16 @@ def _integration_child():
             if any("NotificationClosed" in line and f"uint32 {reload_id}," in line
                    for line in capture.lines):
                 raise AssertionError("Reload unexpectedly closed an active notification:\n" + capture.tail())
+            capture.until(
+                lambda lines: any(item.get("id") == reload_id for item in _history(lines)),
+                3, "reload retains notification history", shell,
+            )
+            history_after_reload = _history(capture.lines)
+            retained_ids = {item.get("id") for item in history_before_reload}
+            if not retained_ids.issubset({item.get("id") for item in history_after_reload}):
+                raise AssertionError("Shell reload lost previously retained notification history")
+            if sum(item.get("id") == reload_id for item in history_after_reload) != 1:
+                raise AssertionError("Reload re-emission duplicated notification history")
 
             _notify(env, "post-reload-probe", 3000)
             capture.until(lambda lines: any("DBUS_PROBE_TRACKED post-reload-probe true" in line for line in lines),
@@ -277,6 +375,16 @@ def _integration_child():
                 raise AssertionError("Old notification popup replayed after reload:\n" + capture.tail())
             if sum("DBUS_PROBE_FORWARD post-reload-probe" in line for line in capture.lines) != 1:
                 raise AssertionError("Notification forwarded more than once through island IPC:\n" + capture.tail())
+
+            _call(env, "quickshell", "--path", str(shell_path), "ipc", "--pid", str(shell.pid),
+                  "call", "notification_regression", "setDnd", "true")
+            dnd_id = _notify(env, "dnd-history-probe", 3000)
+            capture.until(
+                lambda lines: any(item.get("id") == dnd_id for item in _history(lines)),
+                3, "DND notification remains in history", shell,
+            )
+            if any("DBUS_PROBE_FORWARD dnd-history-probe" in line for line in capture.lines):
+                raise AssertionError("DND notification was forwarded to the Island")
         except Exception as error:
             print(f"INTEGRATION_ERROR: {error}; trace:\n{capture.tail()}", file=sys.stderr)
             return 1

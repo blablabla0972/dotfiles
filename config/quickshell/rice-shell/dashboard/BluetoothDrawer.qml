@@ -111,14 +111,34 @@ Rectangle {
         if (!agentProcess.running) agentProcess.running = true;
     }
 
+    function isValidMac(mac): bool {
+        return typeof mac === "string" && /^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$/.test(mac.trim());
+    }
+
+    function isEventForActiveDevice(match, output): bool {
+        if (!root.activeDeviceMac) return true;
+        var lineStart = output.lastIndexOf("\n", match.index);
+        var lineEnd = output.indexOf("\n", match.index + match[0].length);
+        var line = output.slice(lineStart === -1 ? 0 : lineStart + 1, lineEnd === -1 ? output.length : lineEnd);
+        var devMatch = line.match(/Device\s+([0-9A-Fa-f:]{17})/i);
+        if (devMatch) {
+            return devMatch[1].toUpperCase() === root.activeDeviceMac.toUpperCase();
+        }
+        return true;
+    }
+
     function beginDeviceAction(): void {
         if (!root.isConnecting || !root.agentReady) return;
+        if (!root.isValidMac(root.activeDeviceMac)) {
+            root.finishDeviceAction("Invalid device address");
+            return;
+        }
         if (root.disconnecting) {
             root.actionStage = "disconnect";
             agentProcess.write("disconnect " + root.activeDeviceMac + "\n");
         } else if (root.activeDevicePaired) {
             root.actionStage = "connect";
-            agentProcess.write("trust " + root.activeDeviceMac + "\nconnect " + root.activeDeviceMac + "\n");
+            agentProcess.write("connect " + root.activeDeviceMac + "\n");
         } else {
             root.actionStage = "pair";
             agentProcess.write("pair " + root.activeDeviceMac + "\n");
@@ -164,7 +184,7 @@ Rectangle {
         }
 
         var passkey = root.freshMatch(/Confirm passkey\s+(\d{6})/i, output, previousLength);
-        if (passkey) {
+        if (passkey && root.isEventForActiveDevice(passkey, output)) {
             root.pairingPromptType = "confirm";
             root.pairingPromptText = "Confirm that " + passkey[1] + " appears on both devices.";
         } else if (root.freshMatch(/Accept pairing\s*\(yes\/no\):/i, output, previousLength)) {
@@ -181,7 +201,8 @@ Rectangle {
             root.pairingPromptText = "Enter the passkey requested by " + root.activeDeviceName + ".";
         }
 
-        if (root.actionStage === "pair" && root.freshMatch(/Pairing successful|Paired:\s*yes/i, output, previousLength)) {
+        var pairMatch = root.freshMatch(/Pairing successful|Paired:\s*yes/i, output, previousLength);
+        if (root.actionStage === "pair" && pairMatch && root.isEventForActiveDevice(pairMatch, output)) {
             root.pairingPromptType = "";
             root.actionStage = "connect";
             agentProcess.write("trust " + root.activeDeviceMac + "\nconnect " + root.activeDeviceMac + "\n");
@@ -190,13 +211,18 @@ Rectangle {
             root.actionStage = "verify-connect";
             agentProcess.write("info " + root.activeDeviceMac + "\n");
         }
-        if ((root.actionStage === "connect" || root.actionStage === "verify-connect") && root.freshMatch(/Connected:\s*yes/i, output, previousLength)) {
+        var connMatch = root.freshMatch(/Connected:\s*yes/i, output, previousLength);
+        if ((root.actionStage === "connect" || root.actionStage === "verify-connect") && connMatch && root.isEventForActiveDevice(connMatch, output)) {
             root.finishDeviceAction("Connected to " + root.activeDeviceName);
-        } else if (root.actionStage === "disconnect" && root.freshMatch(/Successful disconnected/i, output, previousLength)) {
+        } else if (root.actionStage === "disconnect") {
+            var disconnectMatch = root.freshMatch(/Successful disconnected/i, output, previousLength);
+            if (disconnectMatch && root.isEventForActiveDevice(disconnectMatch, output)) {
             root.actionStage = "verify-disconnect";
             agentProcess.write("info " + root.activeDeviceMac + "\n");
+            }
         }
-        if ((root.actionStage === "disconnect" || root.actionStage === "verify-disconnect") && root.freshMatch(/Connected:\s*no/i, output, previousLength)) {
+        var discMatch = root.freshMatch(/Connected:\s*no/i, output, previousLength);
+        if ((root.actionStage === "disconnect" || root.actionStage === "verify-disconnect") && discMatch && root.isEventForActiveDevice(discMatch, output)) {
             root.finishDeviceAction("Disconnected from " + root.activeDeviceName);
         } else if (root.actionStage !== "" && root.freshMatch(/No agent available|Failed to pair|AuthenticationFailed|AuthenticationRejected|No route to host|page.?timeout|timed out|not available|NotReady/i, output, previousLength)) {
             if (/No route|page.?timeout|timed out|not available|NotReady/i.test(output)) {
@@ -212,8 +238,27 @@ Rectangle {
     function answerPairing(accept): void {
         if (root.pairingPromptType === "pin" || root.pairingPromptType === "passkey") {
             if (accept && root.pairingInputText.length === 0) return;
-            if (accept) agentProcess.write(root.pairingInputText + "\n");
-            else agentProcess.running = false;
+            if (accept) {
+                var input = root.pairingInputText.trim();
+                if (/[\r\n\x00-\x1f\x7f]/.test(input)) {
+                    root.actionMessage = "Invalid characters in input";
+                    return;
+                }
+                if (root.pairingPromptType === "passkey") {
+                    if (!/^\d{6}$/.test(input)) {
+                        root.actionMessage = "Passkey must be exactly 6 digits";
+                        return;
+                    }
+                } else if (root.pairingPromptType === "pin") {
+                    if (!/^[a-zA-Z0-9]{1,16}$/.test(input)) {
+                        root.actionMessage = "PIN must be 1-16 alphanumeric characters";
+                        return;
+                    }
+                }
+                agentProcess.write(input + "\n");
+            } else {
+                agentProcess.running = false;
+            }
         } else {
             agentProcess.write(accept ? "yes\n" : "no\n");
         }
@@ -236,7 +281,7 @@ Rectangle {
 
     Process {
         id: agentProcess
-        command: ["bash", "-c", "exec 2>&1; exec bluetoothctl --agent KeyboardDisplay"]
+        command: ["bash", "-c", "exec 2>&1; LC_ALL=C exec bluetoothctl --agent KeyboardDisplay"]
         running: false
         stdinEnabled: true
         onRunningChanged: {
@@ -257,6 +302,13 @@ Rectangle {
         }
     }
 
+    Component.onDestruction: {
+        stopScan();
+        finishDeviceAction("");
+        agentReady = false;
+        agentProcess.running = false;
+    }
+
     Timer {
         id: actionTimeout
         interval: 45000
@@ -270,9 +322,13 @@ Rectangle {
 
     function connectDevice(dev): void {
         if (root.isConnecting) return;
+        if (!dev || !root.isValidMac(dev.mac)) {
+            root.finishDeviceAction("Invalid Bluetooth device address");
+            return;
+        }
         root.isConnecting = true;
         root.actionMessage = dev.connected ? "Disconnecting from " + dev.name + "..." : (dev.paired ? "Connecting to " : "Pairing with ") + dev.name + "...";
-        root.activeDeviceMac = dev.mac;
+        root.activeDeviceMac = dev.mac.trim();
         root.activeDeviceName = dev.name;
         root.activeDevicePaired = dev.paired;
         root.disconnecting = dev.connected;

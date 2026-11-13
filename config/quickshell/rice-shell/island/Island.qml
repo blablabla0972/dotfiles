@@ -85,6 +85,8 @@ PanelWindow {
     property bool hoverPreview: false
     property bool isPinned: false
     readonly property bool dashboardShowing: dashboard.expanded || dashboard.closing
+    readonly property bool dashboardExpanded: dashboard.expanded
+    readonly property string dashboardCurrentTab: dashboard.currentTab
     // Release fullscreen input when Dashboard starts closing; keep its geometry until the morph ends.
     readonly property bool modalOpen: isPinned || dashboard.expanded
     property string dashboardOriginMode: IslandState.State.IDLE
@@ -101,8 +103,11 @@ PanelWindow {
     function dismissDashboard(): void { dashboard.dismiss(); }
 
     function toggleSideDrawer(type: string): void {
-        if (!dashboard.expanded) toggleDashboard("Home");
-        dashboard.toggleSideDrawer(type);
+        var drawer = IslandState.normalizeSideDrawer(type);
+        if (!drawer) return;
+        if (!dashboard.expanded || dashboard.currentTab !== "Home")
+            toggleDashboard("Home");
+        dashboard.toggleSideDrawer(drawer);
     }
 
     function finishDashboardClose(): void {
@@ -117,11 +122,16 @@ PanelWindow {
     readonly property string mediaTitle: Media.trackTitle
 
     // OSD parameters
-    property real osdProgress: Audio.volume
+    property real osdProgress: IslandState.normalizeOsdProgress(Audio.volume, "volume")
+    property string osdKind: "volume"
+    readonly property real osdFill: IslandState.osdFill(osdProgress)
     property string osdIcon: Audio.muted ? "󰝟" : "󰕾"
 
     // Synchronize dimensions based on active mode
-    readonly property var currentDims: IslandState.targetDimensions(activeMode, activeAlert)
+    readonly property var dashboardDimensions: IslandState.dashboardGeometry(
+        targetScreen.width, targetScreen.height, 7)
+    readonly property var currentDims: activeMode === IslandState.State.DASHBOARD
+        ? dashboardDimensions : IslandState.targetDimensions(activeMode, activeAlert)
     readonly property color islandColor: Tokens.mode === "dark" ? Qt.darker(Tokens.surface, 1.65) : Tokens.surface
     function reveal(mode): real {
         if (activeMode !== mode && !(dashboard.expanded && dashboardOriginMode === mode)) return 0;
@@ -192,18 +202,11 @@ PanelWindow {
         onTriggered: islandWindow.hoverPreview = false
     }
 
-    // Listen to reactive audio events
-    Connections {
-        target: Audio
-        function onOsdRequested(icon: string, progress: real): void {
-            islandWindow.triggerOsd(icon, progress);
-        }
-    }
-
-    function triggerOsd(icon: string, progress: real): void {
+    function triggerOsd(icon: string, progress: real, kind): void {
         if (modalOpen || dashboardShowing || (activeAlert && activeAlert.type === IslandState.State.NOTIFICATION)) return;
         osdIcon = icon;
-        osdProgress = Math.max(0, Math.min(1, progress));
+        osdKind = kind === "brightness" ? "brightness" : "volume";
+        osdProgress = IslandState.normalizeOsdProgress(progress, osdKind);
         activeAlert = { type: IslandState.State.OSD };
         dismissTimer.interval = 2200;
         dismissTimer.restart();
@@ -397,9 +400,9 @@ PanelWindow {
                     }
 
                     Rectangle {
-                        Layout.preferredWidth: 24
-                        Layout.preferredHeight: 24
-                        radius: 12
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 28
+                        radius: 14
                         color: "transparent"
                         Text {
                             anchors.centerIn: parent
@@ -441,7 +444,7 @@ PanelWindow {
 
                     Rectangle {
                         height: parent.height
-                        width: parent.width * islandWindow.osdProgress
+                        width: parent.width * islandWindow.osdFill
                         radius: 2.5
                         color: Tokens.accent
 
@@ -461,6 +464,15 @@ PanelWindow {
                     font.bold: true
                     font.features: { "tnum": 1 }
                     color: Tokens.text_primary
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.preferredWidth: 9
+                    text: islandWindow.osdKind === "volume" && islandWindow.osdProgress > 1 ? "+" : ""
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: Tokens.accent
                 }
             }
 
@@ -510,6 +522,7 @@ PanelWindow {
 
                     Text {
                         Layout.fillWidth: true
+                        textFormat: Text.PlainText
                         text: islandWindow.activeAlert
                             ? (islandWindow.activeAlert.appName || "Notification")
                             : "Notification"
@@ -534,6 +547,7 @@ PanelWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.maximumHeight: 32
+                            textFormat: Text.PlainText
                         text: islandWindow.activeAlert ? (islandWindow.activeAlert.body || "") : ""
                         font.pixelSize: 12
                         color: Tokens.text_secondary
@@ -601,8 +615,8 @@ PanelWindow {
 
                         // Album artwork 50x50 (radius 10)
                         Rectangle {
-                            Layout.preferredWidth: 50
-                            Layout.preferredHeight: 50
+                            Layout.preferredWidth: 52
+                            Layout.preferredHeight: 52
                             radius: 10
                             color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.9)
                             clip: true
@@ -635,6 +649,7 @@ PanelWindow {
                             Text {
                                 Layout.fillWidth: true
                                 text: islandWindow.hasMedia ? Media.trackTitle : "No media playing"
+                                textFormat: Text.PlainText
                                 font.pixelSize: 13
                                 font.bold: true
                                 color: Tokens.text_primary
@@ -644,6 +659,7 @@ PanelWindow {
                             Text {
                                 Layout.fillWidth: true
                                 text: islandWindow.hasMedia ? (Media.trackArtist || "Active audio stream") : "Play something to get started"
+                                textFormat: Text.PlainText
                                 font.pixelSize: 11
                                 font.weight: Font.Medium
                                 color: Tokens.text_secondary
@@ -719,6 +735,7 @@ PanelWindow {
                             Layout.fillWidth: true
                             height: 5
                             radius: 2.5
+                            opacity: Media.activePlayer && Media.activePlayer.canSeek && Media.length > 0 ? 1 : 0.5
                             color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.9)
                             clip: true
 
@@ -737,8 +754,9 @@ PanelWindow {
                                 anchors.fill: parent
                                 anchors.topMargin: -7
                                 anchors.bottomMargin: -7
-                                enabled: islandWindow.hasMedia && Media.activePlayer.canSeek
-                                cursorShape: Qt.PointingHandCursor
+                                enabled: islandWindow.hasMedia && Media.activePlayer !== null
+                                    && Media.activePlayer.canSeek && Media.length > 0
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: (mouse) => {
                                     if (Media.length > 0) {
                                         var ratio = Math.max(0.0, Math.min(1.0, mouse.x / progressBarTrack.width));
@@ -763,14 +781,14 @@ PanelWindow {
                         spacing: 32
 
                         Rectangle {
-                            width: 28; height: 28; radius: 14; color: prevHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : "transparent"
+                            width: 32; height: 32; radius: 16; color: prevHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : "transparent"
                             Text { anchors.centerIn: parent; text: "󰒮"; font.pixelSize: 16; color: prevHover.hovered ? Tokens.accent : Tokens.text_secondary; opacity: Media.canPrev ? 1 : 0.45 }
                             HoverHandler { id: prevHover; enabled: islandWindow.hasMedia && Media.canPrev; cursorShape: Qt.PointingHandCursor }
                             TapHandler { enabled: islandWindow.hasMedia && Media.canPrev; onTapped: Media.previous() }
                         }
 
                         Rectangle {
-                            width: 34; height: 34; radius: 17; color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, playHover.hovered ? 0.35 : 0.22)
+                            width: 40; height: 40; radius: 20; opacity: Media.canToggle ? 1 : 0.45; color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, playHover.hovered ? 0.35 : 0.22)
                             border.color: Tokens.accent; border.width: 1
                             Text { anchors.centerIn: parent; text: Media.isPlaying ? "󰏤" : "󰐊"; font.pixelSize: 17; color: Tokens.accent }
                             HoverHandler { id: playHover; enabled: islandWindow.hasMedia && Media.canToggle; cursorShape: Qt.PointingHandCursor }
@@ -778,7 +796,7 @@ PanelWindow {
                         }
 
                         Rectangle {
-                            width: 28; height: 28; radius: 14; color: nextHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : "transparent"
+                            width: 32; height: 32; radius: 16; color: nextHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : "transparent"
                             Text { anchors.centerIn: parent; text: "󰒭"; font.pixelSize: 16; color: nextHover.hovered ? Tokens.accent : Tokens.text_secondary; opacity: Media.canNext ? 1 : 0.45 }
                             HoverHandler { id: nextHover; enabled: islandWindow.hasMedia && Media.canNext; cursorShape: Qt.PointingHandCursor }
                             TapHandler { enabled: islandWindow.hasMedia && Media.canNext; onTapped: Media.next() }
@@ -794,9 +812,10 @@ PanelWindow {
             anchors.fill: parent
             surface: islandContainer
             shape: islandShape
+            cardDimensions: islandWindow.dashboardDimensions
             revealProgress: {
                 const base = expanded ? islandWindow.dashboardOriginDims : islandWindow.currentDims;
-                const target = IslandState.targetDimensions(IslandState.State.DASHBOARD);
+                const target = islandWindow.dashboardDimensions;
                 return Math.max(0, Math.min(1,
                     (islandShape.pillHeight - base.height) / Math.max(1, target.height - base.height),
                     (islandShape.pillWidth - base.width) / Math.max(1, target.width - base.width)));
