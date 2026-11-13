@@ -116,21 +116,30 @@ def preview(wallpaper, mode, request_id):
 
     matugen_info = get_matugen_identity()
     cache_path = None
+    image_hash = None
+    if matugen_info is not None:
+        real_path, stat_id = matugen_info
+        try:
+            image_hash = compute_image_sha256(Path(wallpaper))
+            cache_key = compute_cache_key(image_hash, mode, real_path, stat_id)
+            cache_path = get_cache_dir() / f'{cache_key}.json'
+            cached = read_cached_swatches(cache_path)
+            if cached is not None:
+                return dict(schema_version=1, request_id=request_id, wallpaper=wallpaper,
+                            mode=mode, swatches=cached)
+        except OSError:
+            cache_path = None
+
     with TemporaryDirectory(prefix='wallpaper-preview-') as directory:
         # Hash and render the same private bytes even if the source is replaced.
         snapshot = Path(directory) / ('source' + Path(wallpaper).suffix)
         shutil.copyfile(wallpaper, snapshot)
         snapshot.chmod(0o400)
-        if matugen_info is not None:
-            real_path, stat_id = matugen_info
+        if cache_path is not None:
             try:
-                image_hash = compute_image_sha256(snapshot)
-                cache_key = compute_cache_key(image_hash, mode, real_path, stat_id)
-                cache_path = get_cache_dir() / f'{cache_key}.json'
-                cached = read_cached_swatches(cache_path)
-                if cached is not None:
-                    return dict(schema_version=1, request_id=request_id, wallpaper=wallpaper,
-                                mode=mode, swatches=cached)
+                # A source changed during the copy must not poison the cache key.
+                if compute_image_sha256(snapshot) != image_hash:
+                    cache_path = None
             except OSError:
                 cache_path = None
 

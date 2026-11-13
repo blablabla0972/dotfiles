@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import "../theme"
 
 Rectangle {
@@ -14,13 +15,9 @@ Rectangle {
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
     border.width: 1
 
-    property date now: new Date()
-
-    Timer {
-        interval: 1000
-        running: true
-        repeat: true
-        onTriggered: root.now = new Date()
+    SystemClock {
+        id: clock
+        precision: SystemClock.Minutes
     }
 
     ColumnLayout {
@@ -29,7 +26,7 @@ Rectangle {
 
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: Qt.formatDateTime(root.now, "hh:mm")
+            text: Qt.formatDateTime(clock.date, "hh:mm")
             font.pixelSize: 38
             font.bold: true
             font.features: { "tnum": 1 }
@@ -38,7 +35,7 @@ Rectangle {
 
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: Qt.formatDateTime(root.now, "dddd, MMMM d")
+            text: Qt.formatDateTime(clock.date, "dddd, MMMM d")
             font.pixelSize: 12
             font.weight: Font.Medium
             color: Tokens.accent

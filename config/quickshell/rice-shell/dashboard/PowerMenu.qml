@@ -86,7 +86,7 @@ PanelWindow {
         const commands = {
             "lock": ["hyprlock"],
             "sleep": ["systemctl", "suspend"],
-            "logout": ["hyprctl", "dispatch", "exit"],
+            "logout": ["uwsm", "stop"],
             "reboot": ["systemctl", "reboot"],
             "shutdown": ["systemctl", "poweroff"]
         };

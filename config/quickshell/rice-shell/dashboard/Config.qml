@@ -13,32 +13,46 @@ Item {
     implicitHeight: 370
 
     property string themeCommandResult: ""
+    property var pendingCommands: []
 
     Process {
         id: cmdProcess
+        onRunningChanged: {
+            if (!running) Qt.callLater(root.startNextCommand);
+        }
+        onExited: (exitCode) => {
+            if (exitCode !== 0) root.themeCommandResult = "Command failed (exit " + exitCode + ")";
+        }
+    }
+
+    function queueCommand(command: var): void {
+        pendingCommands.push(command);
+        startNextCommand();
+    }
+
+    function startNextCommand(): void {
+        if (cmdProcess.running || pendingCommands.length === 0) return;
+        cmdProcess.command = pendingCommands.shift();
+        themeCommandResult = "";
+        cmdProcess.running = true;
     }
 
     function switchTheme(mode: string): void {
         var scriptPath = Quickshell.env("HOME") + "/.config/hypr/scripts/generate-theme.py";
-        cmdProcess.command = ["python3", scriptPath, "--theme-mode-changed", "--mode", mode];
-        cmdProcess.running = true;
+        queueCommand(["python3", scriptPath, "--theme-mode-changed", "--mode", mode]);
     }
 
     function regenerateTheme(): void {
         var scriptPath = Quickshell.env("HOME") + "/.config/hypr/scripts/generate-theme.py";
-        cmdProcess.command = ["python3", scriptPath, "--wallpaper-changed"];
-        cmdProcess.running = true;
+        queueCommand(["python3", scriptPath, "--wallpaper-changed"]);
     }
 
     function reloadShell(): void {
-        var cmd = "killall quickshell; sleep 0.2; ENABLE_NOTIFICATIONS=1 quickshell -d -p ~/.config/quickshell/rice-shell";
-        cmdProcess.command = ["sh", "-c", cmd];
-        cmdProcess.running = true;
+        Quickshell.reload(false);
     }
 
     function reloadHyprland(): void {
-        cmdProcess.command = ["hyprctl", "reload"];
-        cmdProcess.running = true;
+        queueCommand(["hyprctl", "reload"]);
     }
 
     RowLayout {

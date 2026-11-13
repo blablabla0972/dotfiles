@@ -1,5 +1,4 @@
 local mainMod = "SUPER"
-local noctCall = "noctalia msg "
 local launchPrefix = "uwsm app -- " -- if you are not using UWSM, make this empty (e.g. "")
 
 -- AZERTY fix: the number-row keys emit symbols (& é " ' ...) without Shift, so
@@ -62,7 +61,7 @@ hl.bind(mainMod .. " + Right", hl.dsp.focus({ direction = "right" }))
 hl.bind(mainMod .. " + Up",    hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + Down",  hl.dsp.focus({ direction = "down" }))
 hl.bind("ALT + Tab",           hl.dsp.window.cycle_next())
-hl.bind(mainMod .. " + Tab",   hl.dsp.exec_cmd(noctCall .. "window-switcher"))
+hl.bind(mainMod .. " + Tab",   hl.dsp.window.cycle_next())
 
 -- Move active window around workspaces & monitors
 hl.bind(mainMod .. " + SHIFT + Up",                   hl.dsp.window.move({ direction = "u" }))
@@ -124,13 +123,13 @@ hl.bind(mainMod .. " + C",          hl.dsp.exec_cmd(launchPrefix .. CALCULATOR))
 hl.bind(mainMod .. " + B",          hl.dsp.exec_cmd(launchPrefix .. BROWSER))
 hl.bind(mainMod .. " + W",          hl.dsp.exec_cmd("quickshell -p ~/.config/quickshell/wallpaper-switcher"))
 hl.bind("CONTROL + SHIFT + Escape", hl.dsp.exec_cmd(launchPrefix .. TERMINAL .. " -e btop"))
-hl.bind(mainMod .. " + Z",          hl.dsp.exec_cmd(qsRice .. "toggleDashboard Config 2>/dev/null || " .. noctCall .. "settings-toggle"))
-hl.bind(mainMod .. " + X",          hl.dsp.exec_cmd(qsRice .. "toggleDashboard Home 2>/dev/null || " .. noctCall .. "panel-toggle control-center"))
+hl.bind(mainMod .. " + Z",          hl.dsp.exec_cmd(qsRice .. "toggleDashboard Config"))
+hl.bind(mainMod .. " + X",          hl.dsp.exec_cmd(qsRice .. "toggleDashboard Home"))
 hl.bind(mainMod .. " + D",          hl.dsp.window.fullscreen({ mode = 1 }))
-hl.bind(mainMod .. " + Space",      hl.dsp.exec_cmd(qsRice .. "toggleLauncher 2>/dev/null || " .. noctCall .. "panel-toggle launcher"))
-hl.bind(mainMod .. " + period",     hl.dsp.exec_cmd(qsRice .. "toggleLauncher 2>/dev/null || " .. noctCall .. "panel-toggle launcher /emo"))
+hl.bind(mainMod .. " + Space",      hl.dsp.exec_cmd(qsRice .. "toggleLauncher"))
+hl.bind(mainMod .. " + period",     hl.dsp.exec_cmd(qsRice .. "toggleLauncher"))
 hl.bind(mainMod .. " + L",          hl.dsp.exec_cmd("pidof hyprlock || hyprlock"))
-hl.bind(mainMod .. " + ALT + C",    hl.dsp.exec_cmd(qsRice .. "togglePowerMenu 2>/dev/null || " .. noctCall .. "panel-toggle session"))
+hl.bind(mainMod .. " + ALT + C",    hl.dsp.exec_cmd(qsRice .. "togglePowerMenu"))
 
 
 ---------------------------
@@ -144,10 +143,10 @@ hl.bind("XF86AudioMute",        hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_S
 hl.bind("XF86AudioMicMute",     hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"),       { locked = true })
 
 -- Media
-hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd("playerctl play-pause 2>/dev/null || " .. noctCall .. "media toggle"),   { locked = true })
-hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause 2>/dev/null || " .. noctCall .. "media toggle"),   { locked = true })
-hl.bind("XF86AudioNext",  hl.dsp.exec_cmd("playerctl next 2>/dev/null || " .. noctCall .. "media next"),           { locked = true })
-hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd("playerctl previous 2>/dev/null || " .. noctCall .. "media previous"),   { locked = true })
+hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd("playerctl play-pause"), { locked = true })
+hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause"), { locked = true })
+hl.bind("XF86AudioNext",  hl.dsp.exec_cmd("playerctl next"),       { locked = true })
+hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd("playerctl previous"),   { locked = true })
 
 -- Brightness
 hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd("brightnessctl set +5% && " .. qsRice .. "brightnessChanged 2>/dev/null || true"),   { locked = true, repeating = true })
@@ -159,17 +158,17 @@ hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("brightnessctl set 5%- && " .. 
 
 -- Screen Capture
 hl.bind(mainMod .. " + P",     hl.dsp.exec_cmd("hyprpicker -a -n"))
-hl.bind("Print",               hl.dsp.exec_cmd("grim -g \"$(slurp)\" - | wl-copy 2>/dev/null || " .. noctCall .. "screenshot-region"))
-hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("grim - | wl-copy 2>/dev/null || " .. noctCall .. "screenshot-fullscreen"))
+hl.bind("Print",               hl.dsp.exec_cmd("grim -g \"$(slurp)\" - | wl-copy"))
+hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("grim - | wl-copy"))
 
 -- Theming and Wallpaper
-hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd(noctCall .. "panel-toggle wallpaper"))
+hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd("quickshell -p ~/.config/quickshell/wallpaper-switcher"))
 
 -- Clipboard
-hl.bind(mainMod .. " + V", hl.dsp.exec_cmd(noctCall .. "panel-toggle clipboard"))
+hl.bind(mainMod .. " + V", hl.dsp.exec_cmd(launchPrefix .. TERMINAL .. " -e bash -lc 'cliphist list | fzf --reverse | cliphist decode | wl-copy'"))
 
 -- Notifications
-hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(qsRice .. "toggleNotifications 2>/dev/null || " .. noctCall .. "panel-toggle control-center notifications"))
+hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(qsRice .. "toggleNotifications"))
 
 -------------------------------
 ---- WORKSPACES & MONITORS ----

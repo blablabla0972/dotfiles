@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import Quickshell.Bluetooth
 import "../theme"
 
 Rectangle {
@@ -18,9 +19,10 @@ Rectangle {
 
     signal closeRequested()
 
-    property var devices: []
-    property var discoveredMacs: ({})
-    property bool isScanning: false
+    readonly property var btAdapter: Bluetooth.defaultAdapter
+    readonly property var devices: btAdapter && btAdapter.enabled ? visibleDevices(btAdapter.devices.values) : []
+    readonly property bool isScanning: btAdapter ? btAdapter.discovering : false
+    property var scanOwnedAdapter: null
     property string statusMessage: ""
     property string actionMessage: ""
     property bool isConnecting: false
@@ -34,80 +36,72 @@ Rectangle {
     property string pairingPromptText: ""
     property string pairingInputText: ""
     property int agentOutputOffset: 0
+    property string agentOutputTail: ""
+
+    onBtAdapterChanged: {
+        if (scanOwnedAdapter && scanOwnedAdapter !== btAdapter) stopScan();
+        if (root.visible && btAdapter) root.startScan();
+    }
+    onIsScanningChanged: {
+        if (!isScanning) {
+            if (scanOwnedAdapter === btAdapter) {
+                scanStopTimer.stop();
+                scanOwnedAdapter = null;
+            }
+            if (statusMessage === "Scanning for devices...") statusMessage = "";
+        }
+    }
 
     onVisibleChanged: {
         if (visible) {
             actionMessage = "";
             startScan();
-            refresh();
-            ensureAgent();
         } else {
-            isScanning = false;
-            scanProcess.running = false;
-            if (!isConnecting && agentProcess.running) agentProcess.write("quit\n");
+            stopScan();
+            finishDeviceAction("");
+            agentReady = false;
+            agentOutputTail = "";
+            agentProcess.running = false;
         }
     }
 
-    function refresh(): void {
-        if (listProcess.running || pairedProcess.running || connectedProcess.running) return;
-        listProcess.running = true;
-    }
-
-    function addressVariant(first, second): bool {
-        var a = first.split(":");
-        var b = second.split(":");
-        if (a.length !== 6 || b.length !== 6) return false;
-        var changedOctets = 0;
-        var difference = 0;
-        for (var i = 0; i < 6; i++) {
-            var left = parseInt(a[i], 16);
-            var right = parseInt(b[i], 16);
-            if (left !== right) {
-                changedOctets++;
-                difference = Math.abs(left - right);
-            }
+    function visibleDevices(values) {
+        var listed = [];
+        for (var i = 0; i < values.length; i++) {
+            var device = values[i];
+            if (!device.address) continue;
+            listed.push({
+                mac: device.address,
+                name: device.name || device.address,
+                paired: device.paired,
+                connected: device.connected
+            });
         }
-        return changedOctets === 1 && difference <= 4;
-    }
-
-    function collapseAddressVariants(list) {
-        var result = [];
-        for (var i = 0; i < list.length; i++) {
-            var device = list[i];
-            var duplicateIndex = -1;
-            for (var j = 0; j < result.length; j++) {
-                var existing = result[j];
-                if (device.name.toLowerCase() === existing.name.toLowerCase() && addressVariant(device.mac, existing.mac)) {
-                    duplicateIndex = j;
-                    break;
-                }
-            }
-            if (duplicateIndex < 0) {
-                result.push(device);
-                continue;
-            }
-            var previous = result[duplicateIndex];
-            var deviceScore = (device.connected ? 1000 : 0) + (device.paired ? 100 : 0) + (root.discoveredMacs[device.mac.toUpperCase()] ? 1 : 0);
-            var previousScore = (previous.connected ? 1000 : 0) + (previous.paired ? 100 : 0) + (root.discoveredMacs[previous.mac.toUpperCase()] ? 1 : 0);
-            if (deviceScore > previousScore) result[duplicateIndex] = device;
-        }
-        return result;
+        return listed;
     }
 
     function startScan(): void {
-        if (scanProcess.running) return;
-        discoveredMacs = ({});
-        isScanning = true;
+        if (!btAdapter || !btAdapter.enabled) {
+            statusMessage = "Bluetooth is off";
+            return;
+        }
         statusMessage = "Scanning for devices...";
-        scanProcess.command = ["bluetoothctl", "--timeout", "8", "scan", "on"];
-        scanProcess.running = true;
+        if (btAdapter.discovering) return;
+        scanOwnedAdapter = btAdapter;
+        btAdapter.discovering = true;
+        scanStopTimer.restart();
+    }
+
+    function stopScan(): void {
+        scanStopTimer.stop();
+        var owned = scanOwnedAdapter;
+        scanOwnedAdapter = null;
+        if (owned && owned.discovering) owned.discovering = false;
     }
 
     function toggleScan(): void {
         if (isScanning) {
-            isScanning = false;
-            scanProcess.running = false;
-            refresh();
+            stopScan();
         } else {
             startScan();
         }
@@ -138,56 +132,73 @@ Rectangle {
         root.pairingPromptType = "";
         root.pairingInputText = "";
         root.actionMessage = message;
-        root.refresh();
+    }
+
+    function freshMatch(pattern, output, previousLength) {
+        // A previous match in the overlap buffer must not be handled twice.
+        var scanner = new RegExp(pattern.source, "gi");
+        var match;
+        while ((match = scanner.exec(output)) !== null) {
+            if (match.index + match[0].length > previousLength) return match;
+            if (match[0].length === 0) scanner.lastIndex++;
+        }
+        return null;
     }
 
     function handleAgentOutput(value): void {
+        if (value.length < root.agentOutputOffset) {
+            root.agentOutputOffset = 0;
+            root.agentOutputTail = "";
+        }
         var fresh = value.slice(root.agentOutputOffset);
         root.agentOutputOffset = value.length;
         if (fresh.length === 0) return;
-        var output = fresh.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r/g, "\n");
+        var previousLength = root.agentOutputTail.length;
+        var output = (root.agentOutputTail + fresh).replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r/g, "\n");
+        root.agentOutputTail = output.slice(-192);
+        if (!root.isConnecting) return;
 
-        if (/Default agent request successful/i.test(output)) {
+        if (root.freshMatch(/Default agent request successful/i, output, previousLength)) {
             root.agentReady = true;
             if (root.actionStage === "waiting-agent") root.beginDeviceAction();
         }
 
-        var passkey = output.match(/Confirm passkey\s+(\d{6})/i);
+        var passkey = root.freshMatch(/Confirm passkey\s+(\d{6})/i, output, previousLength);
         if (passkey) {
             root.pairingPromptType = "confirm";
             root.pairingPromptText = "Confirm that " + passkey[1] + " appears on both devices.";
-        } else if (/Accept pairing\s*\(yes\/no\):/i.test(output)) {
+        } else if (root.freshMatch(/Accept pairing\s*\(yes\/no\):/i, output, previousLength)) {
             root.pairingPromptType = "confirm";
             root.pairingPromptText = "Allow " + root.activeDeviceName + " to pair with this computer?";
-        } else if (/Authorize service.*\(yes\/no\):/i.test(output)) {
+        } else if (root.freshMatch(/Authorize service.*\(yes\/no\):/i, output, previousLength)) {
             root.pairingPromptType = "confirm";
             root.pairingPromptText = "Allow this Bluetooth service for " + root.activeDeviceName + "?";
-        } else if (/Enter PIN code/i.test(output)) {
+        } else if (root.freshMatch(/Enter PIN code/i, output, previousLength)) {
             root.pairingPromptType = "pin";
             root.pairingPromptText = "Enter the PIN requested by " + root.activeDeviceName + ".";
-        } else if (/Enter passkey/i.test(output)) {
+        } else if (root.freshMatch(/Enter passkey/i, output, previousLength)) {
             root.pairingPromptType = "passkey";
             root.pairingPromptText = "Enter the passkey requested by " + root.activeDeviceName + ".";
         }
 
-        if (root.actionStage === "pair" && /Pairing successful|Paired:\s*yes/i.test(output)) {
+        if (root.actionStage === "pair" && root.freshMatch(/Pairing successful|Paired:\s*yes/i, output, previousLength)) {
             root.pairingPromptType = "";
             root.actionStage = "connect";
             agentProcess.write("trust " + root.activeDeviceMac + "\nconnect " + root.activeDeviceMac + "\n");
         }
-        if (root.actionStage === "connect" && /Connection successful/i.test(output)) {
+        if (root.actionStage === "connect" && root.freshMatch(/Connection successful/i, output, previousLength)) {
             root.actionStage = "verify-connect";
             agentProcess.write("info " + root.activeDeviceMac + "\n");
         }
-        if ((root.actionStage === "connect" || root.actionStage === "verify-connect") && /Connected:\s*yes/i.test(output)) {
+        if ((root.actionStage === "connect" || root.actionStage === "verify-connect") && root.freshMatch(/Connected:\s*yes/i, output, previousLength)) {
             root.finishDeviceAction("Connected to " + root.activeDeviceName);
-        } else if (root.actionStage === "disconnect" && /Successful disconnected/i.test(output)) {
+        } else if (root.actionStage === "disconnect" && root.freshMatch(/Successful disconnected/i, output, previousLength)) {
             root.actionStage = "verify-disconnect";
             agentProcess.write("info " + root.activeDeviceMac + "\n");
         }
-        if ((root.actionStage === "disconnect" || root.actionStage === "verify-disconnect") && /Connected:\s*no/i.test(output)) {
+        if ((root.actionStage === "disconnect" || root.actionStage === "verify-disconnect") && root.freshMatch(/Connected:\s*no/i, output, previousLength)) {
             root.finishDeviceAction("Disconnected from " + root.activeDeviceName);
-        } else if (root.actionStage !== "" && /No agent available|Failed to pair|AuthenticationFailed|AuthenticationRejected|No route to host|page.?timeout|timed out|not available|NotReady/i.test(output)) {
+        } else if (root.actionStage !== "" && root.freshMatch(/No agent available|Failed to pair|AuthenticationFailed|AuthenticationRejected|No route to host|page.?timeout|timed out|not available|NotReady/i, output, previousLength)) {
             if (/No route|page.?timeout|timed out|not available|NotReady/i.test(output)) {
                 root.finishDeviceAction("Device unreachable; wake it and bring it closer");
             } else if (/Authentication/i.test(output)) {
@@ -214,135 +225,13 @@ Rectangle {
         }
     }
 
-    Process {
-        id: listProcess
-        command: ["bluetoothctl", "devices"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var lines = text.trim().split("\n");
-                    var list = [];
-                    var seen = {};
-                    for (var i = 0; i < lines.length; i++) {
-                        var line = lines[i].trim();
-                        if (!line.startsWith("Device ")) continue;
-                        var parts = line.split(" ");
-                        if (parts.length >= 3) {
-                            var mac = parts[1].trim();
-                            var name = parts.slice(2).join(" ").trim();
-                            if (mac.length > 0 && !seen[mac]) {
-                                seen[mac] = true;
-                                list.push({
-                                    mac: mac,
-                                    name: name,
-                                    paired: false,
-                                    connected: false
-                                });
-                            }
-                        }
-                    }
-                    root.devices = list;
-                    root.statusMessage = list.length > 0 ? "" : (root.isScanning ? "Scanning for nearby devices..." : "No Bluetooth devices found");
-                    pairedProcess.running = true;
-                } catch (e) {
-                    root.statusMessage = "Error reading devices";
-                }
-            }
-        }
-    }
-
-    Process {
-        id: pairedProcess
-        command: ["bluetoothctl", "devices", "Paired"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var lines = text.trim().split("\n");
-                var pairedMacs = {};
-                for (var i = 0; i < lines.length; i++) {
-                    var line = lines[i].trim();
-                    if (!line.startsWith("Device ")) continue;
-                    var parts = line.split(" ");
-                    if (parts.length >= 2) pairedMacs[parts[1].trim()] = true;
-                }
-                var updated = [];
-                for (var j = 0; j < root.devices.length; j++) {
-                    var d = root.devices[j];
-                    updated.push({ mac: d.mac, name: d.name, paired: !!pairedMacs[d.mac], connected: false });
-                }
-                root.devices = updated;
-                connectedProcess.running = true;
-            }
-        }
-    }
-
-    Process {
-        id: connectedProcess
-        command: ["bluetoothctl", "devices", "Connected"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var lines = text.trim().split("\n");
-                    var connectedMacs = {};
-                    for (var i = 0; i < lines.length; i++) {
-                        var line = lines[i].trim();
-                        if (!line.startsWith("Device ")) continue;
-                        var parts = line.split(" ");
-                        if (parts.length >= 2) {
-                            connectedMacs[parts[1].trim()] = true;
-                        }
-                    }
-                    var updated = [];
-                    for (var j = 0; j < root.devices.length; j++) {
-                        var d = root.devices[j];
-                        var connected = !!connectedMacs[d.mac];
-                        if (!d.paired && !connected && !root.isScanning && !root.discoveredMacs[d.mac.toUpperCase()]) continue;
-                        updated.push({
-                            mac: d.mac,
-                            name: d.name,
-                            paired: d.paired,
-                            connected: connected
-                        });
-                    }
-                    root.devices = root.collapseAddressVariants(updated);
-                } catch (e) {}
-            }
-        }
-    }
-
-    Process {
-        id: scanProcess
-        running: false
-        onExited: (exitCode) => {
-            root.isScanning = false;
-            root.refresh();
-        }
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var seen = {};
-                var lines = text.split("\n");
-                var addressPattern = /([0-9A-F]{2}:){5}[0-9A-F]{2}/i;
-                for (var i = 0; i < lines.length; i++) {
-                    var line = lines[i];
-                    if (line.indexOf("RSSI:") < 0 && line.indexOf("NEW") < 0) continue;
-                    var match = line.match(addressPattern);
-                    if (match) seen[match[0].toUpperCase()] = true;
-                }
-                root.discoveredMacs = seen;
-                root.isScanning = false;
-                root.refresh();
-            }
-        }
-    }
-
     Timer {
-        id: devicePollingTimer
-        interval: 3000
-        repeat: true
-        running: root.visible
-        onTriggered: root.refresh()
+        id: scanStopTimer
+        interval: 8000
+        repeat: false
+        onTriggered: {
+            root.stopScan();
+        }
     }
 
     Process {
@@ -353,9 +242,11 @@ Rectangle {
         onRunningChanged: {
             if (running) {
                 root.agentOutputOffset = agentOutput.text.length;
+                root.agentOutputTail = "";
                 agentProcess.write("default-agent\n");
             } else {
                 root.agentReady = false;
+                root.agentOutputTail = "";
                 if (root.isConnecting) root.finishDeviceAction("Bluetooth pairing agent stopped");
             }
         }
@@ -386,6 +277,7 @@ Rectangle {
         root.activeDevicePaired = dev.paired;
         root.disconnecting = dev.connected;
         root.agentOutputOffset = agentOutput.text.length;
+        root.agentOutputTail = "";
         root.pairingPromptType = "";
         root.pairingInputText = "";
         root.actionStage = root.agentReady ? "" : "waiting-agent";
@@ -414,7 +306,7 @@ Rectangle {
     }
 
     Component.onCompleted: {
-        refresh();
+        if (root.visible) startScan();
     }
 
     ColumnLayout {

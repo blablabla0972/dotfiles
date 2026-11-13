@@ -18,7 +18,6 @@ PanelWindow {
 
     signal requestLauncher()
     signal requestDashboard(string tab)
-    signal requestMediaCapsule()
 
     anchors {
         top: true
@@ -30,7 +29,6 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    property bool islandActive: false
     readonly property string internetStatusText: {
         switch (Networking.connectivity) {
         case NetworkConnectivity.Full: return "Online";
@@ -61,6 +59,9 @@ PanelWindow {
         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
         border.width: 1
 
+        Behavior on color { ColorAnimation { duration: 160 } }
+        Behavior on border.color { ColorAnimation { duration: 160 } }
+
         RowLayout {
             id: leftLayout
             anchors.centerIn: parent
@@ -72,6 +73,7 @@ PanelWindow {
                 height: 24
                 radius: 6
                 color: launcherHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : "transparent"
+                Behavior on color { ColorAnimation { duration: 150 } }
 
                 Text {
                     anchors.centerIn: parent
@@ -100,137 +102,7 @@ PanelWindow {
         }
     }
 
-    // 2. Center Floating Island: Inline Dynamic Island
-    Rectangle {
-        id: centerIsland
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.verticalCenter: parent.verticalCenter
-        height: 32
-        implicitWidth: centerContent.implicitWidth + 24
-        radius: 14
-        color: centerHover.hovered 
-            ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, Tokens.barOpacity) 
-            : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.barOpacity)
-        border.color: centerHover.hovered 
-            ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.5)
-            : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-        border.width: 1
-
-        opacity: barRoot.islandActive ? 0.0 : 1.0
-        visible: opacity > 0.01
-
-        Behavior on opacity {
-            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-        }
-        Behavior on implicitWidth {
-            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-        }
-        Behavior on color {
-            ColorAnimation { duration: 150 }
-        }
-        Behavior on border.color {
-            ColorAnimation { duration: 150 }
-        }
-
-        HoverHandler { id: centerHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler {
-            acceptedButtons: Qt.LeftButton | Qt.RightButton
-            onTapped: (eventPoint) => {
-                if (eventPoint.event.button === Qt.RightButton) {
-                    barRoot.requestDashboard("Home");
-                } else if (Media.hasPlayer && Media.isPlaying) {
-                    barRoot.requestMediaCapsule();
-                } else {
-                    barRoot.requestDashboard("Home");
-                }
-            }
-        }
-
-        RowLayout {
-            id: centerContent
-            anchors.centerIn: parent
-            spacing: 8
-
-            // Media Active State
-            RowLayout {
-                visible: Media.hasPlayer && Media.isPlaying
-                spacing: 8
-
-                Text {
-                    text: "󰎆"
-                    font.pixelSize: 13
-                    color: Tokens.accent
-                }
-
-                Text {
-                    text: {
-                        var str = Media.trackTitle;
-                        if (Media.trackArtist && Media.trackArtist.length > 0) {
-                            str += " • " + Media.trackArtist;
-                        }
-                        return str;
-                    }
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Tokens.text_primary
-                    elide: Text.ElideRight
-                    Layout.maximumWidth: 220
-                }
-
-                Rectangle {
-                    width: 20
-                    height: 20
-                    radius: 10
-                    color: mediaBtnHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : "transparent"
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: Media.isPlaying ? "󰏤" : "󰐊"
-                        font.pixelSize: 12
-                        color: Tokens.accent
-                    }
-
-                    HoverHandler { id: mediaBtnHover }
-                    TapHandler {
-                        onTapped: Media.togglePlaying()
-                    }
-                }
-            }
-
-            // Idle State: Sleek Dynamic Island Pill
-            RowLayout {
-                visible: !(Media.hasPlayer && Media.isPlaying)
-                spacing: 6
-
-                Rectangle {
-                    width: 18
-                    height: 18
-                    radius: 9
-                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "󰍹"
-                        font.pixelSize: 11
-                        color: Tokens.accent
-                    }
-                }
-
-                Text {
-                    text: "Control Center"
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: centerHover.hovered ? Tokens.accent : Tokens.text_primary
-
-                    Behavior on color {
-                        ColorAnimation { duration: 150 }
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Right Floating Island: Status Tray & Clock Pill
+    // 2. Right Floating Island: Status Tray & Clock Pill
     Rectangle {
         id: rightIsland
         anchors.right: parent.right
@@ -243,6 +115,9 @@ PanelWindow {
         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
         border.width: 1
 
+        Behavior on color { ColorAnimation { duration: 160 } }
+        Behavior on border.color { ColorAnimation { duration: 160 } }
+
         RowLayout {
             id: rightLayout
             anchors.centerIn: parent
@@ -251,6 +126,7 @@ PanelWindow {
             // Status Tray
             StatusTray {
                 Layout.alignment: Qt.AlignVCenter
+                parentWindow: barRoot
             }
 
             // Internet connectivity
@@ -262,6 +138,7 @@ PanelWindow {
                 color: internetHover.hovered
                     ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
                     : "transparent"
+                Behavior on color { ColorAnimation { duration: 150 } }
 
                 RowLayout {
                     id: internetContent
@@ -304,6 +181,12 @@ PanelWindow {
                 color: clockHover.hovered
                     ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25)
                     : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7)
+                Behavior on color { ColorAnimation { duration: 150 } }
+
+                SystemClock {
+                    id: minuteClock
+                    precision: SystemClock.Minutes
+                }
 
                 RowLayout {
                     id: clockContent
@@ -318,7 +201,7 @@ PanelWindow {
 
                     Text {
                         id: clockText
-                        text: Qt.formatDateTime(new Date(), "hh:mm")
+                        text: Qt.formatDateTime(minuteClock.date, "hh:mm")
                         font.pixelSize: 12
                         font.bold: true
                         color: clockHover.hovered ? Tokens.accent : Tokens.text_primary
@@ -330,12 +213,6 @@ PanelWindow {
                     onTapped: barRoot.requestDashboard("Home")
                 }
 
-                Timer {
-                    interval: 1000
-                    running: true
-                    repeat: true
-                    onTriggered: clockText.text = Qt.formatDateTime(new Date(), "hh:mm")
-                }
             }
         }
     }

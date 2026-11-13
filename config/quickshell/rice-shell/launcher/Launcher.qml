@@ -133,7 +133,7 @@ PanelWindow {
                 isCommand: true,
                 id: "cmd-runner",
                 name: rawCmd.length > 0 ? ("Run: " + rawCmd) : "Run command in terminal...",
-                comment: rawCmd.length > 0 ? ("Execute '" + rawCmd + "' in kitty terminal") : "Type a shell command after '>'",
+                comment: rawCmd.length > 0 ? ("Execute '" + rawCmd + "' in terminal") : "Type a shell command after '>'",
                 icon: "utilities-terminal",
                 command: rawCmd
             }];
@@ -219,7 +219,8 @@ PanelWindow {
         }
         if (cleanCmd.length === 0) return;
 
-        var args = ["kitty", "-e", "bash", "-c", cleanCmd];
+        var terminal = Quickshell.env("TERMINAL") || "kitty";
+        var args = ["uwsm", "app", "--", terminal, "-e", "bash", "-c", cleanCmd];
         try {
             if (typeof Quickshell.execute === "function") {
                 Quickshell.execute(args);

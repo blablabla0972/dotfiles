@@ -1,8 +1,11 @@
 """Cached rendering must skip Matugen without restoring stale or damaged outputs."""
+import configparser
 import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import tomllib
 import unittest
@@ -186,6 +189,88 @@ class MatugenCacheTest(unittest.TestCase):
                     self.render()
                 self.assertEqual(self.calls, previous_calls + 1, 'Stable resolved inputs must hit cache')
                 self.assertEqual(alias.resolve(), targets[0])
+
+
+@unittest.skipUnless(shutil.which('matugen'), 'Matugen is required for client template rendering')
+class MatugenClientTemplatesTest(unittest.TestCase):
+    def test_quickshell_clients_render_and_noctalia_skips_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / 'config'
+            shutil.copytree(ROOT / 'config/matugen', config / 'matugen')
+            image = root / 'wallpaper.png'
+            image.write_bytes(b'cache fixture; Matugen receives a hex source')
+
+            def run_matugen(argv):
+                config_arg = argv[argv.index('--config') + 1]
+                mode = argv[argv.index('--mode') + 1]
+                result = subprocess.run(
+                    ['matugen', 'color', 'hex', '#4675ac', '--config', config_arg, '--mode', mode, '--quiet'],
+                    capture_output=True, text=True, check=True)
+                return result.stdout
+
+            with patch.dict(os.environ, XDG_CACHE_HOME=str(root / 'cache')), \
+                 patch.object(theme, 'command', side_effect=run_matugen):
+                theme.render_matugen(image, config, 'dark', backend='quickshell')
+                results = {name: (config / name).read_text()
+                           for name in theme.MATUGEN_QUICKSHELL_OUTPUTS}
+                self.assertTrue(all('{{' not in value for value in results.values()))
+                alacritty = tomllib.loads(results['alacritty/themes/noctalia.toml'])
+                self.assertTrue(alacritty['colors']['normal']['red'].startswith('#'))
+                self.assertIn('color15 #', results['kitty/themes/noctalia.conf'])
+                self.assertIn('@define-color window_bg_color #', results['gtk-3.0/gtk.css'])
+                self.assertEqual(results['gtk-3.0/gtk.css'], results['gtk-4.0/gtk.css'])
+                self.assertIn('theme[main_bg]="#', results['btop/themes/noctalia.theme'])
+                self.assertIn('theme[proc_start]="#', results['btop/themes/noctalia.theme'])
+                for app in ('qt5ct', 'qt6ct'):
+                    palette = configparser.ConfigParser()
+                    palette.read_string(results[f'{app}/colors/noctalia.conf'])
+                    for state in ('active_colors', 'disabled_colors', 'inactive_colors'):
+                        colors = palette['ColorScheme'][state].split(',')
+                        self.assertEqual(len(colors), 21)
+                        self.assertTrue(all(color.strip().startswith('#') for color in colors))
+
+                theme.render_matugen(image, config, 'light', backend='quickshell')
+                lighter = {name: (config / name).read_text() for name in results}
+                self.assertNotEqual(lighter['kitty/themes/noctalia.conf'],
+                                    results['kitty/themes/noctalia.conf'])
+
+                # Switching back to Noctalia must not overwrite its native client themes.
+                theme.render_matugen(image, config, 'dark', backend='noctalia')
+                self.assertEqual({name: (config / name).read_text() for name in results}, lighter)
+
+    def test_client_outputs_are_snapshot_protected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config, state = root / 'config', root / 'state'
+            existing = config / theme.MATUGEN_QUICKSHELL_OUTPUTS[0]
+            new = config / theme.MATUGEN_QUICKSHELL_OUTPUTS[-1]
+            existing.parent.mkdir(parents=True)
+            existing.write_text('original')
+            snapshot = theme.Snapshot(theme.theme_snapshot_paths(config, state), state)
+            existing.write_text('overwritten')
+            new.parent.mkdir(parents=True)
+            new.write_text('new theme')
+            snapshot.restore()
+            self.assertEqual(existing.read_text(), 'original')
+            self.assertFalse(new.exists())
+
+    def test_quickshell_activates_qt_palettes_without_losing_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)
+            for app in ('qt5ct', 'qt6ct'):
+                path = config / app / f'{app}.conf'
+                path.parent.mkdir(parents=True)
+                path.write_text('[Appearance]\nstyle=Fusion\n')
+            with patch.object(theme, 'detect_backend', return_value='quickshell'):
+                theme.sync_toolkit_settings(config, 'dark')
+            for app in ('qt5ct', 'qt6ct'):
+                ini = configparser.ConfigParser()
+                ini.read(config / app / f'{app}.conf')
+                appearance = ini['Appearance']
+                self.assertEqual(appearance['style'], 'Fusion')
+                self.assertEqual(appearance['custom_palette'], 'true')
+                self.assertEqual(appearance['color_scheme_path'], str(config / app / 'colors/noctalia.conf'))
 
 
 if __name__ == '__main__':

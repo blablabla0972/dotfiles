@@ -48,13 +48,24 @@ jobs:
           "$lua_bin/lua" -v
           "$lua_bin/luac" -v
 
+      - name: Install QML syntax validator
+        timeout-minutes: 4
+        run: |
+          if ! test -x /usr/lib/qt6/bin/qmllint; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq qt6-declarative-dev-tools >/dev/null
+          fi
+          echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
+
       - name: Verify unit test tools are available
         run: |
           command -v jq
           command -v lua
+          command -v luac
+          command -v qmllint
           command -v node
 
-      - name: Validate tracked Bash, Python, TOML and JSON
+      - name: Validate tracked Bash, Python, TOML, JSON, JSONC, Lua and QML
         run: python3 tests/validate.py
 
       - name: Run isolated unit tests

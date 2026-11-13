@@ -1,6 +1,6 @@
 # Dotfiles — CachyOS + Hyprland
 
-Bản lưu cấu hình hệ sinh thái Hyprland trên máy `admin` (CachyOS, Hyprland 0.56.2).
+Bản lưu cấu hình hệ sinh thái Hyprland trên máy `admin` (CachyOS, backend Lua).
 
 ## Cấu trúc
 
@@ -8,9 +8,9 @@ Bản lưu cấu hình hệ sinh thái Hyprland trên máy `admin` (CachyOS, Hyp
 dotfiles/
 ├── config/          # symlink → ~/.config/<tên>
 │   ├── hypr/        # Hyprland (backend Lua), hyprlock, scripts
-│   ├── noctalia/    # Bar/shell Noctalia (thay waybar + dunst + swww UI)
+│   ├── noctalia/    # Cấu hình shell legacy / fallback
 │   ├── matugen/     # Sinh màu từ wallpaper
-│   ├── quickshell/  # 3D Wallpaper Carousel
+│   ├── quickshell/  # Rice shell (bar, island, dashboard) + wallpaper switcher
 │   ├── btop/        # System monitor
 │   ├── fish/        # Shell fish
 │   ├── alacritty/ kitty/   # Terminal
@@ -36,7 +36,7 @@ cd ~/Projects/dotfiles
 ./install.sh --dry-run   # xem trước
 ./install.sh             # cài cấu hình desktop live mặc định (backup file cũ an toàn)
 ./install.sh --all       # cài toàn bộ (bao gồm cả systemd và snapshot máy)
-./install.sh hypr noctalia   # chỉ cài vài mục
+./install.sh hypr quickshell   # chỉ cài vài mục
 ```
 
 `--all` and an explicit `noctalia` selector can install `state/noctalia/settings.toml`; add `--no-state` to preserve the destination machine's runtime session settings. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for test commands, file ownership, and task completion checks.
@@ -70,9 +70,13 @@ Sau khi chuẩn bị ảnh nền, chạy `python3 ~/.config/hypr/scripts/generat
 
 Mục `state/noctalia/settings.toml` lưu trạng thái session và bố cục widget lockscreen của máy này. Mặc định `./install.sh` sẽ không cài đè file này để tránh xung đột màn hình; muốn áp dụng trạng thái này lên máy mới hãy chạy `./install.sh noctalia` (hoặc `./install.sh --all`).
 
-## Hệ sinh thái đang dùng
+## Hệ sinh thái và đường chạy mặc định
 
-Noctalia hiện dùng bản native C++23 v5.4.1 đã patch, có `theme.matugen_palette`;
+`config/hypr/config/autostart.lua` ưu tiên chạy `quickshell -d -p ~/.config/quickshell/rice-shell` và khởi động `hypridle` với `hypridle.conf`. Noctalia chỉ là fallback khi không chạy được Quickshell; cấu hình và state Noctalia vẫn được giữ để khôi phục hệ cũ.
+
+### Noctalia legacy / khôi phục
+
+Phiên bản Noctalia legacy dùng bản native C++23 v5.4.1 đã patch, có `theme.matugen_palette`;
 gói upstream chưa patch không đủ cho pipeline này. Mã nguồn được quản lý ở
 [noctalia-dashboard-source](https://github.com/blablabla0972/noctalia-dashboard-source),
 còn patch, hướng dẫn build và launcher nằm trong
@@ -81,7 +85,7 @@ còn patch, hướng dẫn build và launcher nằm trong
 build hoặc cài binary này; chuẩn bị binary và assets cùng revision trước khi cài.
 Launcher `~/.local/bin/noctalia` phải export `NOCTALIA_ASSETS_DIR` tới thư mục assets
 của bản build rồi `exec` binary với `"$@"`; thay đường dẫn home của máy cũ khi dựng lại.
-Trên máy hiện tại, `run-noctalia.sh` dùng
+Launcher Noctalia legacy `run-noctalia.sh` dùng
 `worktrees/noctalia-upgrade-current/build-v5.4.1-matugen/noctalia` và
 `worktrees/noctalia-upgrade-current/assets` trong `~/noctalia-dashboard-redesign`.
 Buildtype là `release`, nên không có debug indicator trên top bar.
@@ -91,16 +95,19 @@ Revision source `0cfb9f8dde4a7b36ebde4627f2d7274450d5c755` (VERSION 5.4.1) đã 
 Dùng [hướng dẫn khôi phục](docs/RESTORE.md) để lấy đúng source, build và chuẩn bị launcher;
 các tài liệu v5.2.1/v5.3.0 trong repo redesign là lịch sử, không phải phiên bản hiện chạy.
 
+### Các thành phần trong cấu hình hiện tại
+
 | Thành phần | Vai trò |
 |---|---|
-| Hyprland 0.56.2 | Compositor, config backend **Lua** (`hyprland.lua` load 11 module trong `config/`) |
-| Noctalia | Bar + notification + control center + khóa màn hình và idle |
+| Hyprland | Compositor, config backend **Lua** (`hyprland.lua` load module trong `config/`) |
+| Quickshell rice-shell | Bar + Dynamic Island + notification + control center |
+| Noctalia | Shell legacy / fallback khi Quickshell không khởi động được |
 | swww | Wallpaper daemon (chạy qua systemd user unit) |
 | matugen | Sinh màu từ wallpaper → `hypr/colors.conf` |
-| hyprlock / hypridle | Cấu hình dự phòng; không tự chạy cùng Noctalia |
+| hyprlock / hypridle | Khóa màn hình và điều khiển idle, được khởi chạy trong `autostart.lua` |
 | fcitx5 + Bamboo | Nhập tiếng Việt |
 
-Noctalia quản lý một lịch idle: giảm sáng sau 3 phút, khóa sau 5 phút, tắt màn hình sau 6 phút và khóa/suspend sau 30 phút; hoạt động trở lại sẽ khôi phục độ sáng. `Super+L` và hook `started` cùng gọi bộ khóa Noctalia; hook chạy khi khởi động/restart shell, không chạy khi reload config. Không bật hypridle đồng thời vì Noctalia đã sở hữu D-Bus screensaver và xử lý yêu cầu chặn idle. Hermes là service tùy chọn: `--all` không tự bật gateway; chỉ bật thủ công trên máy đã cài Hermes. Unit sẽ bỏ qua khởi động nếu thiếu executable.
+Với cấu hình Quickshell, `hypridle.conf` giảm sáng sau 3 phút, khóa sau 5 phút, tắt màn hình sau 6 phút và suspend sau 30 phút; khi quay lại sẽ khôi phục độ sáng. Nếu chủ động chuyển về Noctalia legacy, kiểm tra và chỉ giữ một trình quản lý idle để tránh hai bộ timeout cùng hoạt động. Hermes là service tùy chọn: `--all` không tự bật gateway; chỉ bật thủ công trên máy đã cài Hermes. Unit sẽ bỏ qua khởi động nếu thiếu executable.
 
 Service swww dùng `ExecSearchPath` của systemd ≥250 để tìm daemon trong `~/.local/bin` hoặc `/usr/bin`. Carousel tạo thumbnail ngay khi mở và nạp dần từ cache; chuyển wallpaper lấy FPS từ màn hình đang bật (mặc định 60 khi không đọc được IPC). GTK4 dùng CSS semantic cho cả dark/light, và Brave không còn ép dark mode. Artifact `graphify-out/` được giữ cục bộ, không theo dõi trong Git.
 
@@ -110,7 +117,7 @@ Các thành phần desktop dùng symlink vào checkout live (phần lớn trên 
 `~/.config/{hypr,noctalia,quickshell,matugen,rice,micro,kitty,alacritty,gtk-3.0,gtk-4.0,qt5ct,qt6ct,btop}` → `config/*`; `~/.config/kdeglobals` → `root/kdeglobals`.
 `~/.local/bin/toggle-desktop` → `bin/toggle-desktop`.
 Tại checkpoint 2026-11-11, toàn bộ liên kết cấu hình live được quản lý ở trên đều trỏ vào checkout `main`; các preview cũ không còn được cài. Luôn resolve liên kết thực tế trước khi sửa vì một lần preview sau có thể đổi checkout đích.
-Sửa trong `config/` của repo = sửa luôn trên máy.
+Chỉ sửa trong checkout được các symlink live trỏ tới mới tác động trực tiếp lên máy; worktree cách ly không tự cập nhật cấu hình đang chạy.
 Trên máy khác, cài riêng trạng thái Noctalia chỉ khi muốn thay trạng thái của máy đó: `./install.sh noctalia`. Dùng `--no-state` để giữ state hiện tại.
 
 ### Thử thay đổi cách ly bằng worktree
@@ -137,31 +144,31 @@ To discard a preview before merging, restore the main symlinks for the same comp
 
 ### Reload + rollback
 - Hyprland: `hyprctl reload` + `hyprctl configerrors`
-- Noctalia: `noctalia msg config-reload` (đổi palette: `noctalia msg color-palette-reload`)
+- Quickshell rice-shell: IPC `rice.reloadShell` hoặc reload theo phiên Quickshell đang chạy
+- Noctalia legacy: `noctalia msg config-reload` (đổi palette: `noctalia msg color-palette-reload`)
 - Rollback: `git revert <commit-rice>` rồi cài lại các mục đã đổi và reload; backup mỗi lần cài symlink: `~/.config/backups/dotfiles-<timestamp>/`.
 - Quy tắc cho agent (opencode/codex): xem `AGENTS.md` trong repo.
 - Build/test commands, generated-file ownership, and agent handoff criteria: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## Adaptive rice
 
-Bar nổi chia nhóm, font Adwaita Sans, cửa sổ bo góc nhẹ và launcher Noctalia với hiệu ứng kính. Màu lấy từ wallpaper qua Matugen. Mặc định **dark**, giữ bố cục màn hình khóa ban đầu với đồng hồ giờ/phút không có khung.
+Bar Quickshell nổi chia nhóm cùng Dynamic Island, dashboard và launcher; màu lấy từ wallpaper qua Matugen. Pipeline hỗ trợ cả **dark** và **light**.
 
 ```bash
 # Đổi wallpaper và đồng bộ toàn bộ giao diện
 python3 ~/.config/hypr/scripts/generate-theme.py --apply-wallpaper /path/to/wallpaper.jpg
 
-# Hook tự cập nhật Matugen, GTK/Qt và các template ứng dụng
-noctalia msg theme-mode-set dark
-# Chế độ sáng cũng được hỗ trợ khi cần
-noctalia msg theme-mode-set light
+# Đồng bộ Matugen, GTK/Qt và các template ứng dụng theo chế độ màu
+python3 ~/.config/hypr/scripts/generate-theme.py --theme-mode-changed --backend quickshell --mode dark
+# Chuyển sang chế độ sáng
+python3 ~/.config/hypr/scripts/generate-theme.py --theme-mode-changed --backend quickshell --mode light
 ```
 
 Hook `wallpaper_changed` giữ các cách chọn wallpaper hiện có hoạt động; `theme_mode_changed` đồng bộ màu khi chuyển sáng/tối. Bề mặt và chữ dùng các vai trò màu tương ứng, không ghim màu accent. Các cấu hình ứng dụng trong đợt rice này được cài bằng symlink để màu sinh ra được lưu đúng vào dotfiles.
 
 ```bash
-./install.sh hypr noctalia matugen kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals
+./install.sh hypr quickshell matugen kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals
 hyprctl reload
-noctalia msg config-reload
 
 # Ma trận dựng template trong thư mục tạm; không thay đổi desktop
 python3 -m unittest discover -s tests -q

@@ -12,57 +12,79 @@ Item {
     implicitWidth: 724
     implicitHeight: 370
 
-    property int cpuPct: 0
-    property string cpuLoad: "0.00"
-    property string cpuModel: "Linux Processor"
-    property string ramUsed: "0 GB"
-    property string ramTotal: "0 GB"
-    property int ramPct: 0
-    property string diskUsed: "0 GB"
-    property string diskTotal: "0 GB"
-    property int diskPct: 0
-    property string uptime: "0m"
+    property var sample: ({})
+    property var cpuHistory: []
+    property bool sampleHealthy: false
+    readonly property bool hasSample: sample.hostname !== undefined
+    readonly property int cpuPct: sample.cpu_pct ?? 0
+    readonly property int ramPct: sample.ram_pct ?? 0
+    readonly property int diskPct: sample.disk_pct ?? 0
+    readonly property bool cpuAvailable: hasSample && typeof sample.cpu_pct === "number"
+    readonly property color cpuColor: cpuPct >= 85 ? Tokens.danger : Tokens.accent
+    readonly property color cardColor: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
+    readonly property string cpuModel: (sample.cpu_model || "Processor").replace(/\(R\)|\(TM\)/g, "").replace(/ @ .+$/, "")
 
-    function refreshTelemetry(): void {
-        if (!telemetryProcess.running) {
-            telemetryProcess.running = true;
-        }
-    }
-
-    Component.onCompleted: refreshTelemetry()
-    onVisibleChanged: {
-        if (visible) refreshTelemetry();
+    Timer {
+        id: processRestart
+        interval: 1500
+        repeat: false
+        onTriggered: if (root.visible && !telemetryProcess.running) telemetryProcess.running = true
     }
 
     Timer {
-        interval: 2000
-        running: root.visible
-        repeat: true
-        onTriggered: root.refreshTelemetry()
+        id: sampleWatchdog
+        interval: 12000
+        repeat: false
+        onTriggered: {
+            root.sampleHealthy = false;
+            if (root.visible && telemetryProcess.running) telemetryProcess.running = false;
+        }
     }
+
+    onVisibleChanged: {
+        if (visible) {
+            if (!telemetryProcess.running) telemetryProcess.running = true;
+        } else {
+            processRestart.stop();
+            sampleWatchdog.stop();
+            root.sampleHealthy = false;
+            root.cpuHistory = [];
+            if (telemetryProcess.running) telemetryProcess.running = false;
+        }
+    }
+
+    Component.onCompleted: if (root.visible && !telemetryProcess.running) telemetryProcess.running = true
 
     Process {
         id: telemetryProcess
-        command: ["python3", Quickshell.shellDir + "/dashboard/telemetry.py"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
+        command: ["python3", Quickshell.shellDir + "/dashboard/telemetry.py", "--watch"]
+        onRunningChanged: {
+            if (running) {
+                processRestart.stop();
+                sampleWatchdog.restart();
+            } else {
+                sampleWatchdog.stop();
+                root.sampleHealthy = false;
+                if (root.visible) processRestart.restart();
+            }
+        }
+        stdout: SplitParser {
+            onRead: line => {
                 try {
-                    var data = JSON.parse(text);
-                    if (data) {
-                        root.cpuPct = data.cpu_pct !== undefined ? data.cpu_pct : 0;
-                        root.cpuLoad = data.cpu_load || "0.00";
-                        root.cpuModel = data.cpu_model || "Linux Processor";
-                        root.ramUsed = data.ram_used || "0 GB";
-                        root.ramTotal = data.ram_total || "0 GB";
-                        root.ramPct = data.ram_pct !== undefined ? data.ram_pct : 0;
-                        root.diskUsed = data.disk_used || "0 GB";
-                        root.diskTotal = data.disk_total || "0 GB";
-                        root.diskPct = data.disk_pct !== undefined ? data.disk_pct : 0;
-                        root.uptime = data.uptime || "0m";
+                    const data = JSON.parse(line);
+                    if (!data || typeof data.ram_pct !== "number"
+                        || typeof data.disk_pct !== "number" || typeof data.uptime !== "string") {
+                        root.sampleHealthy = false;
+                        return;
+                    }
+                    root.sample = data;
+                    root.sampleHealthy = true;
+                    sampleWatchdog.restart();
+                    if (typeof data.cpu_pct === "number") {
+                        root.cpuHistory = root.cpuHistory.concat([data.cpu_pct]).slice(-30);
                     }
                 } catch (e) {
-                    // Ignore JSON parse errors
+                    root.sampleHealthy = false;
                 }
             }
         }
@@ -72,484 +94,403 @@ Item {
         anchors.fill: parent
         spacing: 10
 
-        // 1. Top Summary Strip: Hostname, Kernel, Uptime & Session Status
         Rectangle {
             Layout.fillWidth: true
-            height: 42
+            Layout.preferredHeight: 50
             radius: 12
-            color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
-            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-            border.width: 1
+            color: root.cardColor
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 14
-                anchors.rightMargin: 14
-                spacing: 16
+                anchors.leftMargin: 13
+                anchors.rightMargin: 13
+                spacing: 10
 
-                // Host
-                Row {
-                    spacing: 6
-                    Layout.alignment: Qt.AlignVCenter
+                Rectangle {
+                    Layout.preferredWidth: 30
+                    Layout.preferredHeight: 30
+                    radius: 9
+                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16)
                     Text {
-                        text: "󰌢"
-                        font.pixelSize: 14
+                        anchors.centerIn: parent
+                        text: "󰣇"
+                        font.pixelSize: 16
                         color: Tokens.accent
-                        anchors.verticalCenter: parent.verticalCenter
                     }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
                     Text {
-                        text: "cachyos-x8664"
-                        font.pixelSize: 11
-                        font.bold: true
+                        text: "System overview"
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
                         color: Tokens.text_primary
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                // Kernel
-                Row {
-                    spacing: 6
-                    Layout.alignment: Qt.AlignVCenter
-                    Text {
-                        text: "󰌽"
-                        font.pixelSize: 14
-                        color: Tokens.accent
-                        anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
-                        text: "Linux CachyOS"
-                        font.pixelSize: 11
-                        color: Tokens.text_secondary
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                // Uptime
-                Row {
-                    spacing: 6
-                    Layout.alignment: Qt.AlignVCenter
-                    Text {
-                        text: "󰔟"
-                        font.pixelSize: 14
-                        color: Tokens.accent
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Text {
-                        text: "Up: " + root.uptime
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: Tokens.text_primary
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                Item { Layout.fillWidth: true }
-
-                // Live Active Dot
-                Row {
-                    spacing: 6
-                    Layout.alignment: Qt.AlignVCenter
-                    Rectangle {
-                        width: 8
-                        height: 8
-                        radius: 4
-                        color: "#4ade80"
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Text {
-                        text: "Wayland Active"
+                        Layout.fillWidth: true
+                        text: (root.sample.os_name || "Linux") + " · " + (root.sample.hostname || "—")
                         font.pixelSize: 10
-                        font.bold: true
-                        color: "#4ade80"
-                        anchors.verticalCenter: parent.verticalCenter
+                        color: Tokens.text_secondary
+                        elide: Text.ElideRight
                     }
+                }
+                Rectangle {
+                    width: 7
+                    height: 7
+                    radius: 3.5
+                    color: root.sampleHealthy ? Tokens.accent : Tokens.text_secondary
+                }
+                Text {
+                    text: root.sampleHealthy ? "Live · 5s" : root.hasSample ? "Stale data" : "Sampling…"
+                    font.pixelSize: 11
+                    color: root.sampleHealthy ? Tokens.accent : Tokens.text_secondary
                 }
             }
         }
 
-        // 2. Three Metric Cards: CPU, RAM, Storage
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 10
 
-            // CPU Card
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                radius: 14
-                color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
-                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
+                Layout.preferredWidth: 360
+                radius: 12
+                color: root.cardColor
 
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 14
-                    spacing: 8
+                    spacing: 7
 
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 8
+                        spacing: 7
+                        Text {
+                            text: "󰍛"
+                            font.pixelSize: 17
+                            color: Tokens.accent
+                        }
+                        Text {
+                            text: "Processor"
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: Tokens.text_primary
+                        }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            text: root.sample.cpu_threads ? root.sample.cpu_threads + " threads" : "—"
+                            font.pixelSize: 11
+                            color: Tokens.text_secondary
+                        }
+                    }
 
-                        Rectangle {
-                            width: 32
-                            height: 32
-                            radius: 16
-                            color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 5
+                        Text {
+                            text: root.cpuAvailable ? root.cpuPct : "—"
+                            font.pixelSize: 40
+                            font.weight: Font.DemiBold
+                            font.features: { "tnum": 1 }
+                            color: root.cpuColor
+                        }
+                        Text {
+                            text: "%"
+                            font.pixelSize: 19
+                            color: Tokens.text_secondary
+                            Layout.alignment: Qt.AlignBaseline
+                        }
+                        Item { Layout.fillWidth: true }
+                        ColumnLayout {
+                            spacing: 2
                             Text {
-                                anchors.centerIn: parent
-                                text: "󰍛"
-                                font.pixelSize: 16
-                                color: Tokens.accent
+                                Layout.alignment: Qt.AlignRight
+                                text: root.sample.load_1m || "—"
+                                font.pixelSize: 17
+                                font.weight: Font.DemiBold
+                                font.features: { "tnum": 1 }
+                                color: Tokens.text_primary
+                            }
+                            Text {
+                                text: "1 min load"
+                                font.pixelSize: 10
+                                color: Tokens.text_secondary
+                            }
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.cpuModel
+                        font.pixelSize: 11
+                        color: Tokens.text_secondary
+                        elide: Text.ElideRight
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 65
+                        spacing: 7
+
+                        Canvas {
+                            id: historyGraph
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            property color graphColor: root.cpuColor
+                            property color gridColor: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.55)
+                            onGraphColorChanged: requestPaint()
+                            onGridColorChanged: requestPaint()
+                            onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
+
+                            Connections {
+                                target: root
+                                function onCpuHistoryChanged() { historyGraph.requestPaint(); }
+                            }
+
+                            onPaint: {
+                                const ctx = getContext("2d");
+                                ctx.clearRect(0, 0, width, height);
+                                const pad = 4;
+                                const w = Math.max(1, width - 2 * pad);
+                                const h = Math.max(1, height - 2 * pad);
+                                ctx.strokeStyle = gridColor;
+                                ctx.lineWidth = 1;
+                                ctx.beginPath();
+                                for (let i = 0; i < 3; i++) {
+                                    const y = pad + h * i / 2;
+                                    ctx.moveTo(pad, y);
+                                    ctx.lineTo(pad + w, y);
+                                }
+                                ctx.stroke();
+
+                                const values = root.cpuHistory;
+                                if (!values.length) return;
+                                const dx = w / 29;
+                                const start = pad + w - dx * (values.length - 1);
+                                const yAt = v => pad + h * (1 - v / 100);
+                                ctx.beginPath();
+                                ctx.moveTo(start, pad + h);
+                                for (let i = 0; i < values.length; i++)
+                                    ctx.lineTo(start + i * dx, yAt(values[i]));
+                                ctx.lineTo(pad + w, pad + h);
+                                ctx.closePath();
+                                const fill = ctx.createLinearGradient(0, pad, 0, pad + h);
+                                fill.addColorStop(0, Qt.rgba(graphColor.r, graphColor.g, graphColor.b, 0.30));
+                                fill.addColorStop(1, Qt.rgba(graphColor.r, graphColor.g, graphColor.b, 0.03));
+                                ctx.fillStyle = fill;
+                                ctx.fill();
+
+                                ctx.strokeStyle = graphColor;
+                                ctx.lineWidth = 1.8;
+                                ctx.lineJoin = "round";
+                                ctx.lineCap = "round";
+                                ctx.beginPath();
+                                ctx.moveTo(start, yAt(values[0]));
+                                for (let i = 1; i < values.length; i++)
+                                    ctx.lineTo(start + i * dx, yAt(values[i]));
+                                ctx.stroke();
+                                ctx.fillStyle = graphColor;
+                                ctx.beginPath();
+                                ctx.arc(pad + w, yAt(values[values.length - 1]), 2.6, 0, Math.PI * 2);
+                                ctx.fill();
                             }
                         }
 
                         ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 1
+                            Layout.fillHeight: true
+                            spacing: 0
+                            Text { text: "100%"; font.pixelSize: 9; color: Tokens.text_secondary }
+                            Item { Layout.fillHeight: true }
+                            Text { text: "50%"; font.pixelSize: 9; color: Tokens.text_secondary }
+                            Item { Layout.fillHeight: true }
+                            Text { text: "0%"; font.pixelSize: 9; color: Tokens.text_secondary }
+                        }
+                    }
 
-                            Text {
-                                text: "Processor"
-                                font.pixelSize: 12
-                                font.bold: true
-                                color: Tokens.text_primary
-                            }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "CPU history"
+                            font.pixelSize: 10
+                            color: Tokens.text_secondary
+                        }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            text: root.cpuHistory.length < 30 ? root.cpuHistory.length + "/30 samples" : "Last 2.5m"
+                            font.pixelSize: 10
+                            color: Tokens.text_secondary
+                        }
+                    }
+                }
+            }
 
-                            Text {
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredWidth: 354
+                spacing: 10
+
+                Repeater {
+                    model: 2
+                    delegate: Rectangle {
+                        id: card
+                        required property int index
+                        readonly property bool memory: index === 0
+                        readonly property string metricName: memory ? "Memory" : "Storage"
+                        readonly property string metricIcon: memory ? "󰘚" : "󰋊"
+                        readonly property string used: (memory ? root.sample.ram_used : root.sample.disk_used) || "—"
+                        readonly property string total: (memory ? root.sample.ram_total : root.sample.disk_total) || "—"
+                        readonly property string available: memory ? (root.sample.ram_available || "—") + " available"
+                            : (root.sample.disk_free || "—") + " free"
+                        readonly property string detail: memory ? "RAM" : (root.sample.filesystem || "—").toUpperCase() + " · /"
+                        readonly property int percent: memory ? root.ramPct : root.diskPct
+                        readonly property color valueColor: percent >= 90 ? Tokens.danger : Tokens.accent
+
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.preferredHeight: 110
+                        radius: 12
+                        color: root.cardColor
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 13
+                            spacing: 6
+
+                            RowLayout {
                                 Layout.fillWidth: true
-                                text: root.cpuModel
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                                elide: Text.ElideRight
-                            }
-                        }
-
-                        Text {
-                            text: root.cpuPct + "%"
-                            font.pixelSize: 18
-                            font.bold: true
-                            color: Tokens.accent
-                        }
-                    }
-
-                    Item { Layout.fillHeight: true }
-
-                    // Usage Bar
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 8
-                        radius: 4
-                        color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
-
-                        Rectangle {
-                            height: parent.height
-                            width: Math.min(parent.width, Math.max(0, parent.width * (root.cpuPct / 100.0)))
-                            radius: 4
-                            color: root.cpuPct > 85 ? Tokens.danger : Tokens.accent
-
-                            Behavior on width {
-                                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
-                            }
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: "Load: " + root.cpuLoad
-                            font.pixelSize: 10
-                            color: Tokens.text_secondary
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            text: "Live CPU"
-                            font.pixelSize: 9
-                            color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.6)
-                        }
-                    }
-                }
-            }
-
-            // RAM Card
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 14
-                color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
-                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 8
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        Rectangle {
-                            width: 32
-                            height: 32
-                            radius: 16
-                            color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "󰘚"
-                                font.pixelSize: 16
-                                color: Tokens.accent
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 1
-
-                            Text {
-                                text: "Memory (RAM)"
-                                font.pixelSize: 12
-                                font.bold: true
-                                color: Tokens.text_primary
+                                spacing: 7
+                                Text {
+                                    text: card.metricIcon
+                                    font.pixelSize: 16
+                                    color: Tokens.accent
+                                }
+                                Text {
+                                    text: card.metricName
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                    color: Tokens.text_primary
+                                }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    text: root.hasSample ? card.percent + "%" : "—"
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    font.features: { "tnum": 1 }
+                                    color: card.valueColor
+                                }
                             }
 
-                            Text {
-                                text: root.ramUsed + " / " + root.ramTotal
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                            }
-                        }
-
-                        Text {
-                            text: root.ramPct + "%"
-                            font.pixelSize: 18
-                            font.bold: true
-                            color: Tokens.accent
-                        }
-                    }
-
-                    Item { Layout.fillHeight: true }
-
-                    // Usage Bar
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 8
-                        radius: 4
-                        color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
-
-                        Rectangle {
-                            height: parent.height
-                            width: Math.min(parent.width, Math.max(0, parent.width * (root.ramPct / 100.0)))
-                            radius: 4
-                            color: root.ramPct > 90 ? Tokens.danger : Tokens.accent
-
-                            Behavior on width {
-                                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
-                            }
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: "Available: " + (100 - root.ramPct) + "%"
-                            font.pixelSize: 10
-                            color: Tokens.text_secondary
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            text: "Physical RAM"
-                            font.pixelSize: 9
-                            color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.6)
-                        }
-                    }
-                }
-            }
-
-            // Storage Card
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 14
-                color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
-                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 8
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        Rectangle {
-                            width: 32
-                            height: 32
-                            radius: 16
-                            color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "󰋊"
-                                font.pixelSize: 16
-                                color: Tokens.accent
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 1
-
-                            Text {
-                                text: "Storage (/)"
-                                font.pixelSize: 12
-                                font.bold: true
-                                color: Tokens.text_primary
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 5
+                                Text {
+                                    text: card.used.split(" ")[0]
+                                    font.pixelSize: 24
+                                    font.weight: Font.DemiBold
+                                    font.features: { "tnum": 1 }
+                                    color: Tokens.text_primary
+                                }
+                                Text {
+                                    text: "/ " + card.total
+                                    font.pixelSize: 11
+                                    color: Tokens.text_secondary
+                                    Layout.alignment: Qt.AlignBaseline
+                                }
                             }
 
-                            Text {
-                                text: root.diskUsed + " / " + root.diskTotal
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 6
+                                radius: 3
+                                color: Tokens.surface
+                                clip: true
+                                Rectangle {
+                                    width: parent.width * Math.max(0, Math.min(1, card.percent / 100))
+                                    height: parent.height
+                                    radius: 3
+                                    color: card.valueColor
+                                    Behavior on width {
+                                        NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                                    }
+                                }
                             }
-                        }
 
-                        Text {
-                            text: root.diskPct + "%"
-                            font.pixelSize: 18
-                            font.bold: true
-                            color: Tokens.accent
-                        }
-                    }
-
-                    Item { Layout.fillHeight: true }
-
-                    // Usage Bar
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 8
-                        radius: 4
-                        color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
-
-                        Rectangle {
-                            height: parent.height
-                            width: Math.min(parent.width, Math.max(0, parent.width * (root.diskPct / 100.0)))
-                            radius: 4
-                            color: root.diskPct > 90 ? Tokens.danger : Tokens.accent
-
-                            Behavior on width {
-                                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: card.available
+                                    font.pixelSize: 10
+                                    color: Tokens.text_secondary
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    text: card.detail
+                                    font.pixelSize: 10
+                                    color: Tokens.text_secondary
+                                }
                             }
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: "Root Filesystem"
-                            font.pixelSize: 10
-                            color: Tokens.text_secondary
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            text: "Btrfs NVMe"
-                            font.pixelSize: 9
-                            color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.6)
                         }
                     }
                 }
             }
         }
 
-        // 3. Bottom Environment Details Strip
         Rectangle {
             Layout.fillWidth: true
-            height: 52
+            Layout.preferredHeight: 52
             radius: 12
-            color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
-            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-            border.width: 1
+            color: root.cardColor
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
-                spacing: 20
+                anchors.margins: 13
+                spacing: 13
 
-                ColumnLayout {
-                    spacing: 2
-                    Text {
-                        text: "Compositor"
-                        font.pixelSize: 10
-                        color: Tokens.text_secondary
-                    }
-                    Text {
-                        text: "Hyprland 0.57.0"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: Tokens.text_primary
-                    }
-                }
+                Repeater {
+                    model: [
+                        { label: "Uptime", value: root.sample.uptime || "—" },
+                        { label: "Kernel", value: root.sample.kernel || "—" },
+                        { label: "Desktop", value: root.sample.desktop || "—" }
+                    ]
+                    delegate: RowLayout {
+                        id: detailRow
+                        required property int index
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: index === 1 ? 250 : 180
+                        spacing: 13
 
-                Rectangle {
-                    width: 1
-                    height: 24
-                    color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                }
-
-                ColumnLayout {
-                    spacing: 2
-                    Text {
-                        text: "Desktop Shell"
-                        font.pixelSize: 10
-                        color: Tokens.text_secondary
-                    }
-                    Text {
-                        text: "Quickshell 0.3.2"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: Tokens.accent
-                    }
-                }
-
-                Rectangle {
-                    width: 1
-                    height: 24
-                    color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                }
-
-                ColumnLayout {
-                    spacing: 2
-                    Text {
-                        text: "Palette Engine"
-                        font.pixelSize: 10
-                        color: Tokens.text_secondary
-                    }
-                    Text {
-                        text: "Matugen Dynamic"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: Tokens.text_primary
-                    }
-                }
-
-                Item { Layout.fillWidth: true }
-
-                ColumnLayout {
-                    spacing: 2
-                    Layout.alignment: Qt.AlignRight
-                    Text {
-                        text: "Telemetry Interval"
-                        font.pixelSize: 10
-                        color: Tokens.text_secondary
-                    }
-                    Text {
-                        text: "2.0s Polling"
-                        font.pixelSize: 11
-                        color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.8)
+                        Rectangle {
+                            visible: detailRow.index > 0
+                            width: 1
+                            height: 23
+                            color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text {
+                                text: detailRow.modelData.label
+                                font.pixelSize: 10
+                                color: Tokens.text_secondary
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: detailRow.modelData.value
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                                color: Tokens.text_primary
+                                elide: Text.ElideRight
+                            }
+                        }
                     }
                 }
             }

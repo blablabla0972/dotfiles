@@ -11,14 +11,26 @@ Row {
     spacing: 5
 
     readonly property int focusedWsId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
+    // Show five normal workspaces plus any higher-numbered active/special slot.
+    readonly property var workspaceIds: {
+        var ids = [1, 2, 3, 4, 5];
+        var active = Hyprland.workspaces.values;
+        for (var i = 0; i < active.length; i++) {
+            var wsId = active[i].id;
+            if (wsId > 0 && ids.indexOf(wsId) < 0) ids.push(wsId);
+        }
+        if (root.focusedWsId > 0 && ids.indexOf(root.focusedWsId) < 0)
+            ids.push(root.focusedWsId);
+        return ids.sort((a, b) => a - b);
+    }
 
     Repeater {
-        model: 6
+        model: root.workspaceIds
 
         Rectangle {
             id: wsBadge
-            required property int index
-            readonly property int wsId: index + 1
+            required property int modelData
+            readonly property int wsId: modelData
             readonly property bool isCurrent: root.focusedWsId === wsId
 
             width: isCurrent ? 24 : 8

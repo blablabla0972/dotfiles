@@ -61,7 +61,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
 
-    def render(self, wallpaper, config, mode):
+    def render(self, wallpaper, config, mode, backend=None):
         self.raw.write_text(json.dumps(self.palette, sort_keys=True))
         for name in ('hypr/colors.conf', 'micro/colorschemes/adaptive.micro'):
             (self.config / name).write_text(mode)
@@ -346,9 +346,9 @@ class AdaptiveTransactionTest(unittest.TestCase):
         def event(kind):
             with trace.open('a') as stream:
                 stream.write(f'{kind} {self.mode}\n')
-        def render(*args):
+        def render(*args, **kwargs):
             event('start')
-            self.render(*args)
+            self.render(*args, **kwargs)
             real_sleep(.03)  # Force overlap if the actual main() lock is removed.
         def write(path, data):
             original_write(path, data)

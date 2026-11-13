@@ -22,47 +22,26 @@ Rectangle {
     property bool wifiActive: Networking.wifiEnabled
     property var btAdapter: Bluetooth.defaultAdapter
     property bool btActive: btAdapter ? btAdapter.enabled : false
-    property bool dndActive: false
-    property bool nightLightActive: false
-    property bool caffeineActive: false
-    property real brightness: 0.8
-
-    property bool wifiDrawerOpen: false
-    property bool btDrawerOpen: false
+    readonly property bool dndActive: DesktopControls.doNotDisturb
+    readonly property bool nightLightActive: DesktopControls.nightLightActive
+    readonly property bool caffeineActive: DesktopControls.caffeineActive
+    readonly property real brightness: DesktopControls.brightnessLevel
 
     signal requestSideDrawer(string type)
 
-    Process {
-        id: readBrightProcess
-        command: ["brightnessctl", "get", "-m"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var parts = text.trim().split(",");
-                    if (parts.length >= 4) {
-                        var pctStr = parts[3].replace("%", "").trim();
-                        var val = parseInt(pctStr);
-                        if (!isNaN(val)) root.brightness = Math.max(0.05, Math.min(1.0, val / 100.0));
-                    }
-                } catch (e) {}
-            }
-        }
-    }
-
-    Process {
-        id: setBrightProcess
-    }
-
     function setBrightness(val: real): void {
-        var clamped = Math.max(0.05, Math.min(1.0, val));
-        root.brightness = clamped;
-        setBrightProcess.command = ["brightnessctl", "set", Math.round(clamped * 100) + "%"];
-        setBrightProcess.running = true;
+        DesktopControls.setBrightness(val);
+    }
+
+    Timer {
+        interval: 2000
+        running: root.visible
+        repeat: true
+        onTriggered: DesktopControls.refreshBrightness(false)
     }
 
     Component.onCompleted: {
-        readBrightProcess.running = true;
+        DesktopControls.refreshBrightness(false);
     }
 
     ColumnLayout {
@@ -248,7 +227,6 @@ Rectangle {
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: (mouse) => {
                         if (mouse.button === Qt.RightButton || mouse.x >= (parent.width - 32)) {
-                            root.wifiDrawerOpen = !root.wifiDrawerOpen;
                             root.requestSideDrawer("wifi");
                         } else {
                             Networking.wifiEnabled = !Networking.wifiEnabled;
@@ -272,7 +250,7 @@ Rectangle {
                     anchors.rightMargin: 8
                     spacing: 6
                     Text { text: "󰂯"; font.pixelSize: 15; color: root.btActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { Layout.fillWidth: true; text: "Bluetooth"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary; elide: Text.ElideRight }
+                    Text { Layout.fillWidth: true; text: parent.width < 117 ? "BT" : "Bluetooth"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary; elide: Text.ElideRight }
                     Text { text: "󰅂"; font.pixelSize: 12; color: Tokens.text_secondary }
                 }
 
@@ -282,7 +260,6 @@ Rectangle {
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: (mouse) => {
                         if (mouse.button === Qt.RightButton || mouse.x >= (parent.width - 32)) {
-                            root.btDrawerOpen = !root.btDrawerOpen;
                             root.requestSideDrawer("bluetooth");
                         } else {
                             if (root.btAdapter) root.btAdapter.enabled = !root.btAdapter.enabled;
@@ -329,7 +306,7 @@ Rectangle {
                 }
 
                 TapHandler {
-                    onTapped: root.dndActive = !root.dndActive
+                    onTapped: DesktopControls.doNotDisturb = !DesktopControls.doNotDisturb
                 }
             }
 
@@ -350,7 +327,7 @@ Rectangle {
                 }
 
                 TapHandler {
-                    onTapped: root.nightLightActive = !root.nightLightActive
+                    onTapped: DesktopControls.toggleNightLight()
                 }
             }
 
@@ -371,22 +348,10 @@ Rectangle {
                 }
 
                 TapHandler {
-                    onTapped: root.caffeineActive = !root.caffeineActive
+                    onTapped: DesktopControls.toggleCaffeine()
                 }
             }
         }
     }
 
-    // Sidecar panel hosted drawers (embedded fallback disabled in favor of sidecar)
-    WifiDrawer {
-        visible: false
-        opacity: 0.0
-        onCloseRequested: root.wifiDrawerOpen = false
-    }
-
-    BluetoothDrawer {
-        visible: false
-        opacity: 0.0
-        onCloseRequested: root.btDrawerOpen = false
-    }
 }

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import "../theme"
 
 Rectangle {
@@ -14,7 +15,12 @@ Rectangle {
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
     border.width: 1
 
-    readonly property date now: new Date()
+    SystemClock {
+        id: clock
+        precision: SystemClock.Minutes
+    }
+
+    readonly property date now: clock.date
     readonly property int currentYear: now.getFullYear()
     readonly property int currentMonth: now.getMonth()
     readonly property int currentDay: now.getDate()

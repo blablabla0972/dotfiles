@@ -68,7 +68,8 @@ class QuickshellAppLauncherTest(unittest.TestCase):
         # Shell wiring
         shell_content = SHELL_QML.read_text()
         self.assertIn("onRequestLauncher", shell_content)
-        self.assertIn("root.toggleLauncher()", shell_content)
+        self.assertIn("root.toggleLauncher(modelData)", shell_content)
+        self.assertIn("root.instanceOnScreen(launcherInstances, screen)", shell_content.replace("instanceOnScreen(launcherInstances, screen)", "root.instanceOnScreen(launcherInstances, screen)"))
 
     def test_hyprland_binds_hotkeys(self):
         self.assertTrue(BINDS_LUA.exists(), "binds.lua must exist")

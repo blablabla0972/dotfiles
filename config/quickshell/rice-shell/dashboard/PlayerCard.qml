@@ -18,6 +18,18 @@ Rectangle {
 
     readonly property bool hasArtwork: Media.hasPlayer && Media.trackArtUrl.length > 0 && artImage.status === Image.Ready
 
+    // MPRIS positions are fetched on demand; update only while this card is visible.
+    Timer {
+        interval: 1000
+        repeat: true
+        running: root.visible && Media.isPlaying && Media.activePlayer !== null
+            && Media.activePlayer.positionSupported
+        onTriggered: {
+            if (Media.activePlayer && Media.isPlaying)
+                Media.activePlayer.positionChanged();
+        }
+    }
+
     // 1. Full-Bleed Artwork Background
     Image {
         id: artImage
@@ -156,7 +168,7 @@ Rectangle {
 
                 Rectangle {
                     height: parent.height
-                    width: parent.width * (Media.isPlaying ? 0.45 : 0.0) // Indicator bar
+                    width: parent.width * Media.progress
                     radius: 2
                     color: Tokens.accent
 

@@ -79,7 +79,6 @@ PanelWindow {
         onFileChanged: {
             root.invalidatePaletteRevision();
             reload();
-            if (!modeQuery.running) modeQuery.running = true;
         }
     }
 
@@ -123,29 +122,28 @@ PanelWindow {
         }
     }
 
+    function loadAdaptiveTheme() {
+        var next = adaptiveFile.text();
+        adaptiveText = next;
+        try {
+            var mode = JSON.parse(next).mode;
+            if (mode === "dark" || mode === "light") themeMode = mode;
+        } catch (error) {
+            // Keep the last known mode if the transaction file is temporarily invalid.
+        }
+    }
+
     // Optional, read-only transaction output; invalid or mismatched modes use native colors.
     FileView {
         id: adaptiveFile
         path: root.stateHome + "/desktop-wallpaper/adaptive-theme.json"
         watchChanges: true
         printErrors: false
-        onLoaded: root.adaptiveText = text()
+        onLoaded: root.loadAdaptiveTheme()
         onLoadFailed: root.adaptiveText = ""
         onFileChanged: {
             root.adaptiveText = "";
             reload();
-        }
-    }
-
-    Process {
-        id: modeQuery
-        command: ["noctalia", "msg", "theme-mode-get"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var mode = text.trim();
-                if (mode === "dark" || mode === "light") root.themeMode = mode;
-            }
         }
     }
     readonly property real rowWidth: Math.min(width, 1920)

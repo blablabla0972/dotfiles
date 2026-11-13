@@ -22,7 +22,14 @@ import tomllib
 import uuid
 
 
-MATUGEN_OUTPUTS = ('hypr/colors.conf', 'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro')
+MATUGEN_CORE_OUTPUTS = ('hypr/colors.conf', 'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro')
+MATUGEN_QUICKSHELL_OUTPUTS = (
+    'kitty/themes/noctalia.conf', 'alacritty/themes/noctalia.toml',
+    'gtk-3.0/gtk.css', 'gtk-4.0/gtk.css',
+    'qt5ct/colors/noctalia.conf', 'qt6ct/colors/noctalia.conf',
+    'btop/themes/noctalia.theme',
+)
+MATUGEN_OUTPUTS = MATUGEN_CORE_OUTPUTS + MATUGEN_QUICKSHELL_OUTPUTS
 MATUGEN_FLAGS = ('--prefer', 'less-saturation', '--source-color-index', '0', '--quiet')
 
 
@@ -228,7 +235,7 @@ def cached_matugen_outputs(cache, names):
         return None
 
 
-def render_matugen(wallpaper, config_dir, mode):
+def render_matugen(wallpaper, config_dir, mode, backend=None):
     source = config_dir / 'matugen/config.toml'
     settings = tomllib.loads(source.read_text())
     wallpaper_options = settings.get('config', {}).get('wallpaper')
@@ -252,6 +259,10 @@ def render_matugen(wallpaper, config_dir, mode):
             if key == 'output_path' and path not in outputs:
                 raise RuntimeError('Additional Matugen outputs need backup paths before theme generation')
             template[key] = str(path)
+    if (backend or detect_backend()) == 'noctalia':
+        core = {str(config_dir / name) for name in MATUGEN_CORE_OUTPUTS}
+        settings['templates'] = {name: template for name, template in settings.get('templates', {}).items()
+                                 if template.get('output_path') in core}
     names = {name for name in MATUGEN_OUTPUTS if any(
         template.get('output_path') == str(config_dir / name)
         for template in settings.get('templates', {}).values())}
@@ -419,7 +430,7 @@ def palette_for(wallpaper, config_dir, backend=None, target_mode=None):
 
         palette_path = config_dir / 'noctalia/palettes/matugen.json'
         previous_palette = palette_path.read_bytes() if palette_path.is_file() else None
-        render_matugen(wallpaper, config_dir, mode)
+        render_matugen(wallpaper, config_dir, mode, backend='quickshell')
 
         try:
             palette_json = json.loads(palette_path.read_text())
@@ -457,7 +468,7 @@ def palette_for(wallpaper, config_dir, backend=None, target_mode=None):
 
     palette_path = config_dir / 'noctalia/palettes/matugen.json'
     previous_palette = palette_path.read_bytes() if palette_path.is_file() else None
-    render_matugen(wallpaper, config_dir, mode)
+    render_matugen(wallpaper, config_dir, mode, backend='noctalia')
     palette_json = json.loads(palette_path.read_text())
     required_fixed_roles = {
         'mPrimary', 'mOnPrimary', 'mSecondary', 'mOnSecondary', 'mTertiary', 'mOnTertiary',
@@ -533,6 +544,9 @@ def sync_toolkit_settings(config_dir, mode):
         if app.startswith('gtk'):
             ini[section]['gtk-theme-name'] = 'adw-gtk3-dark' if mode == 'dark' else 'adw-gtk3'
             ini[section]['gtk-application-prefer-dark-theme'] = str(int(mode == 'dark'))
+        elif detect_backend() == 'quickshell':
+            ini[section]['custom_palette'] = 'true'
+            ini[section]['color_scheme_path'] = str(config_dir / app / 'colors/noctalia.conf')
         if icon_available:
             ini[section]['gtk-icon-theme-name' if app.startswith('gtk') else 'icon_theme'] = icons
         output = io.StringIO()

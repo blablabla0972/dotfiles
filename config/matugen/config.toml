@@ -22,3 +22,31 @@ ansi_cyan = { color = "#00ffff", blend = true }
 [templates.micro]
 input_path = "~/.config/matugen/templates/micro.micro"
 output_path = "~/.config/micro/colorschemes/adaptive.micro"
+
+[templates.kitty]
+input_path = '~/.config/matugen/templates/kitty.conf'
+output_path = '~/.config/kitty/themes/noctalia.conf'
+
+[templates.alacritty]
+input_path = '~/.config/matugen/templates/alacritty.toml'
+output_path = '~/.config/alacritty/themes/noctalia.toml'
+
+[templates.gtk3]
+input_path = '~/.config/matugen/templates/gtk.css'
+output_path = '~/.config/gtk-3.0/gtk.css'
+
+[templates.gtk4]
+input_path = '~/.config/matugen/templates/gtk.css'
+output_path = '~/.config/gtk-4.0/gtk.css'
+
+[templates.qt5ct]
+input_path = '~/.config/matugen/templates/qtct.conf'
+output_path = '~/.config/qt5ct/colors/noctalia.conf'
+
+[templates.qt6ct]
+input_path = '~/.config/matugen/templates/qtct.conf'
+output_path = '~/.config/qt6ct/colors/noctalia.conf'
+
+[templates.btop]
+input_path = '~/.config/matugen/templates/btop.theme'
+output_path = '~/.config/btop/themes/noctalia.theme'
