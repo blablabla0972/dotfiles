@@ -568,20 +568,7 @@ PanelWindow {
                 enabled: islandWindow.activeMode === IslandState.State.EXPANDED && opacity > 0.5
                 anchors.centerIn: parent
                 width: IslandState.targetDimensions(IslandState.State.EXPANDED).width - 32
-                height: IslandState.targetDimensions(IslandState.State.EXPANDED).height - 28
-
-                // Waveform phase oscillation timer (inspired by Tide-island & DynamicGlacier)
-                Timer {
-                    interval: 110
-                    repeat: true
-                    running: expandedMediaContent.visible && Media.isPlaying
-                    onTriggered: {
-                        expandedMediaContent.visualizerPhase += 0.18;
-                        if (expandedMediaContent.visualizerPhase > Math.PI * 2) {
-                            expandedMediaContent.visualizerPhase -= Math.PI * 2;
-                        }
-                    }
-                }
+                height: IslandState.targetDimensions(IslandState.State.EXPANDED).height - 24
 
                 // MPRIS position is read on demand; refresh bindings while the card is visible.
                 Timer {
@@ -595,211 +582,403 @@ PanelWindow {
                     }
                 }
 
-                property real visualizerPhase: 0
-                function visualizerLevel(index) {
-                    var phase = visualizerPhase + index * 0.78;
-                    var primary = (Math.sin(phase) + 1) * 0.5;
-                    var secondary = (Math.sin(phase * 2 + index * 0.95) + 1) * 0.5;
-                    return 0.22 + primary * 0.42 + secondary * 0.24;
+                readonly property bool seekAvailable: Media.activePlayer !== null
+                    && Media.activePlayer.canSeek && Media.length > 0
+                readonly property bool shuffleAvailable: Media.activePlayer !== null
+                    && Media.activePlayer.canControl && Media.activePlayer.shuffleSupported
+                readonly property bool loopAvailable: Media.activePlayer !== null
+                    && Media.activePlayer.canControl && Media.activePlayer.loopSupported
+
+                function toggleShuffle(): void {
+                    if (shuffleAvailable && Media.activePlayer)
+                        Media.activePlayer.shuffle = !Media.activePlayer.shuffle;
                 }
 
-                ColumnLayout {
+                function cycleLoop(): void {
+                    if (!loopAvailable) return;
+                    Media.cycleLoop();
+                }
+
+                function seekByOffset(seconds: real): void {
+                    if (seekAvailable) {
+                        Media.setPosition(Math.max(0, Math.min(Media.length, Media.position + seconds)));
+                    }
+                }
+
+                function seekAt(x: real): void {
+                    if (seekAvailable && progressBarTrack.width > 0) {
+                        const ratio = Math.max(0, Math.min(1, x / progressBarTrack.width));
+                        Media.setPosition(ratio * Media.length);
+                    }
+                }
+
+                RowLayout {
                     anchors.fill: parent
-                    spacing: 8
+                    spacing: 24
 
-                    // Tier 1: Track Header (Artwork 50x50, Title/Artist, 5-bar Waveform)
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 50
-                        spacing: 12
+                    Rectangle {
+                        Layout.preferredWidth: 68
+                        Layout.minimumWidth: 68
+                        Layout.maximumWidth: 68
+                        Layout.preferredHeight: 68
+                        Layout.alignment: Qt.AlignVCenter
+                        radius: 14
+                        color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
+                                       Tokens.surface_high.b, 0.72)
+                        border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
+                                              Tokens.outline.b, 0.42)
+                        border.width: 1
+                        clip: true
 
-                        // Album artwork 50x50 (radius 10)
-                        Rectangle {
-                            Layout.preferredWidth: 52
-                            Layout.preferredHeight: 52
-                            radius: 10
-                            color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.9)
-                            clip: true
-
-                            Image {
-                                id: expandedArtwork
-                                anchors.fill: parent
-                                source: islandWindow.hasMedia ? Media.trackArtUrl : ""
-                                sourceSize.width: 100
-                                sourceSize.height: 100
-                                fillMode: Image.PreserveAspectCrop
-                                visible: Media.hasPlayer && Media.trackArtUrl.length > 0 && status === Image.Ready
-                                asynchronous: true
-                            }
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "󰎆"
-                                font.pixelSize: 22
-                                color: Tokens.accent
-                                visible: expandedArtwork.status !== Image.Ready
-                            }
+                        Image {
+                            id: expandedArtwork
+                            anchors.fill: parent
+                            source: Media.hasPlayer ? Media.trackArtUrl : ""
+                            sourceSize.width: 204
+                            sourceSize.height: 204
+                            fillMode: Image.PreserveAspectCrop
+                            visible: Media.hasPlayer && Media.trackArtUrl.length > 0
+                                && status === Image.Ready
+                            asynchronous: true
                         }
 
-                        // Track Title & Artist
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: islandWindow.hasMedia ? Media.trackTitle : "No media playing"
-                                textFormat: Text.PlainText
-                                font.pixelSize: 13
-                                font.bold: true
-                                color: Tokens.text_primary
-                                elide: Text.ElideRight
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: islandWindow.hasMedia ? (Media.trackArtist || "Active audio stream") : "Play something to get started"
-                                textFormat: Text.PlainText
-                                font.pixelSize: 11
-                                font.weight: Font.Medium
-                                color: Tokens.text_secondary
-                                elide: Text.ElideRight
-                            }
-                        }
-
-                        // Mini 5-bar Waveform Visualizer
-                        Row {
-                            Layout.alignment: Qt.AlignVCenter
-                            spacing: 3
-                            height: 22
-
-                            Repeater {
-                                model: 5
-                                delegate: Rectangle {
-                                    required property int index
-                                    width: 3
-                                    height: Media.isPlaying 
-                                        ? 4 + 18 * expandedMediaContent.visualizerLevel(index) 
-                                        : 5
-                                    radius: 1.5
-                                    color: Media.isPlaying ? Tokens.accent : Tokens.text_secondary
-                                    anchors.verticalCenter: parent.verticalCenter
-
-                                    Behavior on height {
-                                        NumberAnimation { duration: 90; easing.type: Easing.InOutQuad }
-                                    }
-                                    Behavior on color {
-                                        ColorAnimation { duration: 150 }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            objectName: "mediaPinButton"
-                            Layout.preferredWidth: 24
-                            Layout.preferredHeight: 24
-                            radius: 12
-                            color: "transparent"
-                            Text {
-                                anchors.centerIn: parent
-                                text: islandWindow.isPinned ? "󰅖" : "󰐃"
-                                font.pixelSize: 15
-                                color: Tokens.text_secondary
-                            }
-                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                            TapHandler {
-                                onTapped: {
-                                    if (islandWindow.isPinned) islandWindow.collapse();
-                                    else islandWindow.isPinned = true;
-                                }
-                            }
+                        Text {
+                            objectName: "expandedArtworkFallback"
+                            anchors.centerIn: parent
+                            text: "󰎆"
+                            font.pixelSize: 26
+                            color: Tokens.text_secondary
+                            visible: expandedArtwork.status !== Image.Ready
                         }
                     }
 
-                    // Tier 2: Seek Bar & Timers
-                    RowLayout {
+                    ColumnLayout {
+                        id: expandedMediaDetails
                         Layout.fillWidth: true
-                        spacing: 8
+                        Layout.fillHeight: true
+                        Layout.topMargin: 8
+                        spacing: 3
 
                         Text {
-                            text: Media.formatTime(Media.position)
-                            font.pixelSize: 10
-                            font.weight: Font.Medium
-                            font.features: { "tnum": 1 }
-                            color: Tokens.text_secondary
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 24
+                            text: islandWindow.hasMedia ? Media.trackTitle : "No media playing"
+                            textFormat: Text.PlainText
+                            font.pixelSize: 16
+                            font.weight: Font.DemiBold
+                            color: Tokens.text_primary
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
                         }
 
-                        Rectangle {
-                            id: progressBarTrack
+                        Text {
                             Layout.fillWidth: true
-                            height: 5
-                            radius: 2.5
-                            opacity: Media.activePlayer && Media.activePlayer.canSeek && Media.length > 0 ? 1 : 0.5
-                            color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.9)
-                            clip: true
+                            Layout.preferredHeight: 15
+                            text: islandWindow.hasMedia
+                                ? (Media.trackArtist || "Active audio stream")
+                                : "Play something to get started"
+                            textFormat: Text.PlainText
+                            font.pixelSize: 13
+                            font.weight: Font.Medium
+                            color: Tokens.text_secondary
+                            elide: Text.ElideRight
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 17
+                            spacing: 7
+                            visible: Media.length > 0
+
+                            Text {
+                                text: Media.formatTime(Media.position)
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                                font.features: { "tnum": 1 }
+                                color: Tokens.text_secondary
+                            }
 
                             Rectangle {
-                                height: parent.height
-                                width: Math.min(parent.width, Math.max(0, parent.width * Media.progress))
-                                radius: 2
-                                color: Tokens.accent
+                                id: progressBarTrack
+                                objectName: "mediaSeekTimeline"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 3
+                                Layout.minimumHeight: 3
+                                Layout.maximumHeight: 3
+                                radius: 1.5
+                                opacity: expandedMediaContent.seekAvailable ? 1 : 0.55
+                                color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
+                                               Tokens.surface_high.b, 0.88)
+                                clip: true
 
-                                Behavior on width {
-                                    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                                Rectangle {
+                                    height: parent.height
+                                    width: Math.min(parent.width, Math.max(0, parent.width * Media.progress))
+                                    radius: 1.5
+                                    color: Tokens.accent
+
+                                    Behavior on width {
+                                        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                                    }
                                 }
-                            }
 
-                            MouseArea {
-                                anchors.fill: parent
-                                anchors.topMargin: -7
-                                anchors.bottomMargin: -7
-                                enabled: islandWindow.hasMedia && Media.activePlayer !== null
-                                    && Media.activePlayer.canSeek && Media.length > 0
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: (mouse) => {
-                                    if (Media.length > 0) {
-                                        var ratio = Math.max(0.0, Math.min(1.0, mouse.x / progressBarTrack.width));
-                                        Media.setPosition(ratio * Media.length);
+                                MouseArea {
+                                    anchors.fill: parent
+                                    anchors.topMargin: -7
+                                    anchors.bottomMargin: -7
+                                    enabled: islandWindow.hasMedia && expandedMediaContent.seekAvailable
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onPressed: (mouse) => expandedMediaContent.seekAt(mouse.x)
+                                    onPositionChanged: (mouse) => {
+                                        if (pressed) expandedMediaContent.seekAt(mouse.x);
                                     }
                                 }
                             }
+
+                            Text {
+                                text: Media.length > 0 ? Media.formatTime(Media.length) : "--:--"
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                                font.features: { "tnum": 1 }
+                                color: Tokens.text_secondary
+                            }
                         }
 
-                        Text {
-                            text: Media.length > 0 ? Media.formatTime(Media.length) : "--:--"
-                            font.pixelSize: 10
-                            font.weight: Font.Medium
-                            font.features: { "tnum": 1 }
-                            color: Tokens.text_secondary
-                        }
-                    }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            Layout.topMargin: 1
+                            spacing: 7
 
-                    // Tier 3: Controls (Previous, Play/Pause, Next)
-                    RowLayout {
-                        Layout.alignment: Qt.AlignHCenter
-                        spacing: 32
+                            Item { Layout.fillWidth: true }
 
-                        Rectangle {
-                            width: 32; height: 32; radius: 16; color: prevHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : "transparent"
-                            Text { anchors.centerIn: parent; text: "󰒮"; font.pixelSize: 16; color: prevHover.hovered ? Tokens.accent : Tokens.text_secondary; opacity: Media.canPrev ? 1 : 0.45 }
-                            HoverHandler { id: prevHover; enabled: islandWindow.hasMedia && Media.canPrev; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { enabled: islandWindow.hasMedia && Media.canPrev; onTapped: Media.previous() }
-                        }
+                            Rectangle {
+                                objectName: "mediaShuffleButton"
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 10
+                                enabled: expandedMediaContent.shuffleAvailable
+                                opacity: expandedMediaContent.shuffleAvailable ? 1 : 0.35
+                                color: shuffleTap.pressed
+                                    ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
+                                    : (shuffleHover.hovered
+                                        ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
+                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
+                                border.width: 1
+                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
+                                    Tokens.outline.b, 0.55)
 
-                        Rectangle {
-                            width: 40; height: 40; radius: 20; opacity: Media.canToggle ? 1 : 0.45; color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, playHover.hovered ? 0.35 : 0.22)
-                            border.color: Tokens.accent; border.width: 1
-                            Text { anchors.centerIn: parent; text: Media.isPlaying ? "󰏤" : "󰐊"; font.pixelSize: 17; color: Tokens.accent }
-                            HoverHandler { id: playHover; enabled: islandWindow.hasMedia && Media.canToggle; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { enabled: islandWindow.hasMedia && Media.canToggle; onTapped: Media.togglePlaying() }
-                        }
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "󰒟"
+                                    font.pixelSize: 13
+                                    color: Media.activePlayer && Media.activePlayer.shuffle
+                                        ? Tokens.accent : Tokens.text_secondary
+                                }
+                                HoverHandler {
+                                    id: shuffleHover
+                                    enabled: expandedMediaContent.shuffleAvailable
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                TapHandler {
+                                    id: shuffleTap
+                                    enabled: expandedMediaContent.shuffleAvailable
+                                    onTapped: expandedMediaContent.toggleShuffle()
+                                }
+                            }
 
-                        Rectangle {
-                            width: 32; height: 32; radius: 16; color: nextHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : "transparent"
-                            Text { anchors.centerIn: parent; text: "󰒭"; font.pixelSize: 16; color: nextHover.hovered ? Tokens.accent : Tokens.text_secondary; opacity: Media.canNext ? 1 : 0.45 }
-                            HoverHandler { id: nextHover; enabled: islandWindow.hasMedia && Media.canNext; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { enabled: islandWindow.hasMedia && Media.canNext; onTapped: Media.next() }
+                            Rectangle {
+                                objectName: "mediaPreviousButton"
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                enabled: islandWindow.hasMedia
+                                    && (Media.canPrev || expandedMediaContent.seekAvailable)
+                                opacity: enabled ? 1 : 0.35
+                                color: previousTap.pressed
+                                    ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
+                                    : (previousHover.hovered
+                                        ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
+                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
+                                border.width: 1
+                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b,
+                                    previousHover.hovered || previousTap.pressed ? 0.7 : 0.36)
+
+                                Text {
+                                    objectName: "mediaPreviousActionLabel"
+                                    anchors.centerIn: parent
+                                    text: Media.canPrev ? "󰒮"
+                                        : (expandedMediaContent.seekAvailable ? "−10s" : "󰒮")
+                                    font.pixelSize: Media.canPrev || !expandedMediaContent.seekAvailable ? 14 : 8
+                                    font.weight: Font.DemiBold
+                                    color: previousHover.hovered ? Tokens.accent : Tokens.text_secondary
+                                }
+                                HoverHandler {
+                                    id: previousHover
+                                    enabled: islandWindow.hasMedia
+                                        && (Media.canPrev || expandedMediaContent.seekAvailable)
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                TapHandler {
+                                    id: previousTap
+                                    enabled: islandWindow.hasMedia
+                                        && (Media.canPrev || expandedMediaContent.seekAvailable)
+                                    onTapped: {
+                                        if (Media.canPrev) Media.previous();
+                                        else expandedMediaContent.seekByOffset(-10);
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "mediaPlayButton"
+                                Layout.preferredWidth: 28
+                                Layout.preferredHeight: 28
+                                radius: 14
+                                enabled: islandWindow.hasMedia && Media.canToggle
+                                opacity: enabled ? 1 : 0.35
+                                color: playTap.pressed
+                                    ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.82)
+                                    : (playHover.hovered
+                                        ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.62)
+                                        : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.36))
+                                border.width: 1
+                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b,
+                                    playHover.hovered || playTap.pressed ? 0.72 : 0.45)
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: Media.isPlaying ? "󰏤" : "󰐊"
+                                    font.pixelSize: 14
+                                    color: playHover.hovered ? Tokens.accent : Tokens.text_primary
+                                }
+                                HoverHandler {
+                                    id: playHover
+                                    enabled: islandWindow.hasMedia && Media.canToggle
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                TapHandler {
+                                    id: playTap
+                                    enabled: islandWindow.hasMedia && Media.canToggle
+                                    onTapped: Media.togglePlaying()
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "mediaNextButton"
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                enabled: islandWindow.hasMedia
+                                    && (Media.canNext || expandedMediaContent.seekAvailable)
+                                opacity: enabled ? 1 : 0.35
+                                color: nextTap.pressed
+                                    ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
+                                    : (nextHover.hovered
+                                        ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
+                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
+                                border.width: 1
+                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b,
+                                    nextHover.hovered || nextTap.pressed ? 0.7 : 0.36)
+
+                                Text {
+                                    objectName: "mediaNextActionLabel"
+                                    anchors.centerIn: parent
+                                    text: Media.canNext ? "󰒭"
+                                        : (expandedMediaContent.seekAvailable ? "+10s" : "󰒭")
+                                    font.pixelSize: Media.canNext || !expandedMediaContent.seekAvailable ? 14 : 8
+                                    font.weight: Font.DemiBold
+                                    color: nextHover.hovered ? Tokens.accent : Tokens.text_secondary
+                                }
+                                HoverHandler {
+                                    id: nextHover
+                                    enabled: islandWindow.hasMedia
+                                        && (Media.canNext || expandedMediaContent.seekAvailable)
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                TapHandler {
+                                    id: nextTap
+                                    enabled: islandWindow.hasMedia
+                                        && (Media.canNext || expandedMediaContent.seekAvailable)
+                                    onTapped: {
+                                        if (Media.canNext) Media.next();
+                                        else expandedMediaContent.seekByOffset(10);
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "mediaLoopButton"
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 10
+                                enabled: expandedMediaContent.loopAvailable
+                                opacity: expandedMediaContent.loopAvailable ? 1 : 0.35
+                                color: loopTap.pressed
+                                    ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
+                                    : (loopHover.hovered
+                                        ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
+                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
+                                border.width: 1
+                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
+                                    Tokens.outline.b, 0.55)
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: Media.activePlayer
+                                        && Media.activePlayer.loopState === Media.loopTrack
+                                        ? "󰑗" : "󰑖"
+                                    font.pixelSize: 13
+                                    color: Media.activePlayer
+                                        && Media.activePlayer.loopState !== Media.loopNone
+                                        ? Tokens.accent : Tokens.text_secondary
+                                }
+                                HoverHandler {
+                                    id: loopHover
+                                    enabled: expandedMediaContent.loopAvailable
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                TapHandler {
+                                    id: loopTap
+                                    enabled: expandedMediaContent.loopAvailable
+                                    onTapped: expandedMediaContent.cycleLoop()
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "mediaPinButton"
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 10
+                                color: pinTap.pressed
+                                    ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
+                                    : (pinHover.hovered
+                                        ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
+                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
+                                border.width: 1
+                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
+                                    Tokens.outline.b, pinHover.hovered ? 0.7 : 0.36)
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: islandWindow.isPinned ? "󰅖" : "󰐃"
+                                    font.pixelSize: 13
+                                    color: pinHover.hovered || islandWindow.isPinned ? Tokens.accent : Tokens.text_secondary
+                                }
+                                HoverHandler {
+                                    id: pinHover
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                TapHandler {
+                                    id: pinTap
+                                    onTapped: {
+                                        if (islandWindow.isPinned) islandWindow.collapse();
+                                        else islandWindow.isPinned = true;
+                                    }
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
                         }
                     }
                 }

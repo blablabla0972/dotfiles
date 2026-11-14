@@ -3,24 +3,71 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Window
+import QtQuick.Effects
 import "../theme"
 import "../services"
 
 Rectangle {
     id: root
 
-    implicitWidth: 280
-    implicitHeight: 220
-    radius: 14
-    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
+    implicitWidth: 340
+    implicitHeight: 320
+    radius: 16
+    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.9)
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
     border.width: 1
     clip: true
 
-    readonly property bool hasArtwork: Media.hasPlayer && Media.trackArtUrl.length > 0 && artImage.status === Image.Ready
+    readonly property bool hasArtwork: Media.hasPlayer && Media.trackArtUrl.length > 0
+        && artImage.status === Image.Ready
     readonly property real artworkScale: Math.min(3, Math.max(1, Screen.devicePixelRatio || 1))
+    readonly property real artworkSize: Math.min(136, Math.max(96, width * 0.34))
+    readonly property string playerIdentity: Media.hasPlayer && Media.activePlayer
+        ? (Media.activePlayer.identity || Media.activePlayer.desktopEntry || qsTr("Media player"))
+        : qsTr("Media player")
 
-    // MPRIS positions are fetched on demand; update only while this card is visible.
+    property bool seeking: false
+    property real seekPreviewPosition: 0
+    property var seekPlayer: null
+    property int seekTrackId: -1
+
+    readonly property real displayedPosition: seeking ? seekPreviewPosition : Media.position
+    readonly property real displayedProgress: Media.length > 0
+        ? Math.max(0, Math.min(1, displayedPosition / Media.length)) : 0
+
+    function beginSeek(x: real, width: real): void {
+        if (!Media.hasPlayer || !Media.activePlayer || !Media.activePlayer.canSeek
+            || Media.length <= 0 || width <= 0)
+            return;
+        seeking = true;
+        seekPlayer = Media.activePlayer;
+        seekTrackId = Media.activePlayer.uniqueId;
+        updateSeek(x, width);
+    }
+
+    function updateSeek(x: real, width: real): void {
+        if (!seeking || width <= 0 || Media.length <= 0) return;
+        var fraction = Math.max(0, Math.min(1, x / width));
+        seekPreviewPosition = fraction * Media.length;
+    }
+
+    function cancelSeek(): void {
+        seeking = false;
+        seekPlayer = null;
+        seekTrackId = -1;
+    }
+
+    function commitSeek(): void {
+        if (!seeking) return;
+        var target = seekPreviewPosition;
+        var player = seekPlayer;
+        var canCommit = player && player === Media.activePlayer
+            && player.uniqueId === seekTrackId && player.canSeek && Media.length > 0;
+        cancelSeek();
+        if (canCommit) Media.setPosition(target);
+    }
+
+    // MPRIS positions are refreshed only while this visible card is playing.
     Timer {
         interval: 1000
         repeat: true
@@ -32,253 +79,306 @@ Rectangle {
         }
     }
 
-    // 1. Full-Bleed Artwork Background
-    Image {
-        id: artImage
-        anchors.fill: parent
-        source: Media.trackArtUrl
-        sourceSize.width: Math.min(840, Math.ceil(root.width * root.artworkScale))
-        sourceSize.height: Math.min(660, Math.ceil(root.height * root.artworkScale))
-        fillMode: Image.PreserveAspectCrop
-        visible: Media.hasPlayer && Media.trackArtUrl.length > 0
-        asynchronous: true
-        opacity: root.hasArtwork ? 0.35 : 0.0
-
-        Behavior on opacity {
-            NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
-        }
+    Connections {
+        target: Media
+        function onActivePlayerChanged() { root.cancelSeek(); }
     }
 
-    // 2. 3-Stop Dark Gradient Overlay for Maximum Readability
-    Rectangle {
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.rgba(0.06, 0.06, 0.08, root.hasArtwork ? 0.45 : 0.20) }
-            GradientStop { position: 0.45; color: Qt.rgba(0.06, 0.06, 0.08, root.hasArtwork ? 0.70 : 0.40) }
-            GradientStop { position: 1.0; color: Qt.rgba(0.06, 0.06, 0.08, root.hasArtwork ? 0.94 : 0.70) }
-        }
-    }
-
-    // 3. Fallback Decorative Glyph when no artwork
-    Text {
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.rightMargin: 12
-        anchors.bottomMargin: 8
-        visible: !root.hasArtwork
-        text: "󰎆"
-        font.pixelSize: 84
-        color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.06)
-    }
-
-    // 4. Foreground Card Content Layout
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 14
-        spacing: 10
+        anchors.margins: 16
+        spacing: 11
 
-        // Header: Player Badge & Active Status
         RowLayout {
             Layout.fillWidth: true
+            spacing: 8
 
-            Rectangle {
-                height: 22
-                implicitWidth: playerBadgeRow.implicitWidth + 14
-                radius: 11
-                color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.8)
-                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
-                border.width: 1
+            Text {
+                Layout.fillWidth: true
+                text: root.playerIdentity
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+                color: Tokens.text_primary
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+            }
 
-                RowLayout {
-                    id: playerBadgeRow
+            Text {
+                text: !Media.hasPlayer ? qsTr("READY") : Media.isPlaying ? qsTr("PLAYING") : qsTr("PAUSED")
+                font.pixelSize: 9
+                font.weight: Font.DemiBold
+                color: Media.isPlaying ? Tokens.accent : Tokens.text_secondary
+                textFormat: Text.PlainText
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.artworkSize
+            spacing: 14
+
+            Item {
+                id: artworkFrame
+                Layout.preferredWidth: root.artworkSize
+                Layout.preferredHeight: root.artworkSize
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 13
+                    color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
+                }
+
+                Image {
+                    id: artImage
+                    anchors.fill: parent
+                    source: Media.trackArtUrl
+                    sourceSize.width: Math.min(840, Math.ceil(root.artworkSize * root.artworkScale))
+                    sourceSize.height: Math.min(660, Math.ceil(root.artworkSize * root.artworkScale))
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    visible: false
+                }
+
+                Rectangle {
+                    id: artworkMask
+                    anchors.fill: parent
+                    radius: 13
+                    color: "white"
+                    visible: false
+                }
+
+                MultiEffect {
+                    anchors.fill: parent
+                    source: artImage
+                    maskEnabled: true
+                    maskSource: artworkMask
+                    visible: root.hasArtwork
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 13
+                    color: Qt.rgba(0.04, 0.05, 0.07, 0.12)
+                    visible: root.hasArtwork
+                }
+
+                Text {
                     anchors.centerIn: parent
-                    spacing: 5
+                    visible: !root.hasArtwork
+                    text: "󰎆"
+                    font.pixelSize: 46
+                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.55)
+                }
 
-                    Text {
-                        text: "󰎆"
-                        font.pixelSize: 11
-                        color: Tokens.accent
-                    }
-
-                    Text {
-                        text: Media.hasPlayer ? "Now Playing" : "Media Player"
-                        font.pixelSize: 10
-                        font.bold: true
-                        color: Tokens.text_secondary
-                    }
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 13
+                    color: "transparent"
+                    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.28)
+                    border.width: 1
                 }
             }
 
-            Item { Layout.fillWidth: true }
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                spacing: 6
 
-            // Small Live Equalizer Dots if Playing
-            Row {
-                spacing: 3
-                visible: Media.hasPlayer && Media.isPlaying
-                Layout.alignment: Qt.AlignVCenter
+                Text {
+                    Layout.fillWidth: true
+                    text: Media.hasPlayer ? Media.trackTitle : qsTr("No Active Player")
+                    textFormat: Text.PlainText
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                    color: Tokens.text_primary
+                    elide: Text.ElideRight
+                    maximumLineCount: 2
+                    wrapMode: Text.Wrap
+                }
 
-                Rectangle { width: 3; height: 8; radius: 1.5; color: Tokens.accent }
-                Rectangle { width: 3; height: 14; radius: 1.5; color: Tokens.accent }
-                Rectangle { width: 3; height: 10; radius: 1.5; color: Tokens.accent }
-                Rectangle { width: 3; height: 6; radius: 1.5; color: Tokens.accent }
+                Text {
+                    Layout.fillWidth: true
+                    text: Media.hasPlayer ? (Media.trackArtist || qsTr("Unknown Artist"))
+                        : qsTr("Play media to control")
+                    textFormat: Text.PlainText
+                    font.pixelSize: 12
+                    color: Tokens.text_secondary
+                    elide: Text.ElideRight
+                    maximumLineCount: 2
+                    wrapMode: Text.Wrap
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: Media.hasPlayer ? Media.trackAlbum : ""
+                    textFormat: Text.PlainText
+                    font.pixelSize: 10
+                    color: Tokens.text_secondary
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    visible: text.length > 0
+                }
+
+                Item { Layout.fillHeight: true }
             }
         }
 
-        // Track Information
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 3
-
-            Text {
-                Layout.fillWidth: true
-                text: Media.hasPlayer ? Media.trackTitle : "No Active Player"
-                textFormat: Text.PlainText
-                font.pixelSize: 15
-                font.bold: true
-                color: Tokens.text_primary
-                elide: Text.ElideRight
-            }
-
-            Text {
-                Layout.fillWidth: true
-                text: Media.hasPlayer ? (Media.trackArtist || "Unknown Artist") : "Play media to control"
-                textFormat: Text.PlainText
-                font.pixelSize: 12
-                color: Tokens.text_secondary
-                elide: Text.ElideRight
-            }
-
-            Text {
-                Layout.fillWidth: true
-                text: Media.hasPlayer ? Media.trackAlbum : ""
-                textFormat: Text.PlainText
-                font.pixelSize: 10
-                color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.7)
-                elide: Text.ElideRight
-                visible: text.length > 0
-            }
-        }
-
-        Item { Layout.fillHeight: true }
-
-        // Track Progress Seek Bar
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 4
+            spacing: 5
             visible: Media.hasPlayer
 
-            Rectangle {
+            RowLayout {
                 Layout.fillWidth: true
-                height: 4
-                radius: 2
-                color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.85)
-                opacity: Media.activePlayer && Media.activePlayer.canSeek && Media.length > 0 ? 1 : 0.5
+
+                Text {
+                    text: Media.formatTime(root.displayedPosition)
+                    font.pixelSize: 10
+                    color: Tokens.text_secondary
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: Media.length > 0 ? Media.formatTime(Media.length) : qsTr("Live")
+                    font.pixelSize: 10
+                    color: Tokens.text_secondary
+                }
+            }
+
+            Item {
+                id: seekHitArea
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
 
                 Rectangle {
-                    height: parent.height
-                    width: parent.width * Media.progress
-                    radius: 2
-                    color: Tokens.accent
+                    id: seekTrack
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width
+                    height: 5
+                    radius: 3
+                    color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
+                    opacity: Media.activePlayer && Media.activePlayer.canSeek && Media.length > 0 ? 1 : 0.55
 
-                    Behavior on width {
-                        NumberAnimation { duration: 300 }
+                    Rectangle {
+                        height: parent.height
+                        width: parent.width * root.displayedProgress
+                        radius: parent.radius
+                        color: Tokens.accent
+                        Behavior on width {
+                            enabled: !root.seeking
+                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                        }
                     }
                 }
 
                 MouseArea {
                     id: playerSeekArea
                     anchors.fill: parent
-                    anchors.topMargin: -7
-                    anchors.bottomMargin: -7
                     enabled: Media.hasPlayer && Media.activePlayer !== null
                         && Media.activePlayer.canSeek && Media.length > 0
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: (mouse) => Media.setPosition(
-                        Math.max(0, Math.min(1, mouse.x / parent.width)) * Media.length)
-                }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Text {
-                    text: Media.isPlaying ? "Playing" : "Paused"
-                    textFormat: Text.PlainText
-                    font.pixelSize: 9
-                    color: Tokens.text_secondary
-                }
-                Item { Layout.fillWidth: true }
-                Text {
-                    text: Media.isPlaying ? "MPRIS" : "Ready"
-                    textFormat: Text.PlainText
-                    font.pixelSize: 9
-                    color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.7)
+                    onPressed: (mouse) => root.beginSeek(mouse.x, width)
+                    onPositionChanged: (mouse) => {
+                        if (pressed) root.updateSeek(mouse.x, width);
+                    }
+                    onReleased: (mouse) => {
+                        root.updateSeek(mouse.x, width);
+                        root.commitSeek();
+                    }
+                    onCanceled: root.cancelSeek()
                 }
             }
         }
 
-        // Playback Controls
         RowLayout {
+            Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
             spacing: 28
 
-            // Previous
             Rectangle {
-                width: 34
-                height: 34
-                radius: 17
-                color: prevHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.6)
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
+                radius: 20
+                color: prevHover.hovered
+                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
+                    : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.72)
                 border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                 border.width: 1
+                opacity: Media.canPrev ? 1 : 0.45
+                Accessible.name: qsTr("Previous track")
 
                 Text {
                     anchors.centerIn: parent
                     text: "󰒮"
-                    font.pixelSize: 16
+                    font.pixelSize: 17
                     color: prevHover.hovered ? Tokens.accent : Tokens.text_primary
                 }
-                opacity: Media.canPrev ? 1 : 0.45
-                HoverHandler { id: prevHover; enabled: Media.hasPlayer && Media.canPrev; cursorShape: Qt.PointingHandCursor }
-                TapHandler { enabled: Media.hasPlayer && Media.canPrev; onTapped: Media.previous() }
+                HoverHandler {
+                    id: prevHover
+                    enabled: Media.hasPlayer && Media.canPrev
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    enabled: Media.hasPlayer && Media.canPrev
+                    onTapped: Media.previous()
+                }
             }
 
-            // Play / Pause
             Rectangle {
-                width: 44
-                height: 44
-                radius: 22
-                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, playHover.hovered ? 0.35 : 0.22)
-                border.color: Tokens.accent
-                border.width: 1.5
+                Layout.preferredWidth: 48
+                Layout.preferredHeight: 48
+                radius: 24
+                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, playHover.hovered ? 0.32 : 0.2)
+                border.color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.8)
+                border.width: 1
                 opacity: Media.canToggle ? 1 : 0.45
+                Accessible.name: Media.isPlaying ? qsTr("Pause") : qsTr("Play")
 
                 Text {
                     anchors.centerIn: parent
                     text: Media.isPlaying ? "󰏤" : "󰐊"
-                    font.pixelSize: 20
-                    color: Tokens.accent
+                    font.pixelSize: 21
+                    color: Tokens.text_primary
                 }
-                HoverHandler { id: playHover; enabled: Media.hasPlayer && Media.canToggle; cursorShape: Qt.PointingHandCursor }
-                TapHandler { enabled: Media.hasPlayer && Media.canToggle; onTapped: Media.togglePlaying() }
+                HoverHandler {
+                    id: playHover
+                    enabled: Media.hasPlayer && Media.canToggle
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    enabled: Media.hasPlayer && Media.canToggle
+                    onTapped: Media.togglePlaying()
+                }
             }
 
-            // Next
             Rectangle {
-                width: 34
-                height: 34
-                radius: 17
-                color: nextHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.6)
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
+                radius: 20
+                color: nextHover.hovered
+                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
+                    : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.72)
                 border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                 border.width: 1
+                opacity: Media.canNext ? 1 : 0.45
+                Accessible.name: qsTr("Next track")
 
                 Text {
                     anchors.centerIn: parent
                     text: "󰒭"
-                    font.pixelSize: 16
+                    font.pixelSize: 17
                     color: nextHover.hovered ? Tokens.accent : Tokens.text_primary
                 }
-                opacity: Media.canNext ? 1 : 0.45
-                HoverHandler { id: nextHover; enabled: Media.hasPlayer && Media.canNext; cursorShape: Qt.PointingHandCursor }
-                TapHandler { enabled: Media.hasPlayer && Media.canNext; onTapped: Media.next() }
+                HoverHandler {
+                    id: nextHover
+                    enabled: Media.hasPlayer && Media.canNext
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    enabled: Media.hasPlayer && Media.canNext
+                    onTapped: Media.next()
+                }
             }
         }
     }

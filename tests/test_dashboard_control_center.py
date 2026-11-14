@@ -23,8 +23,13 @@ DESKTOP_CONTROLS_QML = ROOT / "config/quickshell/rice-shell/services/DesktopCont
 THEME_COMMAND_QUEUE_QML = ROOT / "config/quickshell/rice-shell/services/ThemeCommandQueue.qml"
 ISLAND_QML = ROOT / "config/quickshell/rice-shell/island/Island.qml"
 ISLAND_SHAPE_QML = ROOT / "config/quickshell/rice-shell/island/IslandShape.qml"
+ISLAND_STATE_JS = ROOT / "config/quickshell/rice-shell/island/IslandState.js"
 SHELL_QML = ROOT / "config/quickshell/rice-shell/shell.qml"
 BAR_QML = ROOT / "config/quickshell/rice-shell/bar/Bar.qml"
+CONNECTIVITY_CENTER_QML = ROOT / "config/quickshell/rice-shell/dashboard/ConnectivityCenter.qml"
+NOTIFICATION_CENTER_QML = ROOT / "config/quickshell/rice-shell/dashboard/NotificationCenter.qml"
+QUICKSETTING_TILE_QML = ROOT / "config/quickshell/rice-shell/dashboard/QuickSettingTile.qml"
+QUICKSETTING_SLIDER_QML = ROOT / "config/quickshell/rice-shell/dashboard/QuickSettingSlider.qml"
 WIFI_DRAWER_QML = ROOT / "config/quickshell/rice-shell/dashboard/WifiDrawer.qml"
 BT_DRAWER_QML = ROOT / "config/quickshell/rice-shell/dashboard/BluetoothDrawer.qml"
 
@@ -447,6 +452,7 @@ ShellRoot {
 class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
     def test_escape_shortcut_handles_focused_drawer_inputs(self):
         content = DASHBOARD_QML.read_text()
+        connectivity = CONNECTIVITY_CENTER_QML.read_text()
         # Focused TextInput items may consume Escape before Keys reaches Dashboard.
         self.assertRegex(
             content,
@@ -456,7 +462,9 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
             r'onActivated:\s*dashboardWindow\.handleEscape\(\)'
         )
         self.assertLess(content.index("Shortcut {"), content.index("id: morphContainer"))
-        self.assertIn('if (sideDrawerOpen) activeSideDrawer = "";', content)
+        self.assertIn("if (sideDrawerOpen) {", content)
+        self.assertIn("connectivityLoader.item.handleEscape()", content)
+        self.assertIn("function handleEscape(): bool", connectivity)
         self.assertIn("else dismiss();", content)
 
     def test_dashboard_qml_anchoring_and_shape(self):
@@ -468,9 +476,13 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
         self.assertIn("IslandShape", island)
         self.assertNotIn("PanelWindow", content)
         self.assertIn("shape: islandShape", island)
-        # Dimensions ~760w by ~440h
-        self.assertIn("760", content)
-        self.assertIn("440", content)
+        # Dashboard geometry is capped at 900x520 and clamped to the live screen.
+        state = ISLAND_STATE_JS.read_text()
+        self.assertRegex(state, r"var Dashboard = \{\s*width: 900,\s*height: 520")
+        self.assertIn("Math.min(Dashboard.width", state)
+        self.assertIn("Math.min(Dashboard.height", state)
+        self.assertIn("targetScreen.width, targetScreen.height, 7", island)
+        self.assertIn("cardDimensions: islandWindow.dashboardDimensions", island)
         # LayerShell mask verification
         self.assertIn("mask: Region", island)
         # Outside click and Escape key dismissal
@@ -495,19 +507,31 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
 
     def test_quick_settings_controls(self):
         content = QUICKSETTINGS_QML.read_text()
-        # Volume slider
-        self.assertIn("volTrack", content)
-        self.assertIn("Audio.setVolume", content)
-        # Brightness slider
-        self.assertIn("brightTrack", content)
-        self.assertIn("DesktopControls.setBrightness", content)
+        slider = QUICKSETTING_SLIDER_QML.read_text()
+        tile = QUICKSETTING_TILE_QML.read_text()
+        # Reusable sliders own the interaction; QuickSettings routes values to services.
+        self.assertEqual(content.count("QuickSettingSlider {"), 2)
+        self.assertIn('label: qsTr("Volume")', content)
+        self.assertIn("Audio.setVolume(value)", content)
+        self.assertIn("signal valueRequested(real value)", slider)
+        self.assertIn("Accessible.role: Accessible.Slider", slider)
+        self.assertIn('label: qsTr("Brightness")', content)
+        self.assertIn("DesktopControls.setBrightness(value)", content)
         self.assertIn("brightnessctl", DESKTOP_CONTROLS_QML.read_text())
-        # Toggles
-        self.assertIn("Wi-Fi", content)
-        self.assertIn("Bluetooth", content)
-        self.assertIn('parent.width < 117 ? "BT" : "Bluetooth"', content)
+        # Reusable tiles own activation and details gestures; services own the actions.
+        self.assertEqual(content.count("QuickSettingTile {"), 7)
+        self.assertIn("Qt.LeftButton | Qt.RightButton", tile)
+        self.assertIn('label: qsTr("Wi-Fi")', content)
+        self.assertIn('label: qsTr("Bluetooth")', content)
+        self.assertIn('label: qsTr("Hotspot")', content)
+        self.assertIn("&& !Hotspot.active", content)
+        self.assertIn('if (Hotspot.active) return qsTr("Used by Hotspot");', content)
+        self.assertIn("Networking.wifiEnabled = expectedWifiState", content)
+        self.assertIn("btAdapter.enabled = expectedBluetoothState", content)
+        self.assertIn("Hotspot.toggle()", content)
+        self.assertIn('onDetailsRequested: root.requestSideDrawer("hotspot")', content)
         self.assertIn("Mute", content)
-        self.assertIn("DND", content)
+        self.assertIn("Do Not Disturb", content)
 
     def test_quick_settings_brightness_drag_keeps_last_value(self):
         if not shutil.which("quickshell"):
@@ -517,11 +541,32 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
             dashboard = isolated / "dashboard"
             dashboard.mkdir()
             shutil.copyfile(QUICKSETTINGS_QML, dashboard / "QuickSettings.qml")
+            shutil.copyfile(QUICKSETTING_TILE_QML, dashboard / "QuickSettingTile.qml")
+            shutil.copyfile(QUICKSETTING_SLIDER_QML, dashboard / "QuickSettingSlider.qml")
+            settings_path = dashboard / "QuickSettings.qml"
+            settings_content = settings_path.read_text()
+            settings_content = settings_content.replace("import Quickshell.Bluetooth\n", "")
+            settings_content = settings_content.replace("import Quickshell.Networking\n", "")
+            settings_content = settings_content.replace("DeviceType.Wifi", "0")
+            settings_content = settings_content.replace("Networking.", "testNetworking.")
+            settings_content = settings_content.replace("Bluetooth.defaultAdapter", "testBluetooth.defaultAdapter")
+            settings_content = settings_content.replace("    id: root\n", '''    id: root
+
+    QtObject { id: testNetworking; property var devices: testNetworkDevices; property bool wifiEnabled: true; property bool wifiHardwareEnabled: true }
+    QtObject { id: testNetworkDevices; property var values: [testWifiDevice] }
+    QtObject { id: testWifiDevice; property int type: 0; property string name: "wlan-primary"; property var networks: testNetworks }
+    QtObject { id: testNetworks; property var values: [] }
+    QtObject { id: testBluetooth; property var defaultAdapter: testAdapter }
+    QtObject { id: testAdapter; property bool enabled: true; property var devices: testBluetoothDevices }
+    QtObject { id: testBluetoothDevices; property var values: [] }
+    property var testNetworkingRef: testNetworking
+''', 1)
+            settings_path.write_text(settings_content)
             colors = {
                 "surface_high": "#30343a", "surface": "#24282c",
                 "outline": "#686d73", "accent": "#77caff",
                 "text_primary": "#ffffff", "text_secondary": "#bbbbbb",
-                "danger": "#ff8888",
+                "danger": "#ff8888", "focus_ring": "#77caff",
             }
             theme = isolated / "theme"
             theme.mkdir()
@@ -536,20 +581,36 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
             (services / "qmldir").write_text(
                 "singleton Audio 1.0 Audio.qml\n"
                 "singleton DesktopControls 1.0 DesktopControls.qml\n"
+                "singleton Hotspot 1.0 Hotspot.qml\n"
             )
             (services / "Audio.qml").write_text('''pragma Singleton
 import QtQuick
 QtObject {
     property real volume: 0.5
     property bool muted: false
+    property bool available: true
     function setVolume(value) { volume = value; }
     function toggleMute() { muted = !muted; }
 }
 ''')
+            (services / "Hotspot.qml").write_text('''pragma Singleton
+import QtQuick
+QtObject {
+    property bool active: false
+    property bool canStart: false
+    property bool busy: false
+    property string deviceName: "wlan-secondary"
+    property string tileStatus: "Active on wlan-secondary"
+    function toggle() {}
+}
+''')
+            hotspot_path = services / "Hotspot.qml"
+            hotspot_path.write_text(hotspot_path.read_text().replace("property bool active: false", "property bool active: true"))
             shutil.copyfile(DESKTOP_CONTROLS_QML, services / "DesktopControls.qml")
             (isolated / "shell.qml").write_text('''import QtQuick
 import Quickshell
 import "./dashboard"
+import "./services"
 ShellRoot {
     FloatingWindow {
         width: 280; height: 380; visible: true
@@ -559,6 +620,17 @@ ShellRoot {
             sourceComponent: QuickSettings { anchors.centerIn: parent }
         }
     }
+    Timer { interval: 120; running: true; repeat: false; onTriggered: {
+        var settings = settingsLoader.item;
+        if (settings.wifiDevice.name === Hotspot.deviceName)
+            console.error("HOTSPOT_ADAPTER_FIXTURE_FAIL: hotspot matched primary Wi-Fi adapter");
+        if (settings.wifiCanToggle) console.error("HOTSPOT_WIFI_TOGGLE_FAIL: global Wi-Fi toggle remained enabled");
+        if (settings.wifiSublabel !== "Used by Hotspot") console.error("HOTSPOT_WIFI_LABEL_FAIL: missing active hotspot status");
+        settings.toggleWifi();
+        if (settings.testNetworkingRef.wifiEnabled !== true || settings.wifiPending)
+            console.error("HOTSPOT_WIFI_ACTION_FAIL: blocked toggle changed Wi-Fi state");
+        else console.log("HOTSPOT_NONPRIMARY_PASS");
+    } }
     Timer {
         interval: 180; running: true; repeat: false
         onTriggered: {
@@ -600,6 +672,14 @@ fi
             )
             output = result.stdout + result.stderr
             self.assertEqual(result.returncode, 0, output[-1000:])
+            self.assertNotRegex(
+                output, r"ReferenceError|TypeError|Component is not ready|is not a type", output[-1500:]
+            )
+            self.assertNotIn("HOTSPOT_ADAPTER_FIXTURE_FAIL", output, output[-1000:])
+            self.assertNotIn("HOTSPOT_WIFI_TOGGLE_FAIL", output, output[-1000:])
+            self.assertNotIn("HOTSPOT_WIFI_LABEL_FAIL", output, output[-1000:])
+            self.assertNotIn("HOTSPOT_WIFI_ACTION_FAIL", output, output[-1000:])
+            self.assertIn("HOTSPOT_NONPRIMARY_PASS", output, output[-1000:])
             self.assertEqual(log.read_text().splitlines() if log.exists() else [],
                              ["90%", "66%"], output[-1000:])
 
@@ -629,6 +709,66 @@ fi
         # Reload shell buttons
         self.assertIn("Reload Rice Shell", content)
         self.assertIn("Reload Hyprland", content)
+
+    def test_notification_history_records_updates_restores_and_clears(self):
+        center = NOTIFICATION_CENTER_QML.read_text()
+        self.assertIn("DesktopControls.notificationHistory", center)
+        self.assertIn("DesktopControls.clearNotificationHistory()", center)
+        self.assertIn("root.expandedNotificationId = null", center)
+        if not shutil.which("quickshell"):
+            self.skipTest("quickshell binary unavailable")
+
+        with tempfile.TemporaryDirectory(prefix="rice-notification-history-") as directory:
+            isolated = Path(directory)
+            services = isolated / "services"
+            services.mkdir()
+            (services / "qmldir").write_text("singleton DesktopControls 1.0 DesktopControls.qml\n")
+            shutil.copyfile(DESKTOP_CONTROLS_QML, services / "DesktopControls.qml")
+            shell_path = isolated / "shell.qml"
+            shell_path.write_text('''
+import QtQuick
+import Quickshell
+import "./services"
+ShellRoot {
+    Timer { interval: 50; running: true; repeat: false; onTriggered: {
+        DesktopControls.recordNotification(1, "First", "Body", "App", "", false);
+        DesktopControls.recordNotification(2, "Second", "Body", "App", "", false);
+        var history = DesktopControls.notificationHistory;
+        if (history.length !== 2 || history[0].id !== 2 || history[1].id !== 1)
+            console.error("NOTIFICATION_HISTORY_FAIL: insertion order");
+
+        DesktopControls.recordNotification(1, "Updated", "New body", "App", "", false);
+        history = DesktopControls.notificationHistory;
+        if (history.length !== 2 || history[0].id !== 1 || history[0].summary !== "Updated")
+            console.error("NOTIFICATION_HISTORY_FAIL: update did not move to front");
+        DesktopControls.recordNotification(1, "Stale", "", "App", "", true);
+        if (DesktopControls.notificationHistory[0].summary !== "Updated")
+            console.error("NOTIFICATION_HISTORY_FAIL: stale generation replaced entry");
+
+        var restored = [];
+        for (var i = 0; i < 55; i++)
+            restored.push({ id: i, summary: "Entry " + i, body: "", appName: "", appIcon: "", time: "" });
+        DesktopControls.restoreNotificationHistory(restored);
+        history = DesktopControls.notificationHistory;
+        if (history.length !== 50 || history[0].id !== 0 || history[49].id !== 49)
+            console.error("NOTIFICATION_HISTORY_FAIL: restore limit");
+        DesktopControls.clearNotificationHistory();
+        if (DesktopControls.notificationHistory.length !== 0)
+            console.error("NOTIFICATION_HISTORY_FAIL: clear did not empty history");
+        else console.log("NOTIFICATION_HISTORY_PASS");
+        Qt.quit();
+    } }
+}
+''')
+            env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QSG_RHI_BACKEND="software")
+            result = subprocess.run(
+                ["quickshell", "--path", str(shell_path), "--no-color"],
+                capture_output=True, text=True, timeout=8, env=env,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output[-1200:])
+            self.assertNotIn("NOTIFICATION_HISTORY_FAIL", output, output[-1200:])
+            self.assertIn("NOTIFICATION_HISTORY_PASS", output, output[-1200:])
 
     def test_inner_clicks_do_not_dismiss(self):
         content = ISLAND_QML.read_text()
@@ -676,15 +816,19 @@ fi
         self.assertTrue(ISLAND_QML.exists(), "Island.qml must exist")
         content = ISLAND_QML.read_text()
 
-        # 3-tier expanded media capsule layout
+        # Horizontal expanded media capsule; no synthetic audio visualization.
         self.assertIn("expandedMediaContent", content)
-        self.assertIn("visualizerPhase", content)
-        self.assertIn("visualizerLevel", content)
+        self.assertTrue("visualizerPhase" not in content, "remove the synthetic phase timer")
+        self.assertTrue("visualizerLevel" not in content, "remove the synthetic bar animation")
         self.assertIn("progressBarTrack", content)
         self.assertIn("Media.setPosition", content)
         self.assertIn("Media.previous", content)
         self.assertIn("Media.togglePlaying", content)
         self.assertIn("Media.next", content)
+        self.assertIn("seekByOffset(-10)", content)
+        self.assertIn("seekByOffset(10)", content)
+        self.assertIn('objectName: "mediaPreviousActionLabel"', content)
+        self.assertIn('objectName: "mediaNextActionLabel"', content)
         self.assertIn("Media.activePlayer.canSeek && Media.length > 0", content)
         self.assertIn("textFormat: Text.PlainText", content)
 
@@ -926,7 +1070,7 @@ ShellRoot {
 
             drawer_path = isolated / "dashboard/BluetoothDrawer.qml"
             content = drawer_path.read_text()
-            original = "    readonly property var btAdapter: Bluetooth.defaultAdapter"
+            original = "    property var adapterOverride: null"
             self.assertEqual(content.count(original), 1)
             fake = '''
     QtObject { id: testDevice; property string address: "01:02:03:04:05:06"; property string name: "Test headset"; property bool connected: false; property bool paired: true }
@@ -937,7 +1081,7 @@ ShellRoot {
     property var testDeviceTwoRef: testDeviceTwo
     property var testModelRef: testModel
     property var testAdapterRef: testAdapter
-    readonly property var btAdapter: testAdapter'''
+    property var adapterOverride: testAdapter'''
             drawer_path.write_text(content.replace(original, fake))
             shell_path.write_text('''
 import QtQuick
@@ -995,23 +1139,27 @@ ShellRoot {
             self.assertNotIn("BT_REACTIVE_FAIL", output, output[-1200:])
             self.assertNotIn("_FAIL", output, output[-1200:])
 
-    def test_interactive_network_drawers(self):
+    def test_connectivity_center_routes_network_pages(self):
         self.assertTrue(WIFI_DRAWER_QML.exists(), "WifiDrawer.qml must exist")
         self.assertTrue(BT_DRAWER_QML.exists(), "BluetoothDrawer.qml must exist")
+        self.assertTrue(CONNECTIVITY_CENTER_QML.exists(), "ConnectivityCenter.qml must exist")
 
         wifi_content = WIFI_DRAWER_QML.read_text()
         bt_content = BT_DRAWER_QML.read_text()
+        center_content = CONNECTIVITY_CENTER_QML.read_text()
         qs_content = QUICKSETTINGS_QML.read_text()
+        tile_content = QUICKSETTING_TILE_QML.read_text()
 
         # Wi-Fi drawer: native networking, scanning, password and connection actions
         self.assertIn("import Quickshell.Networking", wifi_content)
         self.assertIn("Networking.devices.values", wifi_content)
         self.assertIn("DeviceType.Wifi", wifi_content)
         self.assertIn('property: "scannerEnabled"', wifi_content)
-        self.assertIn("net.connectWithPsk(root.passwordText)", wifi_content)
-        self.assertIn("net.connect()", wifi_content)
-        self.assertIn("net.disconnect()", wifi_content)
-        self.assertIn("passInput", wifi_content)
+        self.assertIn("function connectNetwork(network, withPassword)", wifi_content)
+        self.assertIn("network.connectWithPsk(secret)", wifi_content)
+        self.assertIn("network.connect()", wifi_content)
+        self.assertIn("network.disconnect()", wifi_content)
+        self.assertIn("passwordField", wifi_content)
         self.assertIn("closeRequested", wifi_content)
 
         # Bluetooth drawer: reactive native inventory/scanning; CLI retained for pairing prompts.
@@ -1026,15 +1174,29 @@ ShellRoot {
         self.assertIn("scan", bt_content)
         self.assertIn("closeRequested", bt_content)
 
-        # QuickSettings only emits requests; Dashboard owns lazy-loaded drawers.
+        # QuickSettings owns service toggles and requests pages through reusable tiles.
         self.assertNotIn("wifiDrawerOpen", qs_content)
         self.assertNotIn("btDrawerOpen", qs_content)
         self.assertNotIn("WifiDrawer {", qs_content)
         self.assertNotIn("BluetoothDrawer {", qs_content)
-        self.assertIn("Qt.RightButton", qs_content)
+        self.assertIn("Qt.RightButton", tile_content)
         self.assertIn("requestSideDrawer", qs_content)
+        self.assertIn('onDetailsRequested: root.requestSideDrawer("wifi")', qs_content)
+        self.assertIn('onDetailsRequested: root.requestSideDrawer("bluetooth")', qs_content)
+        self.assertIn('onDetailsRequested: root.requestSideDrawer("hotspot")', qs_content)
 
-        # Dashboard sidecar drawer panel (floating next to control center per user sketch)
+        # ConnectivityCenter owns the Wi-Fi, Bluetooth, and Hotspot pages.
+        self.assertIn('Accessible.name: "Connectivity Center"', center_content)
+        self.assertIn('{ id: "wifi", label: "Wi-Fi"', center_content)
+        self.assertIn('{ id: "bluetooth", label: "Bluetooth"', center_content)
+        self.assertIn('{ id: "hotspot", label: "Hotspot"', center_content)
+        self.assertIn('source: "WifiDrawer.qml"', center_content)
+        self.assertIn('source: "BluetoothDrawer.qml"', center_content)
+        self.assertIn('source: "HotspotDrawer.qml"', center_content)
+        self.assertIn("active: root.hotspotVisited", center_content)
+        self.assertIn("onHotspotPageRequested", center_content)
+
+        # Dashboard owns one lazy-loaded ConnectivityCenter sidecar.
         dash_content = DASHBOARD_QML.read_text()
         self.assertIn("sideDrawerContainer", dash_content)
         self.assertIn("activeSideDrawer", dash_content)
@@ -1042,10 +1204,11 @@ ShellRoot {
         self.assertIn("toggleSideDrawer", dash_content)
         self.assertIn("id: homeLoader", dash_content)
         self.assertIn("sourceComponent: Home {", dash_content)
-        self.assertIn("WifiDrawer", dash_content)
-        self.assertIn("BluetoothDrawer", dash_content)
-        self.assertIn("id: wifiLoader", dash_content)
-        self.assertIn("id: bluetoothLoader", dash_content)
+        self.assertIn("id: connectivityLoader", dash_content)
+        self.assertIn("sourceComponent: ConnectivityCenter {", dash_content)
+        self.assertIn("currentPage: dashboardWindow.renderedSideDrawer", dash_content)
+        self.assertNotIn("WifiDrawer", dash_content)
+        self.assertNotIn("BluetoothDrawer", dash_content)
 
     def test_wifi_drawer_scanner_preserves_foreign_scan_ownership_and_clears_passwords(self):
         if not shutil.which("quickshell"):
@@ -1057,18 +1220,37 @@ ShellRoot {
                 destination = isolated / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(shell_dir / relative, destination)
+            services = isolated / "services"
+            services.mkdir()
+            (services / "qmldir").write_text("singleton Hotspot 1.0 Hotspot.qml\n")
+            (services / "Hotspot.qml").write_text('''pragma Singleton
+import QtQuick
+QtObject {
+    property bool active: false
+    property string devicePath: ""
+}
+''')
 
             drawer_path = isolated / "dashboard/WifiDrawer.qml"
             content = drawer_path.read_text()
-            # Inject fake wifi device and network for deterministic offline testing
+            # Inject fake networking state while retaining the production state handlers.
             replacement = '''
     QtObject {
+        id: testNetworking
+        property bool canCheckConnectivity: false
+        property bool connectivityCheckEnabled: false
+        property int connectivity: 0
+        property bool wifiEnabled: true
+        property bool wifiHardwareEnabled: true
+    }
+    QtObject {
         id: fakeNet
+        property var device: fakeDev
         property string name: "RiceAP"
         property real signalStrength: 0.85
         property bool connected: false
         property bool known: false
-        property int security: 2 // Wpa2Psk
+        property int security: WifiSecurityType.Wpa2Psk
         property bool stateChanging: false
         property int state: 0
         signal connectionFailed(int reason)
@@ -1083,18 +1265,19 @@ ShellRoot {
     QtObject {
         id: fakeDev
         property string name: "wlan0"
-        property int type: 2
+        property int mode: WifiDeviceMode.Station
+        property bool connected: false
         property bool scannerEnabled: false
         property var networks: fakeNetModel
     }
     property var fakeDevRef: fakeDev
     property var fakeNetRef: fakeNet
-    property var testWifiDeviceOverride: fakeDev
-    readonly property var wifiDevice: testWifiDeviceOverride'''
-            self.assertIn("readonly property var wifiDevice: {", content)
-            idx = content.index("    readonly property var wifiDevice: {")
-            end_idx = content.index("    }\n    readonly property var networks:", idx) + 6
+    property var testWifiDevices: [fakeDev]
+    readonly property var wifiDevices: testWifiDevices'''
+            idx = content.index("    readonly property var wifiDevices: {")
+            end_idx = content.index("    property var selectedWifiDevice:", idx)
             content = content[:idx] + replacement + "\n" + content[end_idx:]
+            content = content.replace("Networking.", "testNetworking.")
             drawer_path.write_text(content)
 
             shell_path = isolated / "shell.qml"
@@ -1129,10 +1312,12 @@ ShellRoot {
             drawer.visible = true;
             drawer.selectedNetwork = drawer.fakeNetRef;
             drawer.passwordText = "supersecret";
-            drawer.isConnecting = true;
+            drawer.showPassword = true;
+            drawer.operationPending = true;
             // Hide while operation is in flight - password must be cleared!
             drawer.visible = false;
-            if (drawer.passwordText !== "") console.error("WIFI_PASSWORD_HIDE_FAIL: password retained on hide: " + drawer.passwordText);
+            if (drawer.passwordText !== "" || drawer.showPassword)
+                console.error("WIFI_PASSWORD_HIDE_FAIL: password retained on hide: " + drawer.passwordText);
             else console.log("WIFI_PASSWORD_HIDE_PASS");
 
             // Cancel password clears password and selection
@@ -1145,20 +1330,20 @@ ShellRoot {
             else console.log("WIFI_PASSWORD_CANCEL_PASS");
 
             // 4. Adapter disappearance while connecting resets pending state
-            drawer.isConnecting = true;
+            drawer.operationPending = true;
             drawer.pendingNetwork = drawer.fakeNetRef;
-            drawer.testWifiDeviceOverride = null;
-            if (drawer.isConnecting || drawer.pendingNetwork !== null) console.error("WIFI_ADAPTER_DISAPPEAR_FAIL: still connecting after adapter removed");
+            drawer.testWifiDevices = [];
+            if (drawer.operationPending || drawer.pendingNetwork !== null) console.error("WIFI_ADAPTER_DISAPPEAR_FAIL: still connecting after adapter removed");
             else console.log("WIFI_ADAPTER_DISAPPEAR_PASS");
 
             // 5. StateChanging cancellation / disconnect handling
-            drawer.testWifiDeviceOverride = drawer.fakeDevRef;
+            drawer.testWifiDevices = [drawer.fakeDevRef];
             drawer.pendingNetwork = drawer.fakeNetRef;
-            drawer.pendingAction = "connect";
-            drawer.isConnecting = true;
+            drawer.pendingAction = "disconnect";
+            drawer.operationPending = true;
             drawer.fakeNetRef.stateChanging = true;
             drawer.fakeNetRef.stateChanging = false;
-            if (drawer.isConnecting) console.error("WIFI_STATE_CHANGING_STUCK_FAIL");
+            if (drawer.operationPending) console.error("WIFI_STATE_CHANGING_STUCK_FAIL");
             else console.log("WIFI_STATE_CHANGING_PASS");
 
             Qt.quit();
@@ -1195,12 +1380,12 @@ ShellRoot {
 
             drawer_path = isolated / "dashboard/BluetoothDrawer.qml"
             content = drawer_path.read_text()
-            original = "    readonly property var btAdapter: Bluetooth.defaultAdapter"
+            original = "    property var adapterOverride: null"
             fake = '''
     QtObject { id: testDevA; property string address: "01:02:03:04:05:06"; property string name: "Device A"; property bool connected: false; property bool paired: false }
     QtObject { id: testModel; property var values: [testDevA] }
     QtObject { id: testAdapter; property bool enabled: true; property bool discovering: false; property var devices: testModel }
-    readonly property var btAdapter: testAdapter'''
+    property var adapterOverride: testAdapter'''
             self.assertEqual(content.count(original), 1)
             drawer_path.write_text(content.replace(original, fake))
 

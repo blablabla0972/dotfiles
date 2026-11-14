@@ -9,6 +9,13 @@ var State = {
     DASHBOARD: "dashboard"
 };
 
+var Dashboard = {
+    width: 900,
+    height: 520,
+    radius: 24,
+    drawerWidth: 360
+};
+
 function normalizeDashboardTab(tab) {
     return tab === "System" || tab === "Notifications" || tab === "Config" ? tab : "Home";
 }
@@ -16,7 +23,7 @@ function normalizeDashboardTab(tab) {
 function normalizeSideDrawer(type) {
     if (typeof type !== "string") return "";
     var drawer = type.trim().toLowerCase();
-    return drawer === "wifi" || drawer === "bluetooth" ? drawer : "";
+    return drawer === "wifi" || drawer === "bluetooth" || drawer === "hotspot" ? drawer : "";
 }
 
 function resolveState(currentAlert, hasMedia, isHovered, isPinned, dashboardOpen) {
@@ -36,16 +43,17 @@ function dashboardGeometry(screenWidth, screenHeight, antiCornerRadius) {
     var anti = typeof antiCornerRadius === "number" && isFinite(antiCornerRadius)
         ? Math.max(0, antiCornerRadius) : 7;
     var margin = 12;
-    var cardWidth = Math.min(760, Math.max(1, width - 2 * margin - 2 * anti));
-    var cardHeight = Math.min(440, Math.max(1, height - 16));
-    var sideBySide = width >= cardWidth + 300 + 12 + 2 * margin + 2 * anti;
+    var cardWidth = Math.min(Dashboard.width, Math.max(1, width - 2 * margin - 2 * anti));
+    var cardHeight = Math.min(Dashboard.height, Math.max(1, height - 16));
+    var drawerWidth = Math.min(Dashboard.drawerWidth, cardWidth);
+    var sideBySide = width >= cardWidth + drawerWidth + 12 + 2 * margin + 2 * anti;
     return {
         width: cardWidth,
         height: cardHeight,
-        radius: 22,
+        radius: Dashboard.radius,
         sideBySide: sideBySide,
         drawerOverlay: !sideBySide,
-        drawerWidth: Math.min(300, cardWidth),
+        drawerWidth: drawerWidth,
         margin: margin
     };
 }
@@ -61,9 +69,9 @@ function targetDimensions(state, details) {
         case State.NOTIFICATION:
             return { width: 390, height: 88, radius: 20 };
         case State.DASHBOARD:
-            return { width: 760, height: 440, radius: 22 };
+            return { width: Dashboard.width, height: Dashboard.height, radius: Dashboard.radius };
         case State.EXPANDED:
-            return { width: 376, height: 156, radius: 24 };
+            return { width: 380, height: 132, radius: 24 };
         default:
             return { width: 138, height: 32, radius: 12 };
     }

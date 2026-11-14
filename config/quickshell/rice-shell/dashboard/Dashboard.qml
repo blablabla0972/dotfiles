@@ -11,8 +11,7 @@ Item {
 
     required property Item surface
     required property Item shape
-    property var cardDimensions: ({ width: 760, height: 440, radius: 22,
-        sideBySide: true, drawerOverlay: false, drawerWidth: 300 })
+    property var cardDimensions: IslandState.dashboardGeometry(1920, 1080, 7)
     property string currentTab: "Home"
     property bool expanded: false
     property bool closing: false
@@ -41,8 +40,9 @@ Item {
             : currentTab === "Notifications" ? notificationLoader.item : configLoader.item;
         return loaded ? Math.max(0, loaded.implicitHeight) : 370;
     }
-    readonly property bool wifiLoaded: wifiLoader.item !== null
-    readonly property bool bluetoothLoaded: bluetoothLoader.item !== null
+    readonly property bool connectivityLoaded: connectivityLoader.item !== null
+    readonly property bool wifiLoaded: connectivityLoader.item ? connectivityLoader.item.wifiLoaded : false
+    readonly property bool bluetoothLoaded: connectivityLoader.item ? connectivityLoader.item.bluetoothLoaded : false
     visible: expanded || closing
     focus: expanded
     onExpandedChanged: {
@@ -83,6 +83,13 @@ Item {
         activeSideDrawer = activeSideDrawer === drawer ? "" : drawer;
     }
 
+    function selectSideDrawer(type: string): void {
+        var drawer = IslandState.normalizeSideDrawer(type);
+        if (!drawer) return;
+        activeSideDrawer = drawer;
+        renderedSideDrawer = drawer;
+    }
+
     function toggle(tab): void {
         var target = IslandState.normalizeDashboardTab(tab || "Home");
         if (typeof tab === "string" && tab.length > 0 && tab !== target)
@@ -104,8 +111,10 @@ Item {
     }
 
     function handleEscape(): void {
-        if (sideDrawerOpen) activeSideDrawer = "";
-        else dismiss();
+        if (sideDrawerOpen) {
+            if (connectivityLoader.item && typeof connectivityLoader.item.handleEscape === "function" && connectivityLoader.item.handleEscape()) return;
+            activeSideDrawer = "";
+        } else dismiss();
     }
 
     function containsDrawer(x: real, y: real): bool {
@@ -139,6 +148,7 @@ Item {
             y: -18 * (1 - dashboardWindow.revealProgress)
             opacity: Math.max(0, (dashboardWindow.revealProgress - 0.15) / 0.85)
             enabled: dashboardWindow.expanded && opacity > 0.9
+                && !(dashboardWindow.sideDrawerOpen && dashboardWindow.drawerOverlay)
 
             ColumnLayout {
                 anchors.fill: parent
@@ -290,7 +300,8 @@ Item {
                             contentWidth: width
                             contentHeight: Math.max(height, dashboardWindow.activeContentHeight)
                             boundsBehavior: Flickable.StopAtBounds
-                            interactive: contentHeight > height
+                            interactive: (dashboardWindow.currentTab !== "Home" || dashboardWindow.cardDimensions.width < 820)
+                                && contentHeight > height
 
                             Item {
                                 id: tabContent
@@ -370,21 +381,12 @@ Item {
             anchors.fill: parent
 
             Loader {
-                id: wifiLoader
+                id: connectivityLoader
                 anchors.fill: parent
                 active: (dashboardWindow.sideDrawerOpen || sideDrawerContainer.width > 0)
-                    && dashboardWindow.renderedSideDrawer === "wifi"
-                sourceComponent: WifiDrawer {
-                    onCloseRequested: dashboardWindow.activeSideDrawer = ""
-                }
-            }
-
-            Loader {
-                id: bluetoothLoader
-                anchors.fill: parent
-                active: (dashboardWindow.sideDrawerOpen || sideDrawerContainer.width > 0)
-                    && dashboardWindow.renderedSideDrawer === "bluetooth"
-                sourceComponent: BluetoothDrawer {
+                sourceComponent: ConnectivityCenter {
+                    currentPage: dashboardWindow.renderedSideDrawer
+                    onPageSelected: (page) => dashboardWindow.selectSideDrawer(page)
                     onCloseRequested: dashboardWindow.activeSideDrawer = ""
                 }
             }

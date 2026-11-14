@@ -8,146 +8,258 @@ import "../theme"
 Item {
     id: root
 
+    readonly property int notificationCount: DesktopControls.notificationHistory.length
+    readonly property bool hasNotifications: notificationCount > 0
+    readonly property bool dndActive: DesktopControls.doNotDisturb
+    property var expandedNotificationId: null
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: 42
+            spacing: 8
 
             Text {
                 text: "Notifications"
-                font.pixelSize: 16
-                font.bold: true
+                font.pixelSize: 17
+                font.weight: Font.DemiBold
                 color: Tokens.text_primary
             }
 
-            Text {
-                text: "(" + DesktopControls.notificationHistory.length + ")"
-                font.pixelSize: 12
-                color: Tokens.text_secondary
+            Rectangle {
+                Layout.preferredWidth: countLabel.implicitWidth + 18
+                Layout.preferredHeight: 24
+                radius: 12
+                color: Tokens.surface_high
+
+                Text {
+                    id: countLabel
+                    anchors.centerIn: parent
+                    text: root.notificationCount + (root.notificationCount === 1 ? " alert" : " alerts")
+                    font.pixelSize: 10
+                    color: Tokens.text_secondary
+                }
             }
 
             Item { Layout.fillWidth: true }
 
             Rectangle {
-                id: clearButton
-                Layout.preferredWidth: 84
-                Layout.preferredHeight: 28
-                radius: 14
+                Layout.preferredWidth: 82
+                Layout.preferredHeight: 30
+                radius: 15
+                color: root.dndActive
+                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
+                    : Tokens.surface
+                border.width: 1
+                border.color: root.dndActive ? Tokens.accent : Tokens.outline
+
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 5
+                    Text {
+                        text: "󰂛"
+                        font.pixelSize: 12
+                        color: root.dndActive ? Tokens.accent : Tokens.text_secondary
+                    }
+                    Text {
+                        text: root.dndActive ? "DND on" : "DND off"
+                        font.pixelSize: 10
+                        font.weight: Font.Medium
+                        color: root.dndActive ? Tokens.accent : Tokens.text_primary
+                    }
+                }
+
+                HoverHandler { id: dndHover }
+                TapHandler {
+                    onTapped: DesktopControls.doNotDisturb = !DesktopControls.doNotDisturb
+                }
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 76
+                Layout.preferredHeight: 30
+                radius: 15
                 color: clearHover.hovered ? Tokens.surface_high : Tokens.surface
+                border.width: 1
                 border.color: Tokens.outline
-                opacity: DesktopControls.notificationHistory.length > 0 ? 1 : 0.4
+                opacity: root.hasNotifications ? 1 : 0.45
 
                 Text {
                     anchors.centerIn: parent
                     text: "Clear all"
-                    font.pixelSize: 12
+                    font.pixelSize: 10
                     color: Tokens.text_primary
                 }
 
                 HoverHandler { id: clearHover }
                 TapHandler {
-                    enabled: DesktopControls.notificationHistory.length > 0
-                    onTapped: DesktopControls.clearNotificationHistory()
+                    enabled: root.hasNotifications
+                    onTapped: {
+                        root.expandedNotificationId = null;
+                        DesktopControls.clearNotificationHistory();
+                    }
                 }
             }
         }
 
-        Rectangle {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            radius: 14
-            color: Tokens.surface_low
-            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+            Layout.preferredWidth: root.width
 
             ListView {
                 id: notificationList
                 anchors.fill: parent
-                anchors.margins: 10
+                visible: root.hasNotifications
                 clip: true
-                spacing: 7
+                spacing: 8
                 boundsBehavior: Flickable.StopAtBounds
                 model: DesktopControls.notificationHistory
 
                 delegate: Rectangle {
                     id: entry
                     required property var modelData
+                    readonly property bool expanded: root.expandedNotificationId === modelData.id
+
                     width: ListView.view.width
-                    height: entryContent.implicitHeight + 18
-                    radius: 10
+                    height: entryContent.implicitHeight + 20
+                    radius: 11
                     color: Tokens.surface_high
+                    border.width: 1
+                    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4)
 
-                    Column {
+                    RowLayout {
                         id: entryContent
-                        x: 12
-                        y: 9
-                        width: parent.width - 24
-                        spacing: 4
+                        x: 11
+                        y: 10
+                        width: parent.width - 22
+                        spacing: 10
 
-                        Row {
-                            width: parent.width
-                            spacing: 10
+                        Rectangle {
+                            Layout.preferredWidth: 34
+                            Layout.preferredHeight: 34
+                            Layout.alignment: Qt.AlignTop
+                            radius: 9
+                            color: Tokens.surface_low
+                            clip: true
+
+                            Image {
+                                id: appImage
+                                anchors.centerIn: parent
+                                width: 26
+                                height: 26
+                                source: entry.modelData.appIcon || ""
+                                fillMode: Image.PreserveAspectFit
+                                visible: status === Image.Ready
+                            }
 
                             Text {
-                                width: parent.width - entryTime.width - 10
+                                anchors.centerIn: parent
+                                text: "󰂚"
+                                font.pixelSize: 17
+                                color: Tokens.text_secondary
+                                visible: !appImage.visible
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    textFormat: Text.PlainText
+                                    text: entry.modelData.appName || "Unknown app"
+                                    font.pixelSize: 10
+                                    font.weight: Font.Medium
+                                    color: Tokens.accent
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    text: entry.modelData.time || ""
+                                    font.pixelSize: 10
+                                    color: Tokens.text_secondary
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
                                 textFormat: Text.PlainText
-                                text: entry.modelData.summary
-                                font.pixelSize: 13
-                                font.bold: true
+                                text: entry.modelData.summary || "Notification"
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
                                 color: Tokens.text_primary
+                                wrapMode: Text.Wrap
+                                maximumLineCount: 2
                                 elide: Text.ElideRight
                             }
 
                             Text {
-                                id: entryTime
-                                text: entry.modelData.time
+                                id: bodyPreview
+                                Layout.fillWidth: true
+                                visible: text.length > 0
+                                textFormat: Text.PlainText
+                                text: entry.modelData.body || ""
                                 font.pixelSize: 11
                                 color: Tokens.text_secondary
+                                wrapMode: Text.Wrap
+                                maximumLineCount: entry.expanded ? 8 : 2
+                                elide: Text.ElideRight
                             }
-                        }
 
-                        Text {
-                            width: parent.width
-                            visible: text.length > 0
-                            textFormat: Text.PlainText
-                            text: entry.modelData.appName
-                            font.pixelSize: 11
-                            color: Tokens.accent
-                            elide: Text.ElideRight
-                        }
+                            Text {
+                                visible: bodyPreview.truncated || entry.expanded
+                                text: entry.expanded ? "Show less" : "Show details"
+                                font.pixelSize: 10
+                                color: Tokens.accent
 
-                        Text {
-                            width: parent.width
-                            visible: text.length > 0
-                            textFormat: Text.PlainText
-                            text: entry.modelData.body
-                            font.pixelSize: 12
-                            color: Tokens.text_secondary
-                            wrapMode: Text.Wrap
-                            maximumLineCount: 3
-                            elide: Text.ElideRight
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler {
+                                    onTapped: root.expandedNotificationId =
+                                        entry.expanded ? null : entry.modelData.id
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            Column {
-                anchors.centerIn: parent
-                spacing: 8
-                visible: DesktopControls.notificationHistory.length === 0
+            Item {
+                id: emptyState
+                anchors.fill: parent
+                visible: !root.hasNotifications
 
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "󰂚"
-                    font.pixelSize: 28
-                    color: Tokens.text_secondary
-                }
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 6
 
-                Text {
-                    text: "No notifications yet"
-                    font.pixelSize: 13
-                    color: Tokens.text_secondary
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "󰂚"
+                        font.pixelSize: 26
+                        color: Tokens.text_secondary
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "No notifications"
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        color: Tokens.text_primary
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "New alerts will appear here."
+                        font.pixelSize: 10
+                        color: Tokens.text_secondary
+                    }
                 }
             }
         }

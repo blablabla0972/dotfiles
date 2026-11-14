@@ -15,11 +15,15 @@ QtObject {
     property string lastBody: ""
     property var notificationHistory: []
     property real brightnessLevel: 0.8
+    property bool brightnessAvailable: false
+    property string brightnessError: ""
     property int pendingBrightnessPercent: -1
     property bool brightnessReadQueued: false
     property bool brightnessOsdPending: false
     signal errorOccurred(string message)
     signal brightnessRefreshed(real level, bool showOsd)
+    readonly property bool brightnessPending: brightnessWriter.running
+        || brightnessWriteTimer.running || pendingBrightnessPercent >= 0
 
     function recordNotification(notificationId: int, summary: string, body: string,
                                 appName: string, appIcon: string, lastGeneration: bool): void {
@@ -89,6 +93,8 @@ QtObject {
             if (code !== 0) {
                 root.pendingBrightnessPercent = -1;
                 root.brightnessOsdPending = false;
+                root.brightnessAvailable = false;
+                root.brightnessError = "Brightness control unavailable";
                 root.errorOccurred("Failed to set brightness");
                 root.brightnessReader.running = true;
             }
@@ -109,11 +115,15 @@ QtObject {
             onStreamFinished: {
                 var match = text.match(/(?:^|,)(\d+(?:\.\d+)?)%/);
                 if (!match) {
+                    root.brightnessAvailable = false;
+                    root.brightnessError = "No backlight available";
                     root.brightnessOsdPending = false;
                     return;
                 }
                 if (root.brightnessReadQueued) return;
                 var value = Math.max(0, Math.min(1, Number(match[1]) / 100));
+                root.brightnessAvailable = true;
+                root.brightnessError = "";
                 root.brightnessLevel = value;
                 root.brightnessRefreshed(value, root.brightnessOsdPending);
                 root.brightnessOsdPending = false;
@@ -121,6 +131,8 @@ QtObject {
         }
         onExited: (code) => {
             if (code !== 0) {
+                root.brightnessAvailable = false;
+                root.brightnessError = "Brightness control unavailable";
                 root.brightnessOsdPending = false;
             }
         }

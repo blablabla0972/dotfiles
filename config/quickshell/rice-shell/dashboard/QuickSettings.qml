@@ -2,9 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import Quickshell
 import Quickshell.Bluetooth
-import Quickshell.Io
 import Quickshell.Networking
 import "../theme"
 import "../services"
@@ -12,354 +10,350 @@ import "../services"
 Rectangle {
     id: root
 
-    implicitWidth: 220
-    implicitHeight: 310
-    radius: 14
-    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
-    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+    implicitWidth: 276
+    implicitHeight: 420
+    radius: 16
+    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
+    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.24)
     border.width: 1
 
-    property bool wifiActive: Networking.wifiEnabled
-    property var btAdapter: Bluetooth.defaultAdapter
-    property bool btActive: btAdapter ? btAdapter.enabled : false
-    readonly property bool dndActive: DesktopControls.doNotDisturb
-    readonly property bool nightLightActive: DesktopControls.nightLightActive
-    readonly property bool caffeineActive: DesktopControls.caffeineActive
-    readonly property real brightness: DesktopControls.brightnessLevel
+    readonly property var wifiDevice: {
+        var devices = Networking.devices.values;
+        for (var i = 0; i < devices.length; i++) {
+            if (devices[i].type === DeviceType.Wifi) return devices[i];
+        }
+        return null;
+    }
+    readonly property var btAdapter: Bluetooth.defaultAdapter
+    readonly property bool wifiEnabled: Networking.wifiEnabled
+    readonly property bool wifiCanToggle: wifiDevice !== null && Networking.wifiHardwareEnabled
+        && !Hotspot.active
+    readonly property bool btEnabled: btAdapter ? btAdapter.enabled : false
+    readonly property string wifiSublabel: {
+        if (!wifiDevice) return qsTr("Unavailable");
+        if (!Networking.wifiHardwareEnabled) return qsTr("Hardware blocked");
+        if (!Networking.wifiEnabled) return qsTr("Off");
+        if (Hotspot.active) return qsTr("Used by Hotspot");
+        var networks = wifiDevice.networks.values;
+        for (var i = 0; i < networks.length; i++) {
+            if (networks[i].connected) return networks[i].name || qsTr("Connected");
+        }
+        return qsTr("Not connected");
+    }
+    readonly property string btSublabel: {
+        if (!btAdapter) return qsTr("Adapter unavailable");
+        if (!btAdapter.enabled) return qsTr("Off");
+        var devices = btAdapter.devices.values;
+        var connected = [];
+        for (var i = 0; i < devices.length; i++) {
+            if (devices[i].connected) connected.push(devices[i].name || "");
+        }
+        if (connected.length === 1) return connected[0] || qsTr("1 device connected");
+        if (connected.length > 1) return qsTr("%1 devices connected").arg(connected.length);
+        return qsTr("No devices connected");
+    }
+
+    property bool wifiPending: false
+    property bool expectedWifiState: false
+    property bool bluetoothPending: false
+    property bool expectedBluetoothState: false
+    property string wifiError: ""
+    property string bluetoothError: ""
+    property string sharedError: ""
 
     signal requestSideDrawer(string type)
 
-    function setBrightness(val: real): void {
-        DesktopControls.setBrightness(val);
+    function setBrightness(value: real): void {
+        DesktopControls.setBrightness(value);
+    }
+
+    function toggleWifi(): void {
+        if (!wifiCanToggle || wifiPending) return;
+        expectedWifiState = !Networking.wifiEnabled;
+        wifiPending = true;
+        wifiTimeout.restart();
+        Networking.wifiEnabled = expectedWifiState;
+    }
+
+    function toggleBluetooth(): void {
+        if (!btAdapter || bluetoothPending) return;
+        expectedBluetoothState = !btAdapter.enabled;
+        bluetoothPending = true;
+        bluetoothTimeout.restart();
+        btAdapter.enabled = expectedBluetoothState;
     }
 
     Timer {
-        interval: 2000
+        id: wifiTimeout
+        interval: 5000
+        repeat: false
+        onTriggered: {
+            if (!root.wifiPending) return;
+            root.wifiPending = false;
+            root.wifiError = qsTr("Wi-Fi state not confirmed");
+            wifiErrorTimeout.restart();
+        }
+    }
+
+    Timer {
+        id: bluetoothTimeout
+        interval: 5000
+        repeat: false
+        onTriggered: {
+            if (!root.bluetoothPending) return;
+            root.bluetoothPending = false;
+            root.bluetoothError = qsTr("Bluetooth state not confirmed");
+            bluetoothErrorTimeout.restart();
+        }
+    }
+
+    Timer {
+        id: wifiErrorTimeout
+        interval: 4000
+        repeat: false
+        onTriggered: root.wifiError = ""
+    }
+
+    Timer {
+        id: bluetoothErrorTimeout
+        interval: 4000
+        repeat: false
+        onTriggered: root.bluetoothError = ""
+    }
+
+    Timer {
+        id: sharedErrorTimeout
+        interval: 5000
+        repeat: false
+        onTriggered: root.sharedError = ""
+    }
+
+    Timer {
+        interval: 5000
         running: root.visible
         repeat: true
         onTriggered: DesktopControls.refreshBrightness(false)
     }
 
-    Component.onCompleted: {
-        DesktopControls.refreshBrightness(false);
+    readonly property bool wifiServiceEnabled: (typeof Networking !== "undefined") ? Networking.wifiEnabled : false
+    readonly property bool wifiServiceHardwareEnabled: (typeof Networking !== "undefined") ? Networking.wifiHardwareEnabled : false
+    onWifiServiceEnabledChanged: {
+        if (root.wifiPending && root.wifiServiceEnabled === root.expectedWifiState) {
+            root.wifiPending = false;
+            wifiTimeout.stop();
+            root.wifiError = "";
+        }
     }
+    onWifiServiceHardwareEnabledChanged: {
+        if (!root.wifiServiceHardwareEnabled && root.wifiPending) {
+            root.wifiPending = false;
+            wifiTimeout.stop();
+            root.wifiError = qsTr("Wi-Fi hardware is blocked");
+            wifiErrorTimeout.restart();
+        }
+    }
+
+    Connections {
+        target: root.btAdapter
+        function onEnabledChanged() {
+            if (root.bluetoothPending && root.btAdapter
+                    && root.btAdapter.enabled === root.expectedBluetoothState) {
+                root.bluetoothPending = false;
+                bluetoothTimeout.stop();
+                root.bluetoothError = "";
+            }
+        }
+    }
+
+    Connections {
+        target: DesktopControls
+        function onErrorOccurred(message) {
+            root.sharedError = message;
+            sharedErrorTimeout.restart();
+        }
+    }
+
+    Component.onCompleted: DesktopControls.refreshBrightness(false)
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 14
-        spacing: 12
+        spacing: 7
 
-        // Section Title with subtle badge
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: 22
+
             Text {
-                text: "Quick Controls"
-                font.pixelSize: 13
-                font.bold: true
+                text: qsTr("Quick Settings")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
                 color: Tokens.text_primary
             }
+
             Item { Layout.fillWidth: true }
+
             Text {
-                text: "Settings"
-                font.pixelSize: 10
-                color: Tokens.text_secondary
+                text: root.sharedError.length ? "!" : ""
+                font.pixelSize: 12
+                color: Tokens.danger
+                Accessible.name: root.sharedError
             }
         }
 
-        // 1. Integrated Volume Slider Row
-        Rectangle {
-            id: volTrack
+        ColumnLayout {
             Layout.fillWidth: true
-            height: 36
-            radius: 10
-            color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.85)
-            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-            border.width: 1
-            clip: true
+            spacing: 5
 
-            // Active volume fill
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: Math.min(parent.width, Math.max(0, parent.width * Math.min(1, Audio.volume)))
-                color: Audio.muted ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4) : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.22)
+            QuickSettingSlider {
+                Layout.fillWidth: true
+                icon: Audio.muted ? "󰝟" : "󰕾"
+                label: qsTr("Volume")
+                value: Audio.volume
+                maximum: 1.5
+                step: 0.05
+                available: Audio.available
+                valueText: !Audio.available ? qsTr("Unavailable")
+                    : (Audio.muted ? qsTr("Muted") : Math.round(Audio.volume * 100) + "%")
+                        + (Audio.available && !Audio.muted && Audio.volume > 1 ? qsTr(" · Boost") : "")
+                onValueRequested: (value) => Audio.setVolume(value)
             }
 
-            // Foreground content
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-
-                Text {
-                    text: Audio.muted ? "󰝟" : (Audio.volume > 0.5 ? "󰕾" : (Audio.volume > 0.05 ? "󰖀" : "󰕿"))
-                    font.pixelSize: 15
-                    color: Audio.muted ? Tokens.danger : Tokens.accent
-                }
-
-                Text {
-                    text: Audio.available ? "Volume" : "Volume unavailable"
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Audio.available ? Tokens.text_primary : Tokens.text_secondary
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    text: !Audio.available ? "—" : (Audio.muted ? "Muted" : Math.round(Audio.volume * 100) + "%")
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Tokens.text_secondary
-                }
-
-                Text {
-                    text: Audio.available && !Audio.muted && Audio.volume > 1 ? "+" : ""
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Tokens.accent
-                }
-            }
-
-            // Continuous Drag & Click Handler
-            MouseArea {
-                anchors.fill: parent
-                enabled: Audio.available
-                cursorShape: Qt.PointingHandCursor
-                function updateVolume(mouse) {
-                    var ratio = Math.max(0.0, Math.min(1.0, mouse.x / volTrack.width));
-                    Audio.setVolume(ratio);
-                }
-                onPressed: (mouse) => updateVolume(mouse)
-                onPositionChanged: (mouse) => {
-                    if (pressed) updateVolume(mouse);
-                }
+            QuickSettingSlider {
+                Layout.fillWidth: true
+                icon: "󰃠"
+                label: qsTr("Brightness")
+                value: DesktopControls.brightnessLevel
+                maximum: 1
+                step: 0.05
+                available: DesktopControls.brightnessAvailable
+                valueText: DesktopControls.brightnessAvailable
+                    ? Math.round(DesktopControls.brightnessLevel * 100) + "%"
+                    : (DesktopControls.brightnessError || qsTr("Unavailable"))
+                onValueRequested: (value) => root.setBrightness(value)
             }
         }
 
-        // 2. Integrated Brightness Slider Row
-        Rectangle {
-            id: brightTrack
-            Layout.fillWidth: true
-            height: 36
-            radius: 10
-            color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.85)
-            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-            border.width: 1
-            clip: true
-
-            // Active brightness fill
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: Math.min(parent.width, Math.max(0, parent.width * root.brightness))
-                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.22)
-            }
-
-            // Foreground content
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-
-                Text {
-                    text: "󰃠"
-                    font.pixelSize: 15
-                    color: Tokens.accent
-                }
-
-                Text {
-                    text: "Brightness"
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Tokens.text_primary
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    text: Math.round(root.brightness * 100) + "%"
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Tokens.text_secondary
-                }
-            }
-
-            // Continuous Drag & Click Handler
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                function updateBrightness(mouse) {
-                    var ratio = Math.max(0.05, Math.min(1.0, mouse.x / brightTrack.width));
-                    root.setBrightness(ratio);
-                }
-                onPressed: (mouse) => updateBrightness(mouse)
-                onPositionChanged: (mouse) => {
-                    if (pressed) updateBrightness(mouse);
-                }
-            }
-        }
-
-        // 3. Compact 2-Column Quick Toggle Tiles (fills remaining height evenly without gaps)
-        GridLayout {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            columns: 2
-            rowSpacing: 8
-            columnSpacing: 8
+            clip: true
 
-            // Wi-Fi
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 10
-                color: root.wifiActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.wifiActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
+            Flickable {
+                id: tileFlickable
+                anchors.fill: parent
+                contentWidth: width
+                contentHeight: tileGrid.implicitHeight + 4
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.VerticalFlick
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 8
-                    spacing: 6
-                    Text { text: "󰤨"; font.pixelSize: 15; color: root.wifiActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { Layout.fillWidth: true; text: "Wi-Fi"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary; elide: Text.ElideRight }
-                    Text { text: "󰅂"; font.pixelSize: 12; color: Tokens.text_secondary }
-                }
+                GridLayout {
+                    id: tileGrid
+                    width: tileFlickable.width
+                    columns: 2
+                    rowSpacing: 6
+                    columnSpacing: 6
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onClicked: (mouse) => {
-                        if (mouse.button === Qt.RightButton || mouse.x >= (parent.width - 32)) {
-                            root.requestSideDrawer("wifi");
-                        } else {
-                            Networking.wifiEnabled = !Networking.wifiEnabled;
-                        }
+                    QuickSettingTile {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 52
+                        icon: "󰤨"
+                        label: qsTr("Wi-Fi")
+                        sublabel: root.wifiError || root.wifiSublabel
+                        active: root.wifiEnabled
+                        available: root.wifiCanToggle
+                        pending: root.wifiPending
+                        hasDetails: true
+                        onActivated: root.toggleWifi()
+                        onDetailsRequested: root.requestSideDrawer("wifi")
                     }
-                }
-            }
 
-            // Bluetooth
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 10
-                color: root.btActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.btActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 8
-                    spacing: 6
-                    Text { text: "󰂯"; font.pixelSize: 15; color: root.btActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { Layout.fillWidth: true; text: parent.width < 117 ? "BT" : "Bluetooth"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary; elide: Text.ElideRight }
-                    Text { text: "󰅂"; font.pixelSize: 12; color: Tokens.text_secondary }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onClicked: (mouse) => {
-                        if (mouse.button === Qt.RightButton || mouse.x >= (parent.width - 32)) {
-                            root.requestSideDrawer("bluetooth");
-                        } else {
-                            if (root.btAdapter) root.btAdapter.enabled = !root.btAdapter.enabled;
-                        }
+                    QuickSettingTile {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 52
+                        icon: "󰂯"
+                        label: qsTr("Bluetooth")
+                        sublabel: root.bluetoothError || root.btSublabel
+                        active: root.btEnabled
+                        available: root.btAdapter !== null
+                        pending: root.bluetoothPending
+                        hasDetails: true
+                        onActivated: root.toggleBluetooth()
+                        onDetailsRequested: root.requestSideDrawer("bluetooth")
                     }
-                }
-            }
 
-            // Mute Toggle Tile
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 10
-                color: Audio.muted ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.18) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: Audio.muted ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
+                    QuickSettingTile {
+                        Layout.columnSpan: 2
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 46
+                        icon: "󰀃"
+                        label: qsTr("Hotspot")
+                        sublabel: Hotspot.tileStatus
+                        active: Hotspot.active
+                        available: Hotspot.available
+                        pending: Hotspot.busy
+                        hasDetails: true
+                        onActivated: {
+                            if (Hotspot.canStart || Hotspot.active) Hotspot.toggle();
+                            else root.requestSideDrawer("hotspot");
+                        }
+                        onDetailsRequested: root.requestSideDrawer("hotspot")
+                    }
 
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 8
-                    Text { text: Audio.muted ? "󰝟" : "󰕾"; font.pixelSize: 15; color: Audio.muted ? Tokens.danger : Tokens.accent }
-                    Text { text: Audio.muted ? "Muted" : "Mute"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
-                }
+                    QuickSettingTile {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 42
+                        icon: Audio.muted ? "󰝟" : "󰕾"
+                        label: qsTr("Mute")
+                        sublabel: Audio.muted ? qsTr("On") : qsTr("Off")
+                        active: Audio.muted
+                        available: Audio.available
+                        onActivated: Audio.toggleMute()
+                    }
 
-                TapHandler {
-                    onTapped: Audio.toggleMute()
-                }
-            }
+                    QuickSettingTile {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 42
+                        icon: "󰂛"
+                        label: qsTr("Do Not Disturb")
+                        sublabel: DesktopControls.doNotDisturb ? qsTr("On") : qsTr("Off")
+                        active: DesktopControls.doNotDisturb
+                        onActivated: DesktopControls.doNotDisturb = !DesktopControls.doNotDisturb
+                    }
 
-            // Do Not Disturb
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 10
-                color: root.dndActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.dndActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
+                    QuickSettingTile {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 42
+                        icon: "󰖔"
+                        label: qsTr("Night Light")
+                        sublabel: DesktopControls.nightLightActive ? qsTr("On") : qsTr("Off")
+                        active: DesktopControls.nightLightActive
+                        onActivated: DesktopControls.toggleNightLight()
+                    }
 
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 8
-                    Text { text: "󰂛"; font.pixelSize: 15; color: root.dndActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "DND"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
-                }
-
-                TapHandler {
-                    onTapped: DesktopControls.doNotDisturb = !DesktopControls.doNotDisturb
-                }
-            }
-
-            // Night Light
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 10
-                color: root.nightLightActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.nightLightActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
-
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 8
-                    Text { text: "󰖔"; font.pixelSize: 15; color: root.nightLightActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "Night"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
-                }
-
-                TapHandler {
-                    onTapped: DesktopControls.toggleNightLight()
-                }
-            }
-
-            // Caffeine / Awake
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 10
-                color: root.caffeineActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-                border.color: root.caffeineActive ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                border.width: 1
-
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 8
-                    Text { text: "󰅶"; font.pixelSize: 15; color: root.caffeineActive ? Tokens.accent : Tokens.text_secondary }
-                    Text { text: "Awake"; font.pixelSize: 11; font.bold: true; color: Tokens.text_primary }
-                }
-
-                TapHandler {
-                    onTapped: DesktopControls.toggleCaffeine()
+                    QuickSettingTile {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 42
+                        icon: "󰅶"
+                        label: qsTr("Awake")
+                        sublabel: DesktopControls.caffeineActive ? qsTr("Preventing idle") : qsTr("Off")
+                        active: DesktopControls.caffeineActive
+                        onActivated: DesktopControls.toggleCaffeine()
+                    }
                 }
             }
         }
-    }
 
+        Text {
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 14 : 0
+            visible: root.sharedError.length > 0
+            text: root.sharedError
+            font.pixelSize: 10
+            color: Tokens.danger
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+        }
+    }
 }

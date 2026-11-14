@@ -72,5 +72,17 @@ QtObject {
             root.activePlayer.previous();
         }
     }
+
+    readonly property int loopNone: 0
+    readonly property int loopTrack: 1
+    readonly property int loopPlaylist: 2
+
+    function cycleLoop(): void {
+        if (!root.activePlayer || !root.activePlayer.loopSupported) return;
+        var state = root.activePlayer.loopState;
+        root.activePlayer.loopState = state === root.loopNone
+            ? root.loopTrack
+            : (state === root.loopTrack ? root.loopPlaylist : root.loopNone);
+    }
 }
 

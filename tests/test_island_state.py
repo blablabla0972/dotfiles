@@ -17,14 +17,14 @@ vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), c);
 console.log(JSON.stringify({
   tabs: ["Home", "System", "Notifications", "Config", "bogus", null]
     .map(value => c.normalizeDashboardTab(value)),
-  drawers: ["wifi", "Bluetooth", "bogus", null]
+  drawers: ["wifi", "Bluetooth", "hotspot", "bogus", null]
     .map(value => c.normalizeSideDrawer(value))
 }));
 """
         result = subprocess.run(["node", "-e", script, str(STATE)], capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
         self.assertEqual(data["tabs"], ["Home", "System", "Notifications", "Config", "Home", "Home"])
-        self.assertEqual(data["drawers"], ["wifi", "bluetooth", "", ""])
+        self.assertEqual(data["drawers"], ["wifi", "bluetooth", "hotspot", "", ""])
 
     def test_osd_values_keep_volume_amplification_separate_from_fill(self):
         script = """
@@ -70,7 +70,7 @@ console.log(JSON.stringify({
         result = subprocess.run(["node", "-e", script, str(STATE)], capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
         self.assertEqual(data["dashboard"], "dashboard")
-        self.assertEqual(data["dashboardDims"], {"width": 760, "height": 440, "radius": 22})
+        self.assertEqual(data["dashboardDims"], {"width": 900, "height": 520, "radius": 24})
         self.assertEqual(data["idle"], "idle")
         self.assertEqual(data["media"], "media")
         self.assertEqual(data["preview"], "expanded")
@@ -86,22 +86,34 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const c = vm.createContext({});
 vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), c);
-const sizes = [[1920,1080],[1280,720],[1080,600],[960,540],[768,480],[640,360]];
+const sizes = [[1920,1080],[1280,720],[1080,720],[960,540],[768,480],[640,360]];
 const viewports = sizes.map(([w,h]) => c.dashboardGeometry(w,h,7));
 const scales = [1,1.25,1.5,2].map(scale => c.dashboardGeometry(1920/scale,1080/scale,7));
 console.log(JSON.stringify({viewports, scales}));
 """
         result = subprocess.run(["node", "-e", script, str(STATE)], capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
-        expected = [(1920,1080,760,440,True),(1280,720,760,440,True),
-                    (1080,600,760,440,False),(960,540,760,440,False),
-                    (768,480,730,440,False),(640,360,602,344,False)]
+        expected = [(1920,1080,900,520,True),(1280,720,900,520,False),
+                    (1080,720,900,520,False),(960,540,900,520,False),
+                    (768,480,730,464,False),(640,360,602,344,False)]
         for (screen_width, screen_height, width, height, side_by_side), geometry in zip(expected, data["viewports"]):
             self.assertEqual((geometry["width"], geometry["height"], geometry["sideBySide"]),
                              (width, height, side_by_side))
             self.assertLessEqual(geometry["width"] + 14, screen_width - 24)
             self.assertLessEqual(geometry["height"], screen_height - 16)
-        self.assertEqual([item["sideBySide"] for item in data["scales"]], [True, True, True, False])
+            self.assertEqual(geometry["drawerWidth"], min(360, width))
+        self.assertEqual([item["sideBySide"] for item in data["scales"]], [True, True, False, False])
+
+    def test_expanded_media_capsule_uses_horizontal_target_geometry(self):
+        script = """
+const fs = require("node:fs");
+const vm = require("node:vm");
+const c = vm.createContext({});
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), c);
+console.log(JSON.stringify(c.targetDimensions(c.State.EXPANDED)));
+"""
+        result = subprocess.run(["node", "-e", script, str(STATE)], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), {"width": 380, "height": 132, "radius": 24})
 
 if __name__ == "__main__":
     unittest.main()

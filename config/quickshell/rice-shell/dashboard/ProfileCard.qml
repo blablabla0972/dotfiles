@@ -9,75 +9,54 @@ Rectangle {
     id: root
 
     implicitWidth: 200
-    implicitHeight: 95
-    radius: 14
+    implicitHeight: 90
+    radius: 16
     color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
-    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
+    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.28)
     border.width: 1
 
     RowLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 10
+        anchors.margins: 14
+        spacing: 12
 
-        // User Avatar Circle with Status Dot
-        Item {
-            width: 50
-            height: 50
+        Rectangle {
+            Layout.preferredWidth: 54
+            Layout.preferredHeight: 54
+            Layout.alignment: Qt.AlignVCenter
+            radius: 27
+            color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.14)
 
-            Rectangle {
-                anchors.fill: parent
-                radius: 25
-                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-                border.color: Tokens.accent
-                border.width: 1.5
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "󰀄"
-                    font.pixelSize: 26
-                    color: Tokens.accent
-                }
-            }
-
-            // Active Green Status Indicator
-            Rectangle {
-                anchors.bottom: parent.bottom
-                anchors.right: parent.right
-                anchors.bottomMargin: 2
-                anchors.rightMargin: 2
-                width: 12
-                height: 12
-                radius: 6
-                color: "#4ade80"
-                border.color: Tokens.surface_high
-                border.width: 2
+            Text {
+                anchors.centerIn: parent
+                text: "󰀄"
+                font.pixelSize: 27
+                color: Tokens.accent
             }
         }
 
-        // User Metadata
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 3
+            Layout.minimumWidth: 0
+            spacing: 4
 
             Text {
-                text: "Hello,"
-                font.pixelSize: 11
-                color: Tokens.text_secondary
-            }
-
-            Text {
-                text: Quickshell.env("USER") || "Admin"
+                Layout.fillWidth: true
+                text: Quickshell.env("USER") || qsTr("User")
                 font.pixelSize: 15
-                font.bold: true
+                font.weight: Font.DemiBold
                 color: Tokens.text_primary
                 elide: Text.ElideRight
+                textFormat: Text.PlainText
             }
 
             Text {
-                text: "CachyOS / Hyprland"
-                font.pixelSize: 10
-                color: Tokens.accent
+                Layout.fillWidth: true
+                text: qsTr("CachyOS · Hyprland")
+                font.pixelSize: 11
+                color: Tokens.text_secondary
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
             }
         }
     }

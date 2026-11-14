@@ -19,6 +19,7 @@ PanelWindow {
 
     signal requestLauncher()
     signal requestDashboard(string tab)
+    signal requestSideDrawer(string type)
 
     anchors {
         top: true
@@ -164,7 +165,7 @@ PanelWindow {
 
                 HoverHandler { id: internetHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
-                    onTapped: barRoot.requestDashboard("Home")
+                    onTapped: barRoot.requestSideDrawer("wifi")
                 }
             }
 

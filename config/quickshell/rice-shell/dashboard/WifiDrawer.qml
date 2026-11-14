@@ -1,49 +1,132 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell.Networking
+import "../services"
 import "../theme"
 
-Rectangle {
+Item {
     id: root
 
     anchors.fill: parent
-    radius: 22
-    color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.96)
-    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
-    border.width: 1
-    clip: true
+    implicitWidth: 360
+    implicitHeight: 480
+    focus: visible
+
+    Accessible.role: Accessible.Pane
+    Accessible.name: "Wi-Fi"
 
     signal closeRequested()
+    signal hotspotPageRequested()
 
-    readonly property var wifiDevice: {
+    readonly property var wifiDevices: {
         var devices = Networking.devices.values;
+        var result = [];
         for (var i = 0; i < devices.length; i++) {
-            var device = devices[i];
-            if (device.type === DeviceType.Wifi) return device;
+            if (devices[i].type === DeviceType.Wifi) result.push(devices[i]);
+        }
+        return result;
+    }
+    property var selectedWifiDevice: null
+    readonly property string hotspotDevicePath: {
+        try {
+            return root.hotspotService && root.hotspotService.devicePath
+                ? String(root.hotspotService.devicePath) : "";
+        } catch (error) {
+            return "";
+        }
+    }
+    readonly property var hotspotService: {
+        try {
+            return typeof Hotspot === "undefined" ? null : Hotspot;
+        } catch (error) {
+            return null;
+        }
+    }
+    readonly property bool hotspotActive: root.hotspotService !== null
+        && root.hotspotService.active === true
+    readonly property var hotspotWifiDevice: {
+        if (!root.hotspotActive || root.hotspotDevicePath.length === 0) return null;
+        for (var i = 0; i < root.wifiDevices.length; i++) {
+            var device = root.wifiDevices[i];
+            if (device.name === root.hotspotDevicePath || device.address === root.hotspotDevicePath) {
+                return device;
+            }
         }
         return null;
     }
+    readonly property var wifiDevice: {
+        if (root.selectedWifiDevice && root.wifiDevices.indexOf(root.selectedWifiDevice) >= 0) {
+            return root.selectedWifiDevice;
+        }
+        if (root.hotspotWifiDevice) return root.hotspotWifiDevice;
+        for (var i = 0; i < root.wifiDevices.length; i++) {
+            var device = root.wifiDevices[i];
+            if (device.connected && device.mode === WifiDeviceMode.Station) return device;
+        }
+        for (var j = 0; j < root.wifiDevices.length; j++) {
+            if (root.wifiDevices[j].mode === WifiDeviceMode.Station) return root.wifiDevices[j];
+        }
+        return root.wifiDevices.length > 0 ? root.wifiDevices[0] : null;
+    }
+    readonly property bool accessPointActive: root.wifiDevice !== null
+        && root.wifiDevice.mode === WifiDeviceMode.AccessPoint
+    // NetworkDevice has no NetworkManager object-path property. If an active
+    // hotspot cannot be matched exactly to name/address, fail closed for Wi-Fi.
+    readonly property bool hotspotBlocksSelectedWifi: root.accessPointActive
+        || (root.hotspotActive
+            && (!root.hotspotWifiDevice || root.wifiDevice === root.hotspotWifiDevice))
+    readonly property bool hotspotDeviceIdentityUnknown: root.hotspotActive
+        && root.hotspotWifiDevice === null
+    readonly property bool radioOffBlocked: root.hotspotActive || root.accessPointActive
+
     readonly property var networks: {
-        if (!wifiDevice) return [];
-        var list = wifiDevice.networks.values.slice();
+        if (!root.wifiDevice) return [];
+        var list = root.wifiDevice.networks.values.slice();
         list.sort(function(a, b) {
             if (a.connected !== b.connected) return a.connected ? -1 : 1;
             if (a.known !== b.known) return a.known ? -1 : 1;
-            return (b.signalStrength || 0) - (a.signalStrength || 0);
+            var signalDifference = (b.signalStrength || 0) - (a.signalStrength || 0);
+            if (signalDifference !== 0) return signalDifference;
+            var nameA = String(a.name || "").toLocaleLowerCase();
+            var nameB = String(b.name || "").toLocaleLowerCase();
+            if (nameA < nameB) return -1;
+            if (nameA > nameB) return 1;
+            var securityA = Number(a.security);
+            var securityB = Number(b.security);
+            return securityA - securityB;
         });
         return list;
     }
+    readonly property var connectedNetwork: {
+        for (var i = 0; i < root.networks.length; i++) {
+            if (root.networks[i].connected) return root.networks[i];
+        }
+        return null;
+    }
+    readonly property var knownNetworks: root.networks.filter(function(network) {
+        return network.known && !network.connected;
+    })
+    readonly property var nearbyNetworks: root.networks.filter(function(network) {
+        return !network.known && !network.connected;
+    })
+
     property var selectedNetwork: null
+    property var detailsNetwork: null
+    property var forgetConfirmationNetwork: null
+    property var pendingForgetNetwork: null
     property var pendingNetwork: null
     property string pendingAction: ""
     property string passwordText: ""
     property string statusMessage: ""
-    property bool isConnecting: false
+    property bool showPassword: false
+    property bool operationPending: false
+    property bool operationTimedOut: false
     property var scanOwnedDevice: null
-    property bool isScanning: wifiDevice ? wifiDevice.scannerEnabled : false
-    property bool scanRequested: true
+    property bool scanRequested: false
+    readonly property bool isScanning: root.wifiDevice ? root.wifiDevice.scannerEnabled : false
 
     Binding {
         target: root.scanOwnedDevice
@@ -52,78 +135,454 @@ Rectangle {
         when: root.scanOwnedDevice !== null
     }
 
-    onWifiDeviceChanged: {
-        if (scanOwnedDevice && scanOwnedDevice !== wifiDevice) {
-            stopScan();
+    onWifiDevicesChanged: {
+        if (root.selectedWifiDevice && root.wifiDevices.indexOf(root.selectedWifiDevice) < 0) {
+            root.selectedWifiDevice = null;
         }
-        if (!wifiDevice) {
-            if (isConnecting) {
-                isConnecting = false;
-                pendingNetwork = null;
-                pendingAction = "";
-            }
-            statusMessage = "Wi-Fi adapter unavailable";
-            selectedNetwork = null;
-            passwordText = "";
-            scanRestartTimer.stop();
-        } else if (visible) {
-            startScan();
+    }
+
+    onWifiDeviceChanged: {
+        if (root.scanOwnedDevice && root.scanOwnedDevice !== root.wifiDevice) root.stopScan();
+        if (root.selectedNetwork && root.selectedNetwork.device !== root.wifiDevice) {
+            root.cancelPassword();
+        }
+        if (root.detailsNetwork && root.detailsNetwork.device !== root.wifiDevice) {
+            root.detailsNetwork = null;
+        }
+        if (root.forgetConfirmationNetwork
+                && root.forgetConfirmationNetwork.device !== root.wifiDevice) {
+            root.forgetConfirmationNetwork = null;
+        }
+        if (root.pendingNetwork
+                && root.wifiDevices.indexOf(root.pendingNetwork.device) < 0) {
+            root.finishOperation("The Wi-Fi adapter changed while the request was pending.");
+        }
+        if (!root.wifiDevice) {
+            root.cancelPassword();
+            root.statusMessage = "Wi-Fi adapter unavailable";
+        } else if (root.visible) {
+            root.reconcilePendingOperation();
+            root.startScan();
+        }
+    }
+
+    onNetworksChanged: {
+        if (root.selectedNetwork && !root.networkIsAvailable(root.selectedNetwork)) {
+            root.cancelPassword();
+        }
+    }
+
+    onAccessPointActiveChanged: {
+        if (root.accessPointActive) root.stopScan();
+        else if (root.visible) root.startScan();
+    }
+
+    onHotspotBlocksSelectedWifiChanged: {
+        if (root.hotspotBlocksSelectedWifi) {
+            root.stopScan();
+            root.cancelPassword();
+            root.statusMessage = root.hotspotStatusMessage();
+        } else if (root.visible) {
+            root.startScan();
         }
     }
 
     onVisibleChanged: {
-        if (visible) {
-            startScan();
+        if (root.visible) {
+            root.reconcilePendingOperation();
+            root.startScan();
         } else {
-            stopScan();
-            if (!root.isConnecting) {
-                root.selectedNetwork = null;
-            }
-            root.passwordText = "";
+            root.stopScan();
+            root.cancelPassword();
+            root.detailsNetwork = null;
+            root.forgetConfirmationNetwork = null;
         }
     }
 
+    Component.onCompleted: {
+        root.reconcilePendingOperation();
+        if (root.visible) root.startScan();
+    }
+
     Component.onDestruction: {
-        stopScan();
-        root.selectedNetwork = null;
+        root.stopScan();
+        root.cancelPassword();
+    }
+
+    Keys.onEscapePressed: function(event) {
+        if (root.forgetConfirmationNetwork) {
+            root.forgetConfirmationNetwork = null;
+            event.accepted = true;
+        } else if (root.selectedNetwork) {
+            root.cancelPassword();
+            event.accepted = true;
+        } else if (root.detailsNetwork) {
+            root.detailsNetwork = null;
+            event.accepted = true;
+        } else {
+            root.closeRequested();
+            event.accepted = true;
+        }
+    }
+
+    function signalPercent(network): int {
+        return Math.round(Math.max(0, Math.min(1, network.signalStrength || 0)) * 100);
+    }
+
+    function signalGlyph(network): string {
+        var strength = network.signalStrength || 0;
+        if (strength >= 0.75) return "󰤨";
+        if (strength >= 0.5) return "󰤥";
+        if (strength >= 0.25) return "󰤢";
+        return "󰤟";
+    }
+
+    function securityLabel(network): string {
+        switch (network.security) {
+        case WifiSecurityType.Open: return "Open";
+        case WifiSecurityType.WpaPsk: return "WPA Personal";
+        case WifiSecurityType.Wpa2Psk: return "WPA2 Personal";
+        case WifiSecurityType.Sae: return "WPA3 Personal";
+        case WifiSecurityType.WpaEap:
+        case WifiSecurityType.Wpa2Eap:
+        case WifiSecurityType.Wpa3SuiteB192: return "Enterprise";
+        case WifiSecurityType.StaticWep:
+        case WifiSecurityType.DynamicWep: return "WEP (legacy)";
+        case WifiSecurityType.Owe: return "Enhanced Open";
+        case WifiSecurityType.Leap: return "LEAP";
+        default: return "Security unknown";
+        }
+    }
+
+    function supportsPsk(network): bool {
+        return network.security === WifiSecurityType.WpaPsk
+            || network.security === WifiSecurityType.Wpa2Psk
+            || network.security === WifiSecurityType.Sae;
+    }
+
+    function connectivityLabel(): string {
+        if (!Networking.canCheckConnectivity || !Networking.connectivityCheckEnabled) {
+            return "Not checked";
+        }
+        switch (Networking.connectivity) {
+        case NetworkConnectivity.Full: return "Internet available";
+        case NetworkConnectivity.Limited: return "Limited connectivity";
+        case NetworkConnectivity.Portal: return "Sign-in required";
+        case NetworkConnectivity.None: return "No network access";
+        default: return "Unknown";
+        }
+    }
+
+    function clearPassword(): void {
         root.passwordText = "";
+        root.showPassword = false;
     }
 
     function cancelPassword(): void {
         root.selectedNetwork = null;
-        root.passwordText = "";
+        root.clearPassword();
+        if (!root.operationPending && !root.pendingForgetNetwork) root.statusMessage = "";
+    }
+
+    function promptForPassword(network, message): void {
+        root.selectedNetwork = network;
+        root.clearPassword();
+        root.statusMessage = message || "";
+    }
+
+    function canOperate(): bool {
+        return root.wifiDevice !== null
+            && Networking.wifiEnabled
+            && Networking.wifiHardwareEnabled
+            && !root.hotspotBlocksSelectedWifi
+            && !root.operationPending;
+    }
+
+    function networkIsAvailable(network): bool {
+        if (!network || !network.device
+                || root.wifiDevices.indexOf(network.device) < 0) return false;
+        return network.device.networks.values.indexOf(network) >= 0;
+    }
+
+    function hotspotStatusMessage(): string {
+        if (root.hotspotDeviceIdentityUnknown) {
+            return "The active hotspot adapter could not be matched safely. Wi-Fi actions are paused.";
+        }
+        if (root.accessPointActive
+                || (root.hotspotWifiDevice && root.hotspotWifiDevice === root.wifiDevice)) {
+            return "Used by Hotspot. Open the Hotspot tab to stop it.";
+        }
+        return "The active hotspot adapter could not be matched safely. Wi-Fi actions are paused.";
     }
 
     function startScan(): void {
-        root.statusMessage = root.wifiDevice ? "" : "Wi-Fi adapter unavailable";
-        if (!root.wifiDevice) return;
-        if (!root.wifiDevice.scannerEnabled) {
-            root.scanOwnedDevice = root.wifiDevice;
-        }
+        if (!root.wifiDevice || !root.visible || !Networking.wifiEnabled) return;
+        if (!Networking.wifiHardwareEnabled || root.hotspotBlocksSelectedWifi) return;
+        if (root.wifiDevice.mode !== WifiDeviceMode.Station) return;
+        if (root.wifiDevice.scannerEnabled) return;
+
+        if (!root.operationPending && !root.pendingForgetNetwork) root.statusMessage = "";
+        root.scanOwnedDevice = root.wifiDevice;
         root.scanRequested = true;
     }
 
     function stopScan(): void {
+        scanRestartTimer.stop();
+        root.scanRequested = false;
         var owned = root.scanOwnedDevice;
         root.scanOwnedDevice = null;
-        if (owned && owned.scannerEnabled) {
-            owned.scannerEnabled = false;
-        }
+        if (owned && owned.scannerEnabled) owned.scannerEnabled = false;
     }
 
     function scan(): void {
-        root.statusMessage = root.wifiDevice ? "" : "Wi-Fi adapter unavailable";
-        if (!root.wifiDevice) return;
-        if (!root.wifiDevice.scannerEnabled) {
-            root.scanOwnedDevice = root.wifiDevice;
+        if (!root.wifiDevice || !root.visible || !Networking.wifiEnabled) return;
+        if (!Networking.wifiHardwareEnabled || root.hotspotBlocksSelectedWifi) {
+            root.statusMessage = "Wi-Fi is unavailable while this adapter is used by Hotspot.";
+            return;
         }
+        if (root.wifiDevice.mode !== WifiDeviceMode.Station) {
+            root.statusMessage = "Network scanning is unavailable in this Wi-Fi mode.";
+            return;
+        }
+        if (root.wifiDevice.scannerEnabled && root.scanOwnedDevice !== root.wifiDevice) {
+            root.statusMessage = "A scan started elsewhere is already running.";
+            return;
+        }
+
+        root.statusMessage = "";
+        if (!root.scanOwnedDevice) root.scanOwnedDevice = root.wifiDevice;
         root.scanRequested = false;
         scanRestartTimer.restart();
     }
 
+    function beginOperation(network, action): void {
+        root.pendingNetwork = network;
+        root.pendingAction = action;
+        root.operationPending = true;
+        root.operationTimedOut = false;
+        actionTimeout.restart();
+    }
+
+    function finishOperation(message): void {
+        actionTimeout.stop();
+        root.operationPending = false;
+        root.operationTimedOut = false;
+        root.pendingNetwork = null;
+        root.pendingAction = "";
+        if (message) root.statusMessage = message;
+    }
+
+    function reconcilePendingOperation(): void {
+        if (root.operationPending || !root.wifiDevice) return;
+        for (var i = 0; i < root.wifiDevices.length; i++) {
+            var deviceNetworks = root.wifiDevices[i].networks.values;
+            for (var j = 0; j < deviceNetworks.length; j++) {
+                var network = deviceNetworks[j];
+                if (!network.stateChanging) continue;
+                root.pendingNetwork = network;
+                root.pendingAction = network.state === ConnectionState.Connecting ? "connect" : "disconnect";
+                root.operationPending = true;
+                root.operationTimedOut = false;
+                root.statusMessage = network.state === ConnectionState.Connecting
+                    ? "Connecting to " + (network.name || "network") + "…"
+                    : "Disconnecting from " + (network.name || "network") + "…";
+                actionTimeout.restart();
+                return;
+            }
+        }
+    }
+
+    function syncPendingOperation(): void {
+        var network = root.pendingNetwork;
+        if (!network || !root.operationPending) return;
+
+        if (network.connected) {
+            var name = network.name || "network";
+            root.finishOperation("Connected to " + name);
+            root.cancelPassword();
+            return;
+        }
+        if (!network.stateChanging && root.pendingAction === "disconnect") {
+            root.finishOperation("Disconnected from " + (network.name || "network"));
+            return;
+        }
+        if (!network.stateChanging && root.pendingAction === "cancel") {
+            root.finishOperation("Connection cancelled");
+            return;
+        }
+        if (!network.stateChanging && root.operationTimedOut) {
+            root.finishOperation("The connection request timed out.");
+        }
+    }
+
+    function handleConnectionFailure(network, reason): void {
+        if (!network || root.pendingNetwork !== network) return;
+        actionTimeout.stop();
+        root.operationPending = false;
+        root.operationTimedOut = false;
+        root.pendingNetwork = null;
+        root.pendingAction = "";
+        root.clearPassword();
+
+        if (reason === ConnectionFailReason.NoSecrets && root.supportsPsk(network)) {
+            root.promptForPassword(network, "Password required or rejected. Try again.");
+        } else if (reason === ConnectionFailReason.NoSecrets) {
+            root.statusMessage = "This network needs a configured NetworkManager profile.";
+        } else if (reason === ConnectionFailReason.WifiAuthTimeout) {
+            root.statusMessage = "Wi-Fi authentication timed out.";
+        } else if (reason === ConnectionFailReason.WifiNetworkLost) {
+            root.statusMessage = "The Wi-Fi network disappeared.";
+        } else {
+            root.statusMessage = "Could not connect to " + (network.name || "network") + ".";
+        }
+    }
+
+    function connectNetwork(network, withPassword): void {
+        if (!network || !root.canOperate()) return;
+
+        if (network.stateChanging) {
+            root.beginOperation(network,
+                network.state === ConnectionState.Connecting ? "connect" : "disconnect");
+            root.statusMessage = network.state === ConnectionState.Connecting
+                ? "Connecting to " + (network.name || "network") + "…"
+                : "Disconnecting from " + (network.name || "network") + "…";
+            return;
+        }
+        if (network.connected) {
+            root.disconnectNetwork(network);
+            return;
+        }
+        if (root.supportsPsk(network) && !network.known && !withPassword) {
+            root.promptForPassword(network, "");
+            return;
+        }
+        if (!network.known && network.security !== WifiSecurityType.Open
+                && !root.supportsPsk(network)) {
+            root.statusMessage = "This security method needs a NetworkManager profile.";
+            return;
+        }
+        if (withPassword && (!root.supportsPsk(network) || root.passwordText.length === 0)) {
+            root.statusMessage = root.passwordText.length === 0
+                ? "Enter a password." : "Password entry is unavailable for this security type.";
+            return;
+        }
+
+        root.selectedNetwork = null;
+        var secret = withPassword ? root.passwordText : "";
+        root.clearPassword();
+        root.beginOperation(network, "connect");
+        root.statusMessage = "Connecting to " + (network.name || "network") + "…";
+        try {
+            if (withPassword) network.connectWithPsk(secret);
+            else network.connect();
+        } catch (error) {
+            root.finishOperation("Could not start the Wi-Fi connection.");
+        }
+    }
+
+    function disconnectNetwork(network): void {
+        if (!network || !root.wifiDevice || !Networking.wifiEnabled
+                || !Networking.wifiHardwareEnabled || root.hotspotBlocksSelectedWifi
+                || root.operationPending) return;
+        root.beginOperation(network, "disconnect");
+        root.statusMessage = "Disconnecting from " + (network.name || "network") + "…";
+        try {
+            network.disconnect();
+        } catch (error) {
+            root.finishOperation("Could not disconnect from this network.");
+        }
+    }
+
+    function cancelConnection(network): void {
+        if (!network || !root.operationPending || root.pendingNetwork !== network
+                || root.pendingAction !== "connect" || root.hotspotBlocksSelectedWifi) return;
+        root.pendingAction = "cancel";
+        root.statusMessage = "Cancelling connection to " + (network.name || "network") + "…";
+        try {
+            network.disconnect();
+        } catch (error) {
+            root.statusMessage = "Could not cancel the connection request.";
+        }
+    }
+
+    function toggleDetails(network): void {
+        root.cancelPassword();
+        root.forgetConfirmationNetwork = null;
+        root.detailsNetwork = root.detailsNetwork === network ? null : network;
+    }
+
+    function requestForget(network): void {
+        if (!network || !network.known || root.hotspotBlocksSelectedWifi
+                || root.operationPending || root.pendingForgetNetwork) return;
+        root.cancelPassword();
+        root.detailsNetwork = null;
+        root.forgetConfirmationNetwork = network;
+        root.statusMessage = "";
+    }
+
+    function forgetNetwork(network): void {
+        if (!network || !network.known || root.hotspotBlocksSelectedWifi
+                || root.operationPending || root.pendingForgetNetwork) return;
+        root.forgetConfirmationNetwork = null;
+        root.pendingForgetNetwork = network;
+        root.statusMessage = "Removing saved connection settings…";
+        forgetTimeout.restart();
+        try {
+            network.forget();
+            Qt.callLater(function() {
+                if (root.pendingForgetNetwork === network && !network.known) {
+                    root.finishForget(true);
+                }
+            });
+        } catch (error) {
+            root.finishForget(false);
+        }
+    }
+
+    function finishForget(success): void {
+        forgetTimeout.stop();
+        root.pendingForgetNetwork = null;
+        root.statusMessage = success
+            ? "Saved NetworkManager profiles removed."
+            : "Could not confirm that saved profiles were removed.";
+    }
+
+    function setWifiEnabled(enabled): void {
+        if (!root.wifiDevice || root.hotspotActive || root.accessPointActive
+                || !Networking.wifiHardwareEnabled || root.operationPending) return;
+        if (!enabled) {
+            root.stopScan();
+            root.cancelPassword();
+        }
+        Networking.wifiEnabled = enabled;
+    }
+
+    Connections {
+        target: root.pendingNetwork
+        ignoreUnknownSignals: true
+
+        function onConnectedChanged(): void { root.syncPendingOperation(); }
+        function onStateChangingChanged(): void { root.syncPendingOperation(); }
+        function onConnectionFailed(reason): void {
+            root.handleConnectionFailure(root.pendingNetwork, reason);
+        }
+    }
+
+    Connections {
+        target: root.pendingForgetNetwork
+        ignoreUnknownSignals: true
+
+        function onKnownChanged(): void {
+            if (root.pendingForgetNetwork && !root.pendingForgetNetwork.known) {
+                root.finishForget(true);
+            }
+        }
+    }
+
     Timer {
         id: scanRestartTimer
-        interval: 180
+        interval: 220
+        repeat: false
         onTriggered: root.scanRequested = true
     }
 
@@ -131,406 +590,814 @@ Rectangle {
         id: actionTimeout
         interval: 30000
         repeat: false
-        running: root.isConnecting
         onTriggered: {
-            root.isConnecting = false;
-            root.pendingNetwork = null;
-            root.pendingAction = "";
-            root.statusMessage = "Connection timed out";
-            root.passwordText = "";
-        }
-    }
-
-    Connections {
-        target: root.pendingNetwork
-        ignoreUnknownSignals: true
-
-        function onConnectedChanged(): void {
-            if (!root.pendingNetwork) return;
-
-            if (root.pendingNetwork.connected) {
-                root.isConnecting = false;
-                root.statusMessage = "Connected to " + root.pendingNetwork.name;
-                root.selectedNetwork = null;
-                root.passwordText = "";
-                root.pendingNetwork = null;
-                root.pendingAction = "";
-            } else if (root.pendingAction === "disconnect") {
-                root.isConnecting = false;
-                root.statusMessage = "Disconnected from " + root.pendingNetwork.name;
-                root.pendingNetwork = null;
-                root.pendingAction = "";
-            }
-        }
-
-        function onStateChangingChanged(): void {
-            if (!root.pendingNetwork) return;
-            if (!root.pendingNetwork.stateChanging) {
-                if (root.pendingNetwork.connected) {
-                    root.isConnecting = false;
-                    root.statusMessage = "Connected to " + root.pendingNetwork.name;
-                    root.selectedNetwork = null;
-                    root.passwordText = "";
-                    root.pendingNetwork = null;
-                    root.pendingAction = "";
-                } else if (root.pendingAction === "disconnect") {
-                    root.isConnecting = false;
-                    root.statusMessage = "Disconnected from " + root.pendingNetwork.name;
-                    root.pendingNetwork = null;
-                    root.pendingAction = "";
-                } else if (root.pendingAction === "connect") {
-                    root.isConnecting = false;
-                    root.statusMessage = "Could not connect to " + root.pendingNetwork.name;
-                    root.passwordText = "";
-                    root.pendingNetwork = null;
-                    root.pendingAction = "";
-                }
-            }
-        }
-
-        function onConnectionFailed(reason): void {
-            if (!root.pendingNetwork) return;
-
-            root.isConnecting = false;
-            root.passwordText = "";
-            if (reason === ConnectionFailReason.NoSecrets && root.supportsPsk(root.pendingNetwork)) {
-                root.selectedNetwork = root.pendingNetwork;
-                root.statusMessage = "Incorrect password or authentication required";
-            } else if (reason === ConnectionFailReason.NoSecrets) {
-                root.statusMessage = "This network needs a saved NetworkManager profile";
-            } else if (reason === ConnectionFailReason.WifiAuthTimeout) {
-                root.statusMessage = "Wi-Fi authentication timed out";
-            } else if (reason === ConnectionFailReason.WifiNetworkLost) {
-                root.statusMessage = "Wi-Fi network disappeared";
+            if (!root.operationPending) return;
+            if (root.pendingNetwork && root.pendingNetwork.stateChanging) {
+                root.operationTimedOut = true;
+                root.statusMessage = "Still waiting for NetworkManager. You can cancel this request.";
             } else {
-                root.statusMessage = "Could not connect to " + root.pendingNetwork.name;
+                root.finishOperation("The Wi-Fi request timed out.");
             }
-            root.pendingNetwork = null;
-            root.pendingAction = "";
         }
     }
 
-    function supportsPsk(net): bool {
-        return net.security === WifiSecurityType.WpaPsk
-            || net.security === WifiSecurityType.Wpa2Psk
-            || net.security === WifiSecurityType.Sae;
-    }
-
-    function requiresPassword(net): bool {
-        return !net.known && root.supportsPsk(net);
-    }
-
-    function connectNetwork(net, withPassword): void {
-        if (!net) return;
-
-        if (root.isConnecting) {
-            if (root.pendingNetwork === net) {
-                if (typeof net.disconnect === "function") net.disconnect();
-                root.isConnecting = false;
-                root.pendingNetwork = null;
-                root.pendingAction = "";
-                root.statusMessage = "Connection cancelled";
-                root.passwordText = "";
-            }
-            return;
-        }
-
-        if (net.stateChanging) {
-            root.pendingNetwork = net;
-            root.pendingAction = net.state === ConnectionState.Connecting ? "connect" : "disconnect";
-            root.isConnecting = true;
-            root.statusMessage = net.state === ConnectionState.Connecting
-                ? "Connecting to " + net.name + "..."
-                : "Disconnecting from " + net.name + "...";
-            return;
-        }
-
-        if (net.connected) {
-            root.pendingNetwork = net;
-            root.pendingAction = "disconnect";
-            root.isConnecting = true;
-            root.statusMessage = "Disconnecting from " + net.name + "...";
-            net.disconnect();
-            return;
-        }
-
-        if (root.requiresPassword(net) && !withPassword) {
-            root.selectedNetwork = net;
-            root.passwordText = "";
-            root.statusMessage = "";
-            return;
-        }
-
-        if (!withPassword && root.selectedNetwork !== net) {
-            root.selectedNetwork = null;
-            root.passwordText = "";
-        }
-
-        if (withPassword && root.passwordText.length === 0) {
-            root.statusMessage = "Enter a password";
-            return;
-        }
-
-        root.pendingNetwork = net;
-        root.pendingAction = "connect";
-        root.isConnecting = true;
-        root.statusMessage = "Connecting to " + net.name + "...";
-        if (withPassword) {
-            net.connectWithPsk(root.passwordText);
-        } else {
-            net.connect();
-        }
+    Timer {
+        id: forgetTimeout
+        interval: 10000
+        repeat: false
+        onTriggered: root.finishForget(false)
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
+        spacing: 10
 
-        // Header: Back button + Title + Refresh
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            Layout.preferredHeight: 38
+            spacing: 10
 
             Rectangle {
-                width: 26
-                height: 26
-                radius: 13
-                color: backHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
+                Layout.preferredWidth: 36
+                Layout.preferredHeight: 36
+                radius: 10
+                color: root.hotspotBlocksSelectedWifi
+                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+                    : (Networking.wifiEnabled ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.15) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45))
+                border.color: Networking.wifiEnabled ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.35) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
+                border.width: 1
 
                 Text {
                     anchors.centerIn: parent
-                    text: "󰁍"
-                    font.pixelSize: 14
+                    text: "󰤨"
+                    font.pixelSize: 18
+                    color: root.hotspotBlocksSelectedWifi ? Tokens.accent : (Networking.wifiEnabled ? Tokens.accent : Tokens.text_secondary)
+                    Accessible.ignored: true
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+
+                Text {
+                    text: "Wi-Fi"
+                    font.pixelSize: 15
+                    font.bold: true
                     color: Tokens.text_primary
                 }
 
-                HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: { root.cancelPassword(); root.closeRequested(); } }
-            }
-
-            Text {
-                text: "Wi-Fi Networks"
-                font.pixelSize: 12
-                font.bold: true
-                color: Tokens.text_primary
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Rectangle {
-                width: 26
-                height: 26
-                radius: 13
-                color: refreshHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.25) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.7)
-
                 Text {
-                    anchors.centerIn: parent
-                    text: "󰑐"
-                    font.pixelSize: 13
-                    color: root.isScanning ? Tokens.accent : Tokens.text_secondary
-                }
-
-                HoverHandler { id: refreshHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.scan() }
-            }
-        }
-
-        // Empty state indicator
-        Item {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            visible: !Networking.wifiEnabled || root.networks.length === 0
-
-            ColumnLayout {
-                anchors.centerIn: parent
-                spacing: 8
-
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "󰤮"
-                    font.pixelSize: 32
-                    color: Tokens.text_secondary
-                }
-
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: !root.wifiDevice
-                        ? "Wi-Fi adapter unavailable"
-                        : (!Networking.wifiEnabled
-                            ? "Wi-Fi is disabled"
-                            : (root.isScanning ? "Scanning for networks..." : "No Wi-Fi networks found"))
-                    font.pixelSize: 11
-                    color: Tokens.text_secondary
+                    Layout.fillWidth: true
+                    text: !root.wifiDevice ? "Adapter unavailable"
+                        : (root.hotspotBlocksSelectedWifi ? root.hotspotStatusMessage()
+                            : (!Networking.wifiHardwareEnabled ? "Blocked by hardware switch"
+                                : (root.radioOffBlocked ? "Radio locked while Hotspot is active"
+                                    : (Networking.wifiEnabled ? "On" : "Off"))))
+                    font.pixelSize: 10
+                    color: root.hotspotBlocksSelectedWifi ? Tokens.accent : Tokens.text_secondary
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
                 }
             }
-        }
 
-        // Network List View
-        ListView {
-            id: netListView
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            visible: Networking.wifiEnabled && root.networks.length > 0
-            clip: true
-            spacing: 6
-            model: root.networks
+            Item {
+                Layout.preferredWidth: 84
+                Layout.preferredHeight: 30
+                Layout.alignment: Qt.AlignVCenter
 
-            delegate: Rectangle {
-                id: netRow
-                required property var modelData
-                width: netListView.width
-                height: isSelectedPasswordRow ? 74 : 36
-                radius: 8
-                color: modelData.connected
-                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-                    : (rowHover.hovered ? Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9) : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.5))
-                border.color: modelData.connected
-                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.5)
-                    : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2)
-                border.width: 1
-
-                readonly property bool isSelectedPasswordRow: root.selectedNetwork === modelData && !modelData.connected
-
-                Behavior on height {
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
-
-                HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
-
-                ColumnLayout {
+                Row {
                     anchors.fill: parent
-                    anchors.margins: 6
-                    spacing: 4
+                    spacing: 10
 
-                    // Main Row: Signal Icon + SSID + Security + Status
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
+                    Switch {
+                        id: wifiSwitch
+                        width: 44
+                        height: 24
+                        implicitWidth: 44
+                        implicitHeight: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: Networking.wifiEnabled
+                        enabled: root.wifiDevice !== null
+                            && Networking.wifiHardwareEnabled
+                            && !root.radioOffBlocked
+                            && !root.operationPending
+                        Accessible.name: "Wi-Fi power"
+                        onClicked: root.setWifiEnabled(checked)
 
-                        Text {
-                            text: {
-                                var s = netRow.modelData.signalStrength * 100;
-                                if (s >= 75) return "󰤨";
-                                if (s >= 50) return "󰤥";
-                                if (s >= 25) return "󰤢";
-                                return "󰤟";
-                            }
-                            font.pixelSize: 13
-                            color: netRow.modelData.connected ? Tokens.accent : Tokens.text_secondary
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: netRow.modelData.name
-                            font.pixelSize: 11
-                            font.bold: netRow.modelData.connected
-                            color: Tokens.text_primary
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            visible: netRow.modelData.connected
-                            text: "Connected"
-                            font.pixelSize: 9
-                            color: Tokens.accent
-                        }
-
-                        Text {
-                            visible: netRow.modelData.security !== WifiSecurityType.Open
-                                && netRow.modelData.security !== WifiSecurityType.Unknown
-                            text: "󰌾"
-                            font.pixelSize: 10
-                            color: Tokens.text_secondary
-                        }
-
-                        Text {
-                            visible: netRow.modelData.connected
-                            text: "󰄲"
-                            font.pixelSize: 12
-                            color: Tokens.accent
-                        }
-                    }
-
-                    // Inline Password Field for Secured Network Connection
-                    RowLayout {
-                        visible: netRow.isSelectedPasswordRow
-                        Layout.fillWidth: true
-                        spacing: 6
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            height: 26
-                            radius: 6
-                            color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.9)
-                            border.color: Tokens.outline
+                        indicator: Rectangle {
+                            implicitWidth: 44
+                            implicitHeight: 24
+                            width: 44
+                            height: 24
+                            radius: 12
+                            color: wifiSwitch.checked
+                                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.85)
+                                : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
+                            border.color: wifiSwitch.activeFocus ? Tokens.accent : "transparent"
                             border.width: 1
+                            Behavior on color { ColorAnimation { duration: 160 } }
 
-                            TextInput {
-                                id: passInput
-                                anchors.fill: parent
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 8
-                                verticalAlignment: TextInput.AlignVCenter
-                                font.pixelSize: 11
-                                color: Tokens.text_primary
-                                echoMode: TextInput.Password
-                                text: root.passwordText
-                                onTextChanged: root.passwordText = text
-                                onAccepted: root.connectNetwork(netRow.modelData, true)
+                            Rectangle {
+                                width: 18
+                                height: 18
+                                radius: 9
+                                y: 3
+                                x: wifiSwitch.checked ? parent.width - width - 3 : 3
+                                color: wifiSwitch.checked ? Tokens.on_accent : Tokens.text_secondary
+                                Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                             }
+                        }
+                        contentItem: Item {}
+                    }
 
-                            Text {
-                                anchors.fill: parent
-                                anchors.leftMargin: 8
-                                verticalAlignment: Text.AlignVCenter
-                                text: "Password..."
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                                visible: passInput.text.length === 0
+                    Rectangle {
+                        id: refreshButton
+                        width: 30
+                        height: 30
+                        radius: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: refreshHover.hovered
+                            ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
+                            : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45)
+                        border.color: refreshButton.activeFocus
+                            ? Tokens.accent
+                            : (refreshHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.3) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2))
+                        border.width: 1
+                        enabled: root.wifiDevice !== null && Networking.wifiEnabled
+                            && Networking.wifiHardwareEnabled
+                            && !root.hotspotBlocksSelectedWifi
+                            && (!root.isScanning || root.scanOwnedDevice === root.wifiDevice)
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Refresh nearby Wi-Fi networks"
+
+                        Text {
+                            id: refreshIcon
+                            anchors.centerIn: parent
+                            text: "󰑐"
+                            font.pixelSize: 15
+                            color: refreshButton.enabled ? (root.isScanning ? Tokens.accent : Tokens.text_primary) : Tokens.text_secondary
+                            RotationAnimator {
+                                target: refreshIcon
+                                from: 0
+                                to: 360
+                                duration: 1000
+                                loops: Animation.Infinite
+                                running: root.isScanning
                             }
                         }
 
-                        Rectangle {
-                            width: 54
-                            height: 26
-                            radius: 6
-                            color: connectHover.hovered ? Tokens.accent : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.8)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: root.isConnecting ? "..." : "Connect"
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: Tokens.surface
-                            }
-
-                            HoverHandler { id: connectHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler {
-                                enabled: !root.isConnecting && root.passwordText.length > 0
-                                onTapped: root.connectNetwork(netRow.modelData, true)
-                            }
+                        HoverHandler { id: refreshHover; cursorShape: refreshButton.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                        TapHandler {
+                            enabled: refreshButton.enabled
+                            onTapped: root.scan()
                         }
                     }
-                }
-
-                TapHandler {
-                    // Only trigger if not clicking inside password field
-                    enabled: !netRow.isSelectedPasswordRow && !root.isConnecting
-                    onTapped: root.connectNetwork(netRow.modelData)
                 }
             }
         }
 
-        // Status Message Footer
+        ComboBox {
+            id: adapterSelector
+            Layout.fillWidth: true
+            visible: root.wifiDevices.length > 1
+            model: root.wifiDevices.map(function(device) { return device.name; })
+            currentIndex: Math.max(0, root.wifiDevices.indexOf(root.wifiDevice))
+            Accessible.name: "Wi-Fi adapter"
+            delegate: ItemDelegate {
+                required property var modelData
+                width: adapterSelector.width
+                text: String(modelData)
+                Accessible.name: text
+                contentItem: Text {
+                    text: parent.text
+                    font.pixelSize: 12
+                    color: Tokens.text_primary
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            onActivated: function(index) {
+                root.stopScan();
+                root.selectedWifiDevice = root.wifiDevices[index] || null;
+                root.statusMessage = "";
+                root.startScan();
+            }
+
+            background: Rectangle {
+                radius: 9
+                color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.35)
+                border.color: adapterSelector.activeFocus ? Tokens.accent : Tokens.outline
+                border.width: adapterSelector.activeFocus ? 2 : 1
+            }
+            contentItem: Text {
+                leftPadding: 10
+                rightPadding: 30
+                text: adapterSelector.displayText
+                font.pixelSize: 12
+                color: Tokens.text_primary
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.hotspotBlocksSelectedWifi
+            implicitHeight: hotspotNotice.implicitHeight + 20
+            radius: 11
+            color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.1)
+            border.color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.28)
+            border.width: 1
+
+            RowLayout {
+                id: hotspotNotice
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 10
+
+                Text {
+                    text: "󰐼"
+                    font.pixelSize: 20
+                    color: Tokens.accent
+                    Accessible.ignored: true
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: root.hotspotStatusMessage()
+                    font.pixelSize: 11
+                    color: Tokens.text_primary
+                    wrapMode: Text.Wrap
+                    textFormat: Text.PlainText
+                }
+
+                Button {
+                    text: "Hotspot"
+                    Accessible.name: "Open Hotspot tab"
+                    onClicked: root.hotspotPageRequested()
+                }
+            }
+        }
+
         Text {
             Layout.fillWidth: true
             visible: root.statusMessage.length > 0
             text: root.statusMessage
-            font.pixelSize: 10
+            font.pixelSize: 11
             color: Tokens.accent
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: 42
+            radius: 12
+            color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.32)
+            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.22)
+            border.width: 1
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 10
+
+                Rectangle {
+                    Layout.preferredWidth: 8
+                    Layout.preferredHeight: 8
+                    radius: 4
+                    color: Networking.connectivity === NetworkConnectivity.Full
+                        ? Tokens.accent
+                        : (Networking.connectivity === NetworkConnectivity.Limited
+                            ? Qt.rgba(0.95, 0.77, 0.48, 1.0)
+                            : (Networking.connectivity === NetworkConnectivity.Portal
+                                ? Qt.rgba(0.95, 0.77, 0.48, 1.0)
+                                : Tokens.text_secondary))
+                }
+
+                Text {
+                    text: "Internet"
+                    font.pixelSize: 12
+                    font.bold: true
+                    color: Tokens.text_primary
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: root.connectivityLabel()
+                    font.pixelSize: 11
+                    color: Networking.connectivity === NetworkConnectivity.Full ? Tokens.accent : Tokens.text_secondary
+                }
+            }
+        }
+
+        Flickable {
+            id: pageFlick
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            contentWidth: width
+            contentHeight: contentColumn.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            ColumnLayout {
+                id: contentColumn
+                width: pageFlick.width
+                spacing: 12
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.connectedNetwork !== null
+
+                    Text {
+                        text: "Current connection"
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 1.1
+                        font.pixelSize: 10
+                        font.bold: true
+                        color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.75)
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Text {
+                        text: root.wifiDevice ? root.wifiDevice.name : ""
+                        font.pixelSize: 10
+                        color: Tokens.text_secondary
+                        textFormat: Text.PlainText
+                    }
+                }
+
+                Repeater {
+                    model: root.connectedNetwork ? [root.connectedNetwork] : []
+                    delegate: networkRowDelegate
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: !root.connectedNetwork
+                    text: !root.wifiDevice ? "No Wi-Fi adapter is available."
+                        : (!Networking.wifiHardwareEnabled ? "Wi-Fi is blocked by the hardware switch."
+                            : (!Networking.wifiEnabled ? "Wi-Fi is off."
+                                : (root.hotspotBlocksSelectedWifi ? root.hotspotStatusMessage()
+                                    : "Not connected to a Wi-Fi network.")))
+                    font.pixelSize: 12
+                    color: Tokens.text_secondary
+                    wrapMode: Text.Wrap
+                    textFormat: Text.PlainText
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Saved & in range"
+                    visible: root.knownNetworks.length > 0
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 1.1
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.65)
+                }
+
+                Repeater {
+                    model: root.knownNetworks
+                    delegate: networkRowDelegate
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: Networking.wifiEnabled && root.wifiDevice
+                        && root.knownNetworks.length === 0 && root.nearbyNetworks.length === 0
+                        && !root.isScanning && !root.hotspotBlocksSelectedWifi
+                    text: "No saved networks are currently in range."
+                    font.pixelSize: 11
+                    color: Tokens.text_secondary
+                    textFormat: Text.PlainText
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.nearbyNetworks.length > 0
+                    text: "Nearby networks"
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 1.1
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.65)
+                }
+
+                Repeater {
+                    model: root.nearbyNetworks
+                    delegate: networkRowDelegate
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.wifiDevice !== null && Networking.wifiEnabled
+                        && !root.hotspotBlocksSelectedWifi && root.isScanning
+                    spacing: 8
+
+                    BusyIndicator {
+                        running: true
+                        implicitWidth: 20
+                        implicitHeight: 20
+                    }
+
+                    Text {
+                        text: "Scanning nearby networks…"
+                        font.pixelSize: 11
+                        color: Tokens.text_secondary
+                    }
+                }
+
+                Item { Layout.fillWidth: true; implicitHeight: 4 }
+            }
+        }
+    }
+
+    Component {
+        id: networkRowDelegate
+
+        Rectangle {
+            id: networkRow
+            required property var modelData
+
+            property var network: modelData
+            readonly property bool isCurrent: network.connected
+            readonly property bool passwordPrompt: root.selectedNetwork === network
+            readonly property bool showingDetails: root.detailsNetwork === network
+            readonly property bool confirmingForget: root.forgetConfirmationNetwork === network
+            readonly property bool ownOperation: root.operationPending && root.pendingNetwork === network
+
+            Layout.fillWidth: true
+            implicitHeight: rowContents.implicitHeight + 14
+            radius: 12
+            color: isCurrent
+                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.10)
+                : (rowHover.hovered
+                    ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45)
+                    : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.22))
+            border.color: isCurrent
+                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.35)
+                : (networkRow.activeFocus ? Tokens.accent
+                    : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.20))
+            border.width: networkRow.activeFocus ? 2 : 1
+            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on border.color { ColorAnimation { duration: 120 } }
+
+            HoverHandler { id: rowHover }
+
+            ColumnLayout {
+                id: rowContents
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 8
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Row {
+                        spacing: 4
+                        Layout.alignment: Qt.AlignVCenter
+
+                        Text {
+                            visible: networkRow.network.security !== WifiSecurityType.Open
+                                && networkRow.network.security !== WifiSecurityType.None
+                            text: "󰌾"
+                            font.pixelSize: 11
+                            color: networkRow.isCurrent ? Tokens.accent : Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.7)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Text {
+                            text: root.signalGlyph(networkRow.network)
+                            font.pixelSize: 18
+                            color: networkRow.isCurrent ? Tokens.accent : Tokens.text_secondary
+                            anchors.verticalCenter: parent.verticalCenter
+                            Accessible.ignored: true
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: networkRow.network.name || "Hidden network"
+                            font.pixelSize: 13
+                            font.bold: networkRow.isCurrent
+                            color: Tokens.text_primary
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.securityLabel(networkRow.network)
+                                + (networkRow.network.known ? " · Saved" : "")
+                                + (networkRow.isCurrent ? " · Connected" : "")
+                            font.pixelSize: 10
+                            color: networkRow.isCurrent ? Tokens.accent : Tokens.text_secondary
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
+                        }
+                    }
+
+                    Button {
+                        id: connectBtn
+                        Layout.minimumWidth: 68
+                        implicitHeight: 28
+                        text: networkRow.isCurrent ? "Disconnect"
+                            : (networkRow.ownOperation
+                                ? (root.pendingAction === "cancel" ? "Cancelling…" : "Cancel")
+                                : (root.operationPending ? "Wait" : "Connect"))
+                        enabled: Networking.wifiEnabled && Networking.wifiHardwareEnabled
+                            && !root.hotspotBlocksSelectedWifi
+                            && (!root.operationPending || networkRow.ownOperation)
+                            && (!networkRow.ownOperation || root.pendingAction === "connect")
+                        Accessible.name: networkRow.isCurrent
+                            ? "Disconnect from " + (networkRow.network.name || "network")
+                            : (networkRow.ownOperation ? "Cancel connection to "
+                                + (networkRow.network.name || "network")
+                                : "Connect to " + (networkRow.network.name || "network"))
+                        onClicked: {
+                            if (networkRow.isCurrent) root.disconnectNetwork(networkRow.network);
+                            else if (networkRow.ownOperation) root.cancelConnection(networkRow.network);
+                            else root.connectNetwork(networkRow.network, false);
+                        }
+                        contentItem: Text {
+                            text: connectBtn.text
+                            font.pixelSize: 11
+                            font.weight: Font.Medium
+                            color: !connectBtn.enabled ? Tokens.text_secondary
+                                : (networkRow.isCurrent ? Qt.rgba(0.95, 0.45, 0.47, 1.0) : (connectBtn.down ? Tokens.text_primary : Tokens.accent))
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: !connectBtn.enabled ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
+                                : (networkRow.isCurrent
+                                    ? (connectBtn.hovered ? Qt.rgba(0.92, 0.38, 0.4, 0.22) : Qt.rgba(0.92, 0.38, 0.4, 0.12))
+                                    : (connectBtn.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.24) : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.10)))
+                            border.color: !connectBtn.enabled ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2)
+                                : (networkRow.isCurrent
+                                    ? Qt.rgba(0.92, 0.38, 0.4, 0.45)
+                                    : (connectBtn.hovered ? Tokens.accent : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.38)))
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                        }
+                    }
+
+                    ToolButton {
+                        id: rowMoreBtn
+                        implicitWidth: 28
+                        implicitHeight: 28
+                        text: "⋯"
+                        Accessible.name: "More actions for " + (networkRow.network.name || "network")
+                        onClicked: rowMenu.open()
+                        contentItem: Text {
+                            text: "⋯"
+                            font.pixelSize: 13
+                            color: rowMoreBtn.hovered ? Tokens.text_primary : Tokens.text_secondary
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: rowMoreBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.6) : "transparent"
+                            border.color: rowMoreBtn.hovered ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3) : "transparent"
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                        }
+
+                        Menu {
+                            id: rowMenu
+
+                            MenuItem {
+                                text: networkRow.showingDetails ? "Hide details" : "Details"
+                                onTriggered: root.toggleDetails(networkRow.network)
+                            }
+
+                            MenuItem {
+                                text: "Forget saved profiles…"
+                                visible: networkRow.network.known
+                                enabled: !root.hotspotBlocksSelectedWifi
+                                    && !root.operationPending && !root.pendingForgetNetwork
+                                onTriggered: root.requestForget(networkRow.network)
+                            }
+                        }
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: networkRow.showingDetails
+                    spacing: 3
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Adapter: " + (networkRow.network.device
+                            ? networkRow.network.device.name : "Unavailable")
+                        font.pixelSize: 10
+                        color: Tokens.text_secondary
+                        textFormat: Text.PlainText
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Signal " + root.signalPercent(networkRow.network) + "% · "
+                            + root.securityLabel(networkRow.network)
+                        font.pixelSize: 10
+                        color: Tokens.text_secondary
+                        textFormat: Text.PlainText
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: networkRow.passwordPrompt
+                    spacing: 7
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        TextField {
+                            id: passwordField
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 90
+                            implicitHeight: 34
+                            placeholderText: "Wi-Fi password"
+                            echoMode: root.showPassword ? TextInput.Normal : TextInput.Password
+                            text: root.passwordText
+                            Accessible.name: "Password for " + (networkRow.network.name || "network")
+                            onTextChanged: root.passwordText = text
+                            onAccepted: root.connectNetwork(networkRow.network, true)
+                            onVisibleChanged: {
+                                if (visible) forceActiveFocus();
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.8)
+                                border.color: passwordField.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
+                                border.width: passwordField.activeFocus ? 2 : 1
+                            }
+                            color: Tokens.text_primary
+                            selectionColor: Tokens.accent
+                        }
+
+                        ToolButton {
+                            id: showPassBtn
+                            implicitWidth: 50
+                            implicitHeight: 34
+                            text: root.showPassword ? "Hide" : "Show"
+                            Accessible.name: root.showPassword ? "Hide password" : "Show password"
+                            onClicked: root.showPassword = !root.showPassword
+                            contentItem: Text {
+                                text: showPassBtn.text
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                color: showPassBtn.hovered ? Tokens.text_primary : Tokens.text_secondary
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: showPassBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.35)
+                                border.color: showPassBtn.hovered ? Tokens.outline : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
+                                border.width: 1
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Item { Layout.fillWidth: true }
+
+                        Button {
+                            id: cancelPassBtn
+                            text: "Cancel"
+                            implicitHeight: 28
+                            implicitWidth: 64
+                            enabled: !root.operationPending
+                            onClicked: root.cancelPassword()
+                            contentItem: Text {
+                                text: cancelPassBtn.text
+                                font.pixelSize: 11
+                                color: cancelPassBtn.hovered ? Tokens.text_primary : Tokens.text_secondary
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: cancelPassBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.6) : "transparent"
+                                border.color: cancelPassBtn.hovered ? Tokens.outline : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
+                                border.width: 1
+                            }
+                        }
+
+                        Button {
+                            id: submitPassBtn
+                            text: "Connect"
+                            implicitHeight: 28
+                            implicitWidth: 72
+                            enabled: root.passwordText.length > 0 && !root.operationPending
+                                && !root.hotspotBlocksSelectedWifi
+                            onClicked: root.connectNetwork(networkRow.network, true)
+                            contentItem: Text {
+                                text: submitPassBtn.text
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                color: submitPassBtn.enabled ? Tokens.on_accent : Tokens.text_secondary
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: submitPassBtn.enabled ? (submitPassBtn.hovered ? Qt.darker(Tokens.accent, 1.1) : Tokens.accent) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: networkRow.confirmingForget
+                    spacing: 7
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Remove all saved profiles for this network?"
+                        font.pixelSize: 10
+                        color: Tokens.text_secondary
+                        wrapMode: Text.Wrap
+                        textFormat: Text.PlainText
+                    }
+
+                    Button {
+                        id: cancelForgetBtn
+                        text: "Cancel"
+                        implicitHeight: 28
+                        implicitWidth: 64
+                        onClicked: root.forgetConfirmationNetwork = null
+                        contentItem: Text {
+                            text: cancelForgetBtn.text
+                            font.pixelSize: 11
+                            color: cancelForgetBtn.hovered ? Tokens.text_primary : Tokens.text_secondary
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: cancelForgetBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.6) : "transparent"
+                            border.color: cancelForgetBtn.hovered ? Tokens.outline : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
+                            border.width: 1
+                        }
+                    }
+
+                    Button {
+                        id: confirmForgetBtn
+                        text: "Forget"
+                        implicitHeight: 28
+                        implicitWidth: 64
+                        enabled: !root.operationPending && !root.hotspotBlocksSelectedWifi
+                        onClicked: root.forgetNetwork(networkRow.network)
+                        contentItem: Text {
+                            text: confirmForgetBtn.text
+                            font.pixelSize: 11
+                            font.weight: Font.Medium
+                            color: confirmForgetBtn.enabled ? Qt.rgba(0.95, 0.45, 0.47, 1.0) : Tokens.text_secondary
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: confirmForgetBtn.enabled
+                                ? (confirmForgetBtn.hovered ? Qt.rgba(0.82, 0.25, 0.27, 0.28) : Qt.rgba(0.82, 0.25, 0.27, 0.16))
+                                : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
+                            border.color: confirmForgetBtn.enabled ? Qt.rgba(0.92, 0.38, 0.4, 0.75) : Tokens.outline
+                            border.width: 1
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.pendingForgetNetwork === networkRow.network
+                    text: "Removing saved profiles…"
+                    font.pixelSize: 10
+                    color: Tokens.text_secondary
+                    textFormat: Text.PlainText
+                }
+            }
         }
     }
 }

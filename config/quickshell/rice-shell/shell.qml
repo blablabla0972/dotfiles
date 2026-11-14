@@ -269,6 +269,10 @@ ShellRoot {
                     root.toggleDashboard(tab, modelData);
                 }
 
+                onRequestSideDrawer: (type) => {
+                    root.toggleSideDrawer(type, modelData);
+                }
+
             }
         }
     }

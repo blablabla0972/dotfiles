@@ -31,11 +31,13 @@ class DashboardMotionTests(unittest.TestCase):
         for name in ('IslandShape.qml', 'IslandState.js'):
             shutil.copy2(SHELL / 'island' / name, base / 'island' / name)
         # Only hardware-backed bodies and palette loading are replaced.
-        for name in ('System', 'Config', 'NotificationCenter', 'WifiDrawer', 'BluetoothDrawer'):
-            body = ('import QtQuick\nItem { signal requestSideDrawer(string type); '
-                    'signal closeRequested(); '
+        for name in ('System', 'Config', 'NotificationCenter', 'WifiDrawer', 'BluetoothDrawer', 'ConnectivityCenter'):
+            body = ('import QtQuick\nItem { property string currentPage: ""; signal requestSideDrawer(string type); '
+                    'signal closeRequested(); signal pageSelected(string page); function handleEscape() { return false; } '
+                    'property bool wifiLoaded: currentPage === "wifi" || currentPage === ""; '
+                    'property bool bluetoothLoaded: currentPage === "bluetooth"; '
                     + ('TextInput { objectName: "wifiPassword"; text: "password" }'
-                       if name == 'WifiDrawer' else '') + ' }\n')
+                       if name in ('WifiDrawer', 'ConnectivityCenter') else '') + ' }\n')
             (base / f'dashboard/{name}.qml').write_text(body)
         shutil.copy2(SHELL / 'dashboard/Home.qml', base / 'dashboard/Home.qml')
         for name, width, height in (
@@ -61,11 +63,22 @@ QtObject {
     property bool hasPlayer: false
     property bool isPlaying: false
     property QtObject activePlayer: QtObject {
+        property string identity: "Spotify"
         property string trackTitle: ""
+        property string trackArtist: ""
+        property string trackArtUrl: ""
         property bool canSeek: false
+        property bool canGoPrevious: false
+        property bool canGoNext: false
+        property bool canControl: true
+        property bool shuffleSupported: false
+        property bool shuffle: false
+        property bool loopSupported: false
+        property int loopState: 0
         property bool positionSupported: true
+        property real position: 0
+        property real length: 0
         property int tickCount: 0
-        signal positionChanged()
         onPositionChanged: tickCount += 1
     }
     property string trackTitle: ""
@@ -76,12 +89,23 @@ QtObject {
     property bool canNext: false
     property real position: 0
     property real length: 0
-    property real progress: 0
+    readonly property real progress: length > 0 ? Math.max(0, Math.min(1, position / length)) : 0
+    property int seekCalls: 0
+    property int previousCalls: 0
+    property int nextCalls: 0
     function formatTime(seconds) { return "0:00"; }
-    function setPosition(seconds) {}
+    function setPosition(seconds) {
+        position = seconds;
+        activePlayer.position = seconds;
+        seekCalls += 1;
+    }
     function togglePlaying() {}
-    function previous() {}
-    function next() {}
+    function previous() { previousCalls += 1; }
+    function next() { nextCalls += 1; }
+    readonly property int loopNone: 0
+    readonly property int loopTrack: 1
+    readonly property int loopPlaylist: 2
+    function cycleLoop() {}
 }
 ''')
         (base / 'services/Audio.qml').write_text('''pragma Singleton
@@ -123,6 +147,7 @@ QtObject {
         source = (SHELL / 'island/Island.qml').read_text()
         source = source.replace('import Quickshell\n', 'import QtQuick.Window\n')
         source = source.replace('import Quickshell.Wayland\n', '')
+        source = source.replace('import Quickshell.Services.Mpris\n', '')
         source = source.replace('PanelWindow {', 'Window {', 1)
         source = re.sub(r'^    (?:required property ShellScreen targetScreen|'
                         r'screen: targetScreen|implicitHeight:.*|exclusionMode:.*|WlrLayershell\..*)'
@@ -180,6 +205,22 @@ QtObject {
     property bool alertTimerRunning: dismissTimer.running
     property int alertTimeout: dismissTimer.interval
     property int positionTickCount: Media.activePlayer.tickCount
+    property real expandedTargetWidth: IslandState.targetDimensions(IslandState.State.EXPANDED).width
+    property real expandedTargetHeight: IslandState.targetDimensions(IslandState.State.EXPANDED).height
+    property real expandedContentWidth: expandedMediaContent.width
+    property real expandedArtworkWidth: expandedArtwork.width
+    property real expandedArtworkHeight: expandedArtwork.height
+    property real expandedArtworkX: expandedArtwork.mapToItem(expandedMediaContent, 0, 0).x
+    property real expandedArtworkRight: expandedArtwork.mapToItem(
+        expandedMediaContent, expandedArtwork.width, 0).x
+    property real expandedDetailsX: expandedMediaDetails.x
+    property real expandedDetailsWidth: expandedMediaDetails.width
+    property real expandedTimelineLocalX: progressBarTrack.x
+    property real expandedTimelineX: expandedMediaDetails.x + progressBarTrack.x
+    property real mediaPosition: Media.position
+    property int mediaSeekCalls: Media.seekCalls
+    property int mediaPreviousCalls: Media.previousCalls
+    property int mediaNextCalls: Media.nextCalls
     property real osdValue: osdProgress
     property real osdFillValue: osdFill
     property string osdType: osdKind
@@ -194,8 +235,40 @@ QtObject {
     function pin() { isPinned = true; }
     function unpin() { collapse(); }
     function simulateMedia() {
+        Media.activePlayer.identity = "Spotify";
         Media.activePlayer.trackTitle = "Track";
+        Media.activePlayer.trackArtist = "Artist";
+        Media.activePlayer.canSeek = true;
+        Media.activePlayer.canGoPrevious = true;
+        Media.activePlayer.canGoNext = true;
+        Media.activePlayer.length = 245;
+        Media.activePlayer.position = 61;
         Media.trackTitle = "Track";
+        Media.trackArtist = "Artist";
+        Media.canPrev = true;
+        Media.canNext = true;
+        Media.canToggle = true;
+        Media.position = 61;
+        Media.length = 245;
+        Media.hasPlayer = true;
+        Media.isPlaying = true;
+    }
+    function simulateYoutubeMedia() {
+        Media.activePlayer.identity = "YouTube";
+        Media.activePlayer.trackTitle = "Long video title for a stable two-line capsule";
+        Media.activePlayer.trackArtist = "Creator";
+        Media.activePlayer.canSeek = true;
+        Media.activePlayer.canGoPrevious = false;
+        Media.activePlayer.canGoNext = false;
+        Media.activePlayer.length = 300;
+        Media.activePlayer.position = 42;
+        Media.trackTitle = Media.activePlayer.trackTitle;
+        Media.trackArtist = "Creator";
+        Media.canPrev = false;
+        Media.canNext = false;
+        Media.canToggle = true;
+        Media.position = 42;
+        Media.length = 300;
         Media.hasPlayer = true;
         Media.isPlaying = true;
     }
@@ -218,9 +291,12 @@ QtObject {
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QTest>
+#include <QImage>
+#include <QString>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QVariant>
+#include <cstring>
 #include <cstdio>
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
@@ -240,6 +316,10 @@ int main(int argc, char **argv) {
                          "panelWidth", "panelHeight", "panelY", "drawerWidth", "drawerX", "morphX", "widthDuration", "heightDuration",
                          "tabOpacity", "tabOffset", "dashboardCardWidth", "dashboardCardHeight",
                          "homeContentHeight", "homeLayoutColumns", "tabContentHeight",
+                         "expandedTargetWidth", "expandedTargetHeight", "expandedContentWidth",
+                         "expandedArtworkWidth", "expandedArtworkHeight", "expandedArtworkX",
+                         "expandedArtworkRight", "expandedDetailsX", "expandedDetailsWidth",
+                         "expandedTimelineLocalX", "expandedTimelineX", "mediaPosition",
                          "tabViewportHeight", "tabContentWidth"})
             row[key] = w->property(key).toDouble();
         for (auto key : {"dashboardVisible", "expanded", "viewportClips", "sideDrawerOpen",
@@ -255,7 +335,31 @@ int main(int argc, char **argv) {
         row["osdValue"] = w->property("osdValue").toDouble();
         row["osdFillValue"] = w->property("osdFillValue").toDouble();
         row["osdType"] = w->property("osdType").toString();
+        row["mediaSeekCalls"] = w->property("mediaSeekCalls").toInt();
+        row["mediaPreviousCalls"] = w->property("mediaPreviousCalls").toInt();
+        row["mediaNextCalls"] = w->property("mediaNextCalls").toInt();
+        auto artworkFallback = w->findChild<QQuickItem *>("expandedArtworkFallback");
+        row["artworkFallbackVisible"] = artworkFallback && artworkFallback->isVisible();
+        for (auto [key, objectName] : {
+                 std::pair<const char *, const char *>{"previousActionLabel", "mediaPreviousActionLabel"},
+                 {"nextActionLabel", "mediaNextActionLabel"}}) {
+            auto label = w->findChild<QQuickItem *>(objectName);
+            row[key] = label ? label->property("text").toString() : QString();
+        }
+        for (auto [key, objectName] : {
+                 std::pair<const char *, const char *>{"previousEnabled", "mediaPreviousButton"},
+                 {"nextEnabled", "mediaNextButton"}}) {
+            auto button = w->findChild<QQuickItem *>(objectName);
+            row[key] = button && button->isEnabled();
+        }
         results[name] = row;
+        if (argc > 2 && (std::strcmp(name, "spotifyExpanded") == 0
+                         || std::strcmp(name, "youtubeExpanded") == 0)) {
+            const QImage frame = w->grabWindow();
+            const int cropX = (frame.width() - 380) / 2;
+            frame.copy(cropX, 0, 380, 132).save(
+                QString::fromLocal8Bit(argv[2]) + "/" + name + ".png");
+        }
     };
     auto toggle = [&]() {
         return QMetaObject::invokeMethod(w, "toggle", Q_ARG(QVariant, QVariant("Home")));
@@ -392,6 +496,32 @@ int main(int argc, char **argv) {
     QTest::qWait(320);
     QMetaObject::invokeMethod(w, "simulatePausedUntitledMedia");
     QTest::qWait(320); snapshot("pausedUntitledMedia");
+    QMetaObject::invokeMethod(w, "simulateMedia");
+    QMetaObject::invokeMethod(w, "pin");
+    QTest::qWait(380); snapshot("spotifyExpanded");
+    QMetaObject::invokeMethod(w, "unpin");
+    QTest::qWait(360);
+    QMetaObject::invokeMethod(w, "simulateYoutubeMedia");
+    QMetaObject::invokeMethod(w, "pin");
+    QTest::qWait(380); snapshot("youtubeExpanded");
+    if (auto back = w->findChild<QQuickItem *>("mediaPreviousButton")) {
+        auto center = back->mapToScene(QPointF(back->width() / 2, back->height() / 2));
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, center.toPoint());
+    }
+    snapshot("youtubeSeekBack");
+    if (auto forward = w->findChild<QQuickItem *>("mediaNextButton")) {
+        auto center = forward->mapToScene(QPointF(forward->width() / 2, forward->height() / 2));
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, center.toPoint());
+    }
+    snapshot("youtubeSeekForward");
+    if (auto track = w->findChild<QQuickItem *>("mediaSeekTimeline")) {
+        auto start = track->mapToScene(QPointF(track->width() * 0.25, track->height() / 2));
+        auto end = track->mapToScene(QPointF(track->width() * 0.75, track->height() / 2));
+        QTest::mousePress(w, Qt::LeftButton, Qt::NoModifier, start.toPoint());
+        QTest::mouseEvent(QTest::MouseMove, w, Qt::LeftButton, Qt::NoModifier, end.toPoint(), 30);
+        QTest::mouseRelease(w, Qt::LeftButton, Qt::NoModifier, end.toPoint());
+    }
+    snapshot("youtubeSeekDrag");
     fprintf(stdout, "%s\n", QJsonDocument(results).toJson(QJsonDocument::Compact).constData());
     return 0;
 }'''
@@ -401,7 +531,10 @@ int main(int argc, char **argv) {
                                capture_output=True, text=True, timeout=30)
         if built.returncode:
             raise AssertionError(built.stderr)
-        result = subprocess.run([str(base / 'check'), str(base / 'island/main.qml')],
+        args = [str(base / 'check'), str(base / 'island/main.qml')]
+        if os.environ.get('DASHBOARD_MOTION_SCREENSHOT_DIR'):
+            args.append(os.environ['DASHBOARD_MOTION_SCREENSHOT_DIR'])
+        result = subprocess.run(args,
                                 env=environment(base), capture_output=True, text=True, timeout=40)
         if result.returncode:
             raise AssertionError(f'Qt harness exit {result.returncode}: {result.stdout}{result.stderr}')
@@ -416,18 +549,41 @@ int main(int argc, char **argv) {
         for name in ('opening45', 'opening100', 'opening200', 'closing45'):
             with self.subTest(frame=name):
                 self.assertEqual((self.rows[name]['contentWidth'], self.rows[name]['contentHeight']),
-                                 (760, 440), self.rows[name])
+                                 (900, 520), self.rows[name])
                 self.assertTrue(self.rows[name]['viewportClips'], self.rows[name])
+
+    def test_expanded_capsule_is_horizontal_and_uses_seek_fallback(self):
+        expanded = self.rows["youtubeExpanded"]
+        self.assertEqual((expanded["expandedTargetWidth"], expanded["expandedTargetHeight"]), (380, 132))
+        self.assertEqual(expanded["expandedContentWidth"], 348)
+        self.assertEqual((expanded["expandedArtworkWidth"], expanded["expandedArtworkHeight"]), (68, 68))
+        self.assertGreaterEqual(expanded["expandedTimelineX"], expanded["expandedArtworkRight"] + 8, expanded)
+        self.assertEqual(expanded["previousActionLabel"], "−10s")
+        self.assertEqual(expanded["nextActionLabel"], "+10s")
+        self.assertTrue(expanded["previousEnabled"])
+        self.assertTrue(expanded["nextEnabled"])
+        self.assertEqual(self.rows["youtubeSeekBack"]["mediaPosition"], 32)
+        self.assertEqual(self.rows["youtubeSeekForward"]["mediaPosition"], 42)
+        self.assertEqual(self.rows["youtubeSeekForward"]["mediaSeekCalls"], 2)
+        self.assertEqual(self.rows["youtubeSeekForward"]["mediaPreviousCalls"], 0)
+        self.assertEqual(self.rows["youtubeSeekForward"]["mediaNextCalls"], 0)
+        self.assertAlmostEqual(self.rows["youtubeSeekDrag"]["mediaPosition"], 225, delta=1)
+        self.assertEqual(self.rows["youtubeSeekDrag"]["mediaSeekCalls"], 4)
+        spotify = self.rows["spotifyExpanded"]
+        self.assertEqual(spotify["previousActionLabel"], "󰒮")
+        self.assertEqual(spotify["nextActionLabel"], "󰒭")
+        self.assertEqual(spotify["mediaPosition"], 61)
+        self.assertTrue(spotify["artworkFallbackVisible"])
 
     def test_reveal_moves_and_fades_before_final_geometry(self):
         first, middle, opened = (self.rows[name] for name in ('opening45', 'opening100', 'opened'))
         self.assertLess(first['panelHeight'], middle['panelHeight'])
-        self.assertLess(middle['panelHeight'], 440)
+        self.assertLess(middle['panelHeight'], 520)
         self.assertLess(first['contentY'], 0, first)
         self.assertLess(first['contentY'], middle['contentY'])
         self.assertLess(first['contentOpacity'], middle['contentOpacity'])
         self.assertEqual((opened['panelWidth'], opened['panelHeight'], opened['panelY']),
-                         (760, 440, 0))
+                         (900, 520, 0))
         self.assertEqual((opened['contentY'], opened['contentOpacity']), (0, 1))
         self.assertNotIn('ReferenceError', self.stderr)
         self.assertNotIn('TypeError', self.stderr)
@@ -450,7 +606,7 @@ int main(int argc, char **argv) {
                                self.rows['afterReopen']['panelHeight'], delta=1)
         self.assertTrue(self.rows['reopened']['dashboardVisible'], self.rows['reopened'])
         self.assertTrue(self.rows['reopened']['expanded'], self.rows['reopened'])
-        self.assertEqual(self.rows['reopened']['panelHeight'], 440)
+        self.assertEqual(self.rows['reopened']['panelHeight'], 520)
 
     def test_dismiss_cancels_pending_open(self):
         self.assertFalse(self.rows['earlyDismiss']['expanded'], self.rows['earlyDismiss'])
@@ -459,7 +615,7 @@ int main(int argc, char **argv) {
 
     def test_media_restored_after_dashboard(self):
         self.assertEqual(self.rows['mediaRest']['panelWidth'], 232)
-        self.assertEqual(self.rows['mediaDashboard']['panelWidth'], 760)
+        self.assertEqual(self.rows['mediaDashboard']['panelWidth'], 900)
         self.assertEqual(self.rows['mediaReturn']['panelWidth'], 232)
         self.assertEqual(self.rows['mediaReturn']['panelHeight'], 32)
         self.assertFalse(self.rows['mediaReturn']['dashboardVisible'])
@@ -467,8 +623,8 @@ int main(int argc, char **argv) {
     def test_sidecar_preserves_content_size(self):
         row = self.rows['drawerOpened']
         self.assertTrue(row['sideDrawerOpen'], row)
-        self.assertEqual(row['drawerWidth'], 300)
-        self.assertEqual((row['contentWidth'], row['contentHeight']), (760, 440))
+        self.assertEqual(row['drawerWidth'], 360)
+        self.assertEqual((row['contentWidth'], row['contentHeight']), (900, 520))
 
     def test_unknown_drawer_is_ignored_and_non_home_drawer_returns_home(self):
         unknown = self.rows['unknownDrawerIgnored']
@@ -492,7 +648,7 @@ int main(int argc, char **argv) {
         self.assertFalse(entering['tabInputEnabled'], entering)
         self.assertEqual((settled['tabOffset'], settled['tabOpacity']), (0, 1))
         self.assertTrue(settled['tabInputEnabled'], settled)
-        self.assertEqual((settled['contentWidth'], settled['contentHeight']), (760, 440))
+        self.assertEqual((settled['contentWidth'], settled['contentHeight']), (900, 520))
         self.assertEqual(self.rows['homeTabRestored']['tabName'], 'Home')
         self.assertEqual(self.rows['homeTabRestored']['tabOpacity'], 1)
 
@@ -538,7 +694,7 @@ int main(int argc, char **argv) {
 
     def test_drawer_uses_overlay_at_1080px(self):
         row = self.rows['drawer1080Viewport']
-        self.assertEqual(row['contentWidth'], 760)
+        self.assertEqual(row['contentWidth'], 900)
         self.assertTrue(row['drawerOverlay'])
         self.assertEqual(row['drawerWidth'], row['dashboardCardWidth'])
         self.assertGreaterEqual(row['drawerX'], 0)
@@ -546,10 +702,10 @@ int main(int argc, char **argv) {
 
     def test_responsive_dashboard_geometry_at_narrow_viewports(self):
         for name, screen_width, width, height, overlay in (
-                ('drawer1280Viewport', 1280, 760, 440, False),
-                ('drawer960Viewport', 960, 760, 440, True),
-                ('drawer768Viewport', 768, 730, 440, True),
-                ('drawer640Viewport', 640, 602, 440, True),
+                ('drawer1280Viewport', 1280, 900, 520, True),
+                ('drawer960Viewport', 960, 900, 520, True),
+                ('drawer768Viewport', 768, 730, 520, True),
+                ('drawer640Viewport', 640, 602, 520, True),
                 ('drawer640x360Viewport', 640, 602, 344, True)):
             row = self.rows[name]
             self.assertEqual((row['dashboardCardWidth'], row['dashboardCardHeight']), (width, height), row)
@@ -559,10 +715,10 @@ int main(int argc, char **argv) {
 
         normal = self.rows['drawer1280Viewport']
         self.assertEqual(normal['homeLayoutColumns'], 3, normal)
-        self.assertEqual(normal['homeContentHeight'], 370, normal)
+        self.assertEqual(normal['homeContentHeight'], 520, normal)
         narrow = self.rows['drawer768Viewport']
         self.assertEqual(narrow['homeLayoutColumns'], 2, narrow)
-        self.assertEqual(narrow['homeContentHeight'], 650, narrow)
+        self.assertEqual(narrow['homeContentHeight'], 520, narrow)
         self.assertLessEqual(narrow['tabContentWidth'], narrow['contentWidth'], narrow)
         self.assertGreater(narrow['tabContentHeight'], narrow['tabViewportHeight'], narrow)
         self.assertTrue(narrow['tabScrollInteractive'], narrow)
@@ -650,7 +806,7 @@ int main(int argc, char **argv) {
                 self.assertEqual(self.rows[name]['hoverActive'], preview, self.rows[name])
 
     def test_media_pin_outside_dismiss_and_hover_rearms_after_exit(self):
-        self.assertEqual(self.rows['hoverSettledBeforePin']['panelHeight'], 156)
+        self.assertEqual(self.rows['hoverSettledBeforePin']['panelHeight'], 132)
         self.assertTrue(self.rows['hoverPinnedByClick']['pinned'], self.rows['hoverSettledBeforePin'])
         self.assertTrue(self.rows['hoverPinnedByClick']['scrimInteractive'])
         self.assertFalse(self.rows['hoverDismissedInPlace']['pinned'])

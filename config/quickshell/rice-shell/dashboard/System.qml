@@ -11,7 +11,7 @@ Item {
 
     implicitWidth: 724
     implicitHeight: width < 700 ? 600 : 370
-    readonly property int layoutColumns: metricsGrid.columns
+    readonly property int layoutColumns: width < 700 ? 1 : 2
 
     property var sample: ({})
     property var cpuHistory: []
@@ -28,6 +28,10 @@ Item {
 
     function validPercent(value): bool {
         return typeof value === "number" && isFinite(value) && value >= 0 && value <= 100;
+    }
+
+    function displayText(value): string {
+        return value === undefined || value === null || String(value).length === 0 ? "—" : String(value);
     }
 
     function validSnapshot(data): bool {
@@ -112,18 +116,20 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 10
+        spacing: 8
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 50
+            Layout.preferredHeight: 46
             radius: 12
             color: root.cardColor
+            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
+            border.width: 1
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 13
-                anchors.rightMargin: 13
+                anchors.leftMargin: 12
+                anchors.rightMargin: 14
                 spacing: 10
 
                 Rectangle {
@@ -138,23 +144,26 @@ Item {
                         color: Tokens.accent
                     }
                 }
+
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 2
+                    spacing: 1
+
                     Text {
-                        text: "System overview"
+                        text: "System"
                         font.pixelSize: 13
                         font.weight: Font.DemiBold
                         color: Tokens.text_primary
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: (root.sample.os_name || "Linux") + " · " + (root.sample.hostname || "—")
+                        text: root.displayText(root.sample.os_name) + " · " + root.cpuModel
                         font.pixelSize: 10
                         color: Tokens.text_secondary
                         elide: Text.ElideRight
                     }
                 }
+
                 Rectangle {
                     width: 7
                     height: 7
@@ -162,8 +171,9 @@ Item {
                     color: root.sampleHealthy ? Tokens.accent : Tokens.text_secondary
                 }
                 Text {
-                    text: root.sampleHealthy ? "Live · 5s" : root.hasSample ? "Stale data" : "Sampling…"
-                    font.pixelSize: 11
+                    text: root.sampleHealthy ? "Live · 5s"
+                        : root.hasSample ? "Stale · last sample" : "Waiting for data"
+                    font.pixelSize: 10
                     color: root.sampleHealthy ? Tokens.accent : Tokens.text_secondary
                 }
             }
@@ -172,297 +182,163 @@ Item {
         GridLayout {
             id: metricsGrid
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            columns: root.width < 700 ? 1 : 2
-            rowSpacing: 10
-            columnSpacing: 10
+            Layout.preferredHeight: root.width < 700 ? 286 : 124
+            Layout.minimumHeight: root.width < 700 ? 270 : 112
+            columns: root.width < 700 ? 1 : 3
+            rowSpacing: 8
+            columnSpacing: 8
 
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.preferredWidth: 360
-                Layout.minimumWidth: 0
-                radius: 12
-                color: root.cardColor
+            Repeater {
+                model: 3
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 7
+                delegate: Rectangle {
+                    id: card
+                    required property int index
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 7
-                        Text {
-                            text: "󰍛"
-                            font.pixelSize: 17
-                            color: Tokens.accent
-                        }
-                        Text {
-                            text: "Processor"
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                            color: Tokens.text_primary
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            text: root.sample.cpu_threads ? root.sample.cpu_threads + " threads" : "—"
-                            font.pixelSize: 11
-                            color: Tokens.text_secondary
-                        }
+                    readonly property bool processor: index === 0
+                    readonly property bool memory: index === 1
+                    readonly property string metricName: processor ? "Processor"
+                        : memory ? "Memory" : "Root storage"
+                    readonly property string metricIcon: processor ? "󰍛"
+                        : memory ? "󰘚" : "󰋊"
+                    readonly property var percent: processor ? root.cpuPct
+                        : memory ? root.ramPct : root.diskPct
+                    readonly property color valueColor: percent === null ? Tokens.text_secondary
+                        : percent >= (processor ? 85 : 90) ? Tokens.danger : Tokens.accent
+                    readonly property string amountText: {
+                        if (processor) return "1 min load · " + root.displayText(root.sample.load_1m);
+                        const used = memory ? root.sample.ram_used : root.sample.disk_used;
+                        const total = memory ? root.sample.ram_total : root.sample.disk_total;
+                        const compactUsed = used ? String(used).split(" ")[0] : "—";
+                        return compactUsed + " / " + root.displayText(total);
                     }
+                    readonly property string detailLeft: {
+                        if (processor) return root.displayText(root.sample.cpu_threads) + " threads";
+                        const value = memory ? root.sample.ram_available : root.sample.disk_free;
+                        return (memory ? "Available · " : "Free · ") + root.displayText(value);
+                    }
+                    readonly property string detailRight: processor ? "CPU"
+                        : memory ? "RAM" : root.displayText(root.sample.filesystem) + " · /"
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 5
-                        Text {
-                            text: root.cpuAvailable ? root.cpuPct : "—"
-                            font.pixelSize: 40
-                            font.weight: Font.DemiBold
-                            font.features: { "tnum": 1 }
-                            color: root.cpuColor
-                        }
-                        Text {
-                            text: "%"
-                            font.pixelSize: 19
-                            color: Tokens.text_secondary
-                            Layout.alignment: Qt.AlignBaseline
-                        }
-                        Item { Layout.fillWidth: true }
-                        ColumnLayout {
-                            spacing: 2
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumWidth: 0
+                    Layout.minimumHeight: root.width < 700 ? 84 : 112
+                    radius: 12
+                    color: root.cardColor
+                    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
+                    border.width: 1
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: root.width < 700 ? 10 : 12
+                        spacing: 4
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 7
                             Text {
-                                Layout.alignment: Qt.AlignRight
-                                text: root.sample.load_1m || "—"
-                                font.pixelSize: 17
+                                text: card.metricIcon
+                                font.pixelSize: 15
+                                color: Tokens.accent
+                            }
+                            Text {
+                                text: card.metricName
+                                font.pixelSize: 11
                                 font.weight: Font.DemiBold
-                                font.features: { "tnum": 1 }
                                 color: Tokens.text_primary
                             }
-                            Text {
-                                text: "1 min load"
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                            }
+                            Item { Layout.fillWidth: true }
                         }
-                    }
 
-                    Text {
-                        Layout.fillWidth: true
-                        text: root.cpuModel
-                        font.pixelSize: 11
-                        color: Tokens.text_secondary
-                        elide: Text.ElideRight
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.minimumHeight: 65
-                        spacing: 7
-
-                        Canvas {
-                            id: historyGraph
+                        RowLayout {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            property color graphColor: root.cpuColor
-                            property color gridColor: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.55)
-                            onGraphColorChanged: requestPaint()
-                            onGridColorChanged: requestPaint()
-                            onWidthChanged: requestPaint()
-                            onHeightChanged: requestPaint()
+                            spacing: 5
 
-                            Connections {
-                                target: root
-                                function onCpuHistoryChanged() { historyGraph.requestPaint(); }
-                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
 
-                            onPaint: {
-                                const ctx = getContext("2d");
-                                ctx.clearRect(0, 0, width, height);
-                                const pad = 4;
-                                const w = Math.max(1, width - 2 * pad);
-                                const h = Math.max(1, height - 2 * pad);
-                                ctx.strokeStyle = gridColor;
-                                ctx.lineWidth = 1;
-                                ctx.beginPath();
-                                for (let i = 0; i < 3; i++) {
-                                    const y = pad + h * i / 2;
-                                    ctx.moveTo(pad, y);
-                                    ctx.lineTo(pad + w, y);
-                                }
-                                ctx.stroke();
-
-                                const values = root.cpuHistory;
-                                if (!values.length) return;
-                                const dx = w / 29;
-                                const start = pad + w - dx * (values.length - 1);
-                                const yAt = v => pad + h * (1 - v / 100);
-                                ctx.strokeStyle = graphColor;
-                                ctx.lineWidth = 1.8;
-                                ctx.lineJoin = "round";
-                                ctx.lineCap = "round";
-                                ctx.beginPath();
-                                let segmentOpen = false;
-                                for (let i = 0; i < values.length; i++) {
-                                    if (!root.validPercent(values[i])) {
-                                        segmentOpen = false;
-                                        continue;
+                                RowLayout {
+                                    spacing: 2
+                                    Text {
+                                        text: card.percent === null ? "—" : Math.round(card.percent)
+                                        font.pixelSize: root.width < 700 ? 28 : 31
+                                        font.weight: Font.DemiBold
+                                        font.features: { "tnum": 1 }
+                                        color: card.valueColor
                                     }
-                                    const x = start + i * dx;
-                                    const y = yAt(values[i]);
-                                    if (segmentOpen) ctx.lineTo(x, y);
-                                    else ctx.moveTo(x, y);
-                                    segmentOpen = true;
-                                }
-                                ctx.stroke();
-                                const latest = values[values.length - 1];
-                                if (root.validPercent(latest)) {
-                                    ctx.fillStyle = graphColor;
-                                    ctx.beginPath();
-                                    ctx.arc(pad + w, yAt(latest), 2.6, 0, Math.PI * 2);
-                                    ctx.fill();
-                                }
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillHeight: true
-                            spacing: 0
-                            Text { text: "100%"; font.pixelSize: 9; color: Tokens.text_secondary }
-                            Item { Layout.fillHeight: true }
-                            Text { text: "50%"; font.pixelSize: 9; color: Tokens.text_secondary }
-                            Item { Layout.fillHeight: true }
-                            Text { text: "0%"; font.pixelSize: 9; color: Tokens.text_secondary }
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: "CPU history"
-                            font.pixelSize: 10
-                            color: Tokens.text_secondary
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            text: root.cpuHistory.length < 30 ? root.cpuHistory.length + "/30 samples" : "Last 2.5m"
-                            font.pixelSize: 10
-                            color: Tokens.text_secondary
-                        }
-                    }
-                }
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.preferredWidth: 354
-                Layout.minimumWidth: 0
-                spacing: 10
-
-                Repeater {
-                    model: 2
-                    delegate: Rectangle {
-                        id: card
-                        required property int index
-                        readonly property bool memory: index === 0
-                        readonly property string metricName: memory ? "Memory" : "Storage"
-                        readonly property string metricIcon: memory ? "󰘚" : "󰋊"
-                        readonly property string used: (memory ? root.sample.ram_used : root.sample.disk_used) || "—"
-                        readonly property string total: (memory ? root.sample.ram_total : root.sample.disk_total) || "—"
-                        readonly property string available: memory ? (root.sample.ram_available || "—") + " available"
-                            : (root.sample.disk_free || "—") + " free"
-                        readonly property string detail: memory ? "RAM" : (root.sample.filesystem || "—").toUpperCase() + " · /"
-                        readonly property var percent: memory ? root.ramPct : root.diskPct
-                        readonly property color valueColor: percent === null ? Tokens.text_secondary
-                            : percent >= 90 ? Tokens.danger : Tokens.accent
-
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.preferredHeight: 110
-                        radius: 12
-                        color: root.cardColor
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 13
-                            spacing: 6
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 7
-                                Text {
-                                    text: card.metricIcon
-                                    font.pixelSize: 16
-                                    color: Tokens.accent
-                                }
-                                Text {
-                                    text: card.metricName
-                                    font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                    color: Tokens.text_primary
-                                }
-                                Item { Layout.fillWidth: true }
-                                Text {
-                                    text: card.percent === null ? "—" : card.percent + "%"
-                                    font.pixelSize: 13
-                                    font.weight: Font.DemiBold
-                                    font.features: { "tnum": 1 }
-                                    color: card.valueColor
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 5
-                                Text {
-                                    text: card.used.split(" ")[0]
-                                    font.pixelSize: 24
-                                    font.weight: Font.DemiBold
-                                    font.features: { "tnum": 1 }
-                                    color: Tokens.text_primary
-                                }
-                                Text {
-                                    text: "/ " + card.total
-                                    font.pixelSize: 11
-                                    color: Tokens.text_secondary
-                                    Layout.alignment: Qt.AlignBaseline
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 6
-                                radius: 3
-                                color: Tokens.surface
-                                clip: true
-                                Rectangle {
-                                    width: card.percent === null ? 0
-                                        : parent.width * Math.max(0, Math.min(1, card.percent / 100))
-                                    height: parent.height
-                                    radius: 3
-                                    color: card.valueColor
-                                    Behavior on width {
-                                        NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                                    Text {
+                                        text: card.percent === null ? "" : "%"
+                                        font.pixelSize: 15
+                                        color: Tokens.text_secondary
+                                        Layout.alignment: Qt.AlignBottom
+                                        Layout.bottomMargin: 4
                                     }
                                 }
-                            }
 
-                            RowLayout {
-                                Layout.fillWidth: true
                                 Text {
                                     Layout.fillWidth: true
-                                    text: card.available
-                                    font.pixelSize: 10
+                                    text: card.amountText
+                                    font.pixelSize: 9
                                     color: Tokens.text_secondary
                                     elide: Text.ElideRight
                                 }
-                                Text {
-                                    text: card.detail
-                                    font.pixelSize: 10
-                                    color: Tokens.text_secondary
+                            }
+
+                            Canvas {
+                                id: metricGauge
+                                Layout.preferredWidth: 40
+                                Layout.preferredHeight: 40
+                                property real metricValue: card.percent === null ? -1 : card.percent
+                                property color activeColor: card.valueColor
+                                property color trackColor: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.55)
+
+                                onMetricValueChanged: requestPaint()
+                                onActiveColorChanged: requestPaint()
+                                onTrackColorChanged: requestPaint()
+                                onWidthChanged: requestPaint()
+                                onHeightChanged: requestPaint()
+
+                                onPaint: {
+                                    const ctx = getContext("2d");
+                                    ctx.clearRect(0, 0, width, height);
+                                    const center = Math.min(width, height) / 2;
+                                    const radius = center - 3;
+                                    const start = -Math.PI * 0.75;
+                                    const sweep = Math.PI * 1.5;
+                                    ctx.lineWidth = 3;
+                                    ctx.lineCap = "round";
+                                    ctx.beginPath();
+                                    ctx.strokeStyle = trackColor;
+                                    ctx.arc(center, center, radius, start, start + sweep);
+                                    ctx.stroke();
+                                    if (metricValue < 0) return;
+                                    ctx.beginPath();
+                                    ctx.strokeStyle = activeColor;
+                                    ctx.arc(center, center, radius, start,
+                                            start + sweep * Math.max(0, Math.min(100, metricValue)) / 100);
+                                    ctx.stroke();
                                 }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+                            Text {
+                                Layout.fillWidth: true
+                                text: card.detailLeft
+                                font.pixelSize: 9
+                                color: Tokens.text_secondary
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                text: card.detailRight
+                                font.pixelSize: 9
+                                color: Tokens.text_secondary
+                                elide: Text.ElideRight
                             }
                         }
                     }
@@ -472,54 +348,168 @@ Item {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.width < 700 ? 72 : 52
+            Layout.fillHeight: true
+            Layout.preferredHeight: root.width < 700 ? 145 : 112
+            Layout.minimumHeight: 100
             radius: 12
             color: root.cardColor
+            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
+            border.width: 1
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 11
+                spacing: 5
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "CPU history"
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                        color: Tokens.text_primary
+                    }
+                    Text {
+                        text: "0–100%"
+                        font.pixelSize: 9
+                        color: Tokens.text_secondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: root.cpuHistory.length === 0 ? "Waiting for samples"
+                            : root.cpuHistory.length === 1 ? "1 sample · collecting history"
+                            : root.cpuHistory.length < 30
+                                ? root.cpuHistory.length + "/30 · 5s target"
+                                : "30 samples · " + "Last 2.5m"
+                        font.pixelSize: 9
+                        color: Tokens.text_secondary
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 7
+
+                    Canvas {
+                        id: historyGraph
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        property color graphColor: root.cpuColor
+                        property color gridColor: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
+                        onGraphColorChanged: requestPaint()
+                        onGridColorChanged: requestPaint()
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+
+                        Connections {
+                            target: root
+                            function onCpuHistoryChanged() { historyGraph.requestPaint(); }
+                        }
+
+                        onPaint: {
+                            const ctx = getContext("2d");
+                            ctx.clearRect(0, 0, width, height);
+                            const pad = 4;
+                            const w = Math.max(1, width - 2 * pad);
+                            const h = Math.max(1, height - 2 * pad);
+                            ctx.strokeStyle = gridColor;
+                            ctx.lineWidth = 1;
+                            ctx.beginPath();
+                            for (let i = 0; i < 3; i++) {
+                                const y = pad + h * i / 2;
+                                ctx.moveTo(pad, y);
+                                ctx.lineTo(pad + w, y);
+                            }
+                            ctx.stroke();
+
+                            const values = root.cpuHistory;
+                            if (!values.length) return;
+                            const dx = w / 29;
+                            const start = pad + w - dx * (values.length - 1);
+                            const yAt = value => pad + h * (1 - value / 100);
+                            ctx.strokeStyle = graphColor;
+                            ctx.lineWidth = 1.6;
+                            ctx.lineJoin = "round";
+                            ctx.lineCap = "round";
+                            ctx.beginPath();
+                            let segmentOpen = false;
+                            for (let i = 0; i < values.length; i++) {
+                                if (!root.validPercent(values[i])) {
+                                    segmentOpen = false;
+                                    continue;
+                                }
+                                const x = start + i * dx;
+                                const y = yAt(values[i]);
+                                if (segmentOpen) ctx.lineTo(x, y);
+                                else ctx.moveTo(x, y);
+                                segmentOpen = true;
+                            }
+                            ctx.stroke();
+
+                            const latest = values[values.length - 1];
+                            if (root.validPercent(latest)) {
+                                ctx.fillStyle = graphColor;
+                                ctx.beginPath();
+                                ctx.arc(pad + w, yAt(latest), 2.5, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillHeight: true
+                        spacing: 0
+                        Text { text: "100"; font.pixelSize: 8; color: Tokens.text_secondary }
+                        Item { Layout.fillHeight: true }
+                        Text { text: "50"; font.pixelSize: 8; color: Tokens.text_secondary }
+                        Item { Layout.fillHeight: true }
+                        Text { text: "0"; font.pixelSize: 8; color: Tokens.text_secondary }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.width < 700 ? 68 : 48
+            radius: 12
+            color: root.cardColor
+            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
+            border.width: 1
 
             GridLayout {
                 anchors.fill: parent
-                anchors.margins: 13
+                anchors.margins: 9
                 columns: root.width < 700 ? 2 : 3
                 rowSpacing: 2
-                columnSpacing: 13
+                columnSpacing: 10
 
                 Repeater {
                     model: [
-                        { label: "Uptime", value: root.sample.uptime || "—" },
-                        { label: "Kernel", value: root.sample.kernel || "—" },
-                        { label: "Desktop", value: root.sample.desktop || "—" }
+                        { label: "Uptime", value: root.displayText(root.sample.uptime) },
+                        { label: "Kernel", value: root.displayText(root.sample.kernel) },
+                        { label: "Desktop", value: root.displayText(root.sample.desktop) }
                     ]
-                    delegate: RowLayout {
-                        id: detailRow
-                        required property int index
+
+                    delegate: ColumnLayout {
                         required property var modelData
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        Layout.preferredWidth: index === 1 ? 250 : 180
-                        spacing: 8
+                        spacing: 1
 
-                        Rectangle {
-                            visible: detailRow.index > 0 && root.width >= 700
-                            width: 1
-                            height: 23
-                            color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
+                        Text {
+                            text: modelData.label
+                            font.pixelSize: 9
+                            color: Tokens.text_secondary
                         }
-                        ColumnLayout {
+                        Text {
                             Layout.fillWidth: true
-                            spacing: 2
-                            Text {
-                                text: detailRow.modelData.label
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: detailRow.modelData.value
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
-                                color: Tokens.text_primary
-                                elide: Text.ElideRight
-                            }
+                            text: modelData.value
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                            color: Tokens.text_primary
+                            elide: Text.ElideRight
                         }
                     }
                 }
