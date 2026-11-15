@@ -21,7 +21,8 @@ Rectangle {
     readonly property bool hasArtwork: Media.hasPlayer && Media.trackArtUrl.length > 0
         && artImage.status === Image.Ready
     readonly property real artworkScale: Math.min(3, Math.max(1, Screen.devicePixelRatio || 1))
-    readonly property real artworkSize: Math.min(136, Math.max(96, width * 0.34))
+    readonly property real artworkSize: Math.min(152, Math.max(64, width - 64),
+        Math.max(72, height - (Media.hasPlayer ? 210 : 160)))
     readonly property string playerIdentity: Media.hasPlayer && Media.activePlayer
         ? (Media.activePlayer.identity || Media.activePlayer.desktopEntry || qsTr("Media player"))
         : qsTr("Media player")
@@ -87,7 +88,7 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
-        spacing: 11
+        spacing: 6
 
         RowLayout {
             Layout.fillWidth: true
@@ -112,121 +113,111 @@ Rectangle {
             }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
+        Item { Layout.fillHeight: true }
+
+        Item {
+            id: artworkFrame
+            objectName: "playerArtwork"
+            Layout.alignment: Qt.AlignHCenter
+            Layout.minimumWidth: root.artworkSize
+            Layout.maximumWidth: root.artworkSize
+            Layout.minimumHeight: root.artworkSize
+            Layout.maximumHeight: root.artworkSize
+            Layout.preferredWidth: root.artworkSize
             Layout.preferredHeight: root.artworkSize
-            spacing: 14
 
-            Item {
-                id: artworkFrame
-                Layout.preferredWidth: root.artworkSize
-                Layout.preferredHeight: root.artworkSize
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 13
-                    color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
-                }
-
-                Image {
-                    id: artImage
-                    anchors.fill: parent
-                    source: Media.trackArtUrl
-                    sourceSize.width: Math.min(840, Math.ceil(root.artworkSize * root.artworkScale))
-                    sourceSize.height: Math.min(660, Math.ceil(root.artworkSize * root.artworkScale))
-                    fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
-                    visible: false
-                }
-
-                Rectangle {
-                    id: artworkMask
-                    layer.enabled: true
-                    anchors.fill: parent
-                    radius: 13
-                    color: "white"
-                    visible: false
-                }
-
-                MultiEffect {
-                    anchors.fill: parent
-                    source: artImage
-                    maskEnabled: true
-                    maskSource: artworkMask
-                    visible: root.hasArtwork
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 13
-                    color: Qt.rgba(0.04, 0.05, 0.07, 0.12)
-                    visible: root.hasArtwork
-                }
-
-                Text {
-                    anchors.centerIn: parent
-                    visible: !root.hasArtwork
-                    text: "󰎆"
-                    font.pixelSize: 46
-                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.55)
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 13
-                    color: "transparent"
-                    border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.28)
-                    border.width: 1
-                }
+            Rectangle {
+                anchors.fill: parent
+                radius: 13
+                color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
             }
 
-            ColumnLayout {
+            Image {
+                id: artImage
+                anchors.fill: parent
+                source: Media.trackArtUrl
+                sourceSize.width: Math.min(840, Math.ceil(root.artworkSize * root.artworkScale))
+                sourceSize.height: Math.min(660, Math.ceil(root.artworkSize * root.artworkScale))
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                visible: false
+            }
+
+            Rectangle {
+                id: artworkMask
+                layer.enabled: true
+                anchors.fill: parent
+                radius: 13
+                color: "white"
+                visible: false
+            }
+
+            MultiEffect {
+                anchors.fill: parent
+                source: artImage
+                maskEnabled: true
+                maskSource: artworkMask
+                visible: root.hasArtwork
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: 13
+                color: Qt.rgba(0.04, 0.05, 0.07, 0.12)
+                visible: root.hasArtwork
+            }
+
+            Text {
+                anchors.centerIn: parent
+                visible: !root.hasArtwork
+                text: "󰎆"
+                font.pixelSize: 46
+                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.55)
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: 13
+                color: "transparent"
+                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.28)
+                border.width: 1
+            }
+        }
+
+
+        ColumnLayout {
+            objectName: "playerMetadata"
+            Layout.fillWidth: true
+            spacing: 3
+
+            Text {
                 Layout.fillWidth: true
-                Layout.minimumWidth: 0
-                spacing: 6
+                text: Media.hasPlayer ? Media.trackTitle : qsTr("No Active Player")
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: 15
+                font.weight: Font.DemiBold
+                color: Tokens.text_primary
+                elide: Text.ElideRight
+                maximumLineCount: 1
+            }
 
-                Text {
-                    Layout.fillWidth: true
-                    text: Media.hasPlayer ? Media.trackTitle : qsTr("No Active Player")
-                    textFormat: Text.PlainText
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
-                    color: Tokens.text_primary
-                    elide: Text.ElideRight
-                    maximumLineCount: 2
-                    wrapMode: Text.Wrap
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    text: Media.hasPlayer ? (Media.trackArtist || qsTr("Unknown Artist"))
-                        : qsTr("Play media to control")
-                    textFormat: Text.PlainText
-                    font.pixelSize: 12
-                    color: Tokens.text_secondary
-                    elide: Text.ElideRight
-                    maximumLineCount: 2
-                    wrapMode: Text.Wrap
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    text: Media.hasPlayer ? Media.trackAlbum : ""
-                    textFormat: Text.PlainText
-                    font.pixelSize: 10
-                    color: Tokens.text_secondary
-                    elide: Text.ElideRight
-                    maximumLineCount: 1
-                    visible: text.length > 0
-                }
-
-                Item { Layout.fillHeight: true }
+            Text {
+                Layout.fillWidth: true
+                text: Media.hasPlayer ? (Media.trackArtist || qsTr("Unknown Artist"))
+                    : qsTr("Play media to control")
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: 11
+                color: Tokens.text_secondary
+                elide: Text.ElideRight
+                maximumLineCount: 1
             }
         }
 
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 5
+            spacing: 0
             visible: Media.hasPlayer
 
             RowLayout {
@@ -250,7 +241,7 @@ Rectangle {
             Item {
                 id: seekHitArea
                 Layout.fillWidth: true
-                Layout.preferredHeight: 26
+                Layout.preferredHeight: 20
 
                 Rectangle {
                     id: seekTrack
@@ -293,9 +284,10 @@ Rectangle {
         }
 
         RowLayout {
-            Layout.fillWidth: true
+            objectName: "playerTransport"
             Layout.alignment: Qt.AlignHCenter
-            spacing: 28
+            Layout.bottomMargin: 2
+            spacing: 24
 
             Rectangle {
                 Layout.preferredWidth: 40
@@ -382,5 +374,7 @@ Rectangle {
                 }
             }
         }
+
+        Item { Layout.fillHeight: true }
     }
 }

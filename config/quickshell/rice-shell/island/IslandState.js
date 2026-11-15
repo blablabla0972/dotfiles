@@ -17,7 +17,7 @@ var Dashboard = {
 };
 
 function normalizeDashboardTab(tab) {
-    return tab === "System" || tab === "Notifications" || tab === "Config" ? tab : "Home";
+    return tab === "Power" || tab === "System" || tab === "Notifications" || tab === "Config" ? tab : "Home";
 }
 
 function normalizeSideDrawer(type) {

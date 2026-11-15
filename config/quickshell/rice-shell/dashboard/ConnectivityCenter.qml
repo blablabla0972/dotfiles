@@ -10,8 +10,6 @@ Item {
     implicitWidth: 360
     implicitHeight: 480
     property string currentPage: "wifi"
-    property bool hotspotVisited: false
-    onActivePageChanged: if (activePage === "hotspot") hotspotVisited = true
 
     signal pageSelected(string page)
     signal closeRequested()
@@ -25,7 +23,10 @@ Item {
     readonly property bool hotspotLoaded: hotspotLoader.item !== null
 
     Accessible.role: Accessible.Pane
-    Accessible.name: "Connectivity Center"
+    readonly property string pageTitle: activePage === "wifi" ? "Wi-Fi"
+        : activePage === "bluetooth" ? "Bluetooth" : "Hotspot"
+
+    Accessible.name: pageTitle
 
     function selectPage(page: string): void {
         if (page === "wifi" || page === "bluetooth" || page === "hotspot")
@@ -88,7 +89,7 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: "Connectivity"
+                text: root.pageTitle
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
                 color: Tokens.text_primary
@@ -101,7 +102,7 @@ Item {
                 color: closeHover.hovered ? Tokens.surface_high : "transparent"
                 activeFocusOnTab: true
                 Accessible.role: Accessible.Button
-                Accessible.name: "Close Connectivity Center"
+                Accessible.name: qsTr("Close %1 menu").arg(root.pageTitle)
 
                 Text {
                     anchors.centerIn: parent
@@ -123,69 +124,6 @@ Item {
             }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 32
-            Layout.maximumHeight: 32
-            Layout.fillHeight: false
-            spacing: 6
-
-            Repeater {
-                model: [
-                    { id: "wifi", label: "Wi-Fi", icon: "󰖩" },
-                    { id: "bluetooth", label: "Bluetooth", icon: "󰂯" },
-                    { id: "hotspot", label: "Hotspot", icon: "󰖪" }
-                ]
-
-                delegate: Rectangle {
-                    id: tab
-                    required property var modelData
-                    readonly property bool selected: root.activePage === modelData.id
-
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 32
-                    Layout.maximumHeight: 32
-                    Layout.fillHeight: false
-                    radius: 16
-                    color: selected ? Tokens.accent : Tokens.surface_high
-                    activeFocusOnTab: true
-                    border.width: activeFocus ? 1 : 0
-                    border.color: Tokens.accent
-                    Accessible.role: Accessible.Button
-                    Accessible.name: modelData.label
-                    Accessible.checkable: true
-                    Accessible.checked: selected
-
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: 5
-
-                        Text {
-                            text: tab.modelData.icon
-                            font.pixelSize: 12
-                            color: tab.selected ? Tokens.on_accent : Tokens.text_secondary
-                        }
-                        Text {
-                            text: tab.modelData.label
-                            font.pixelSize: 10
-                            font.weight: Font.Medium
-                            color: tab.selected ? Tokens.on_accent : Tokens.text_primary
-                        }
-                    }
-
-                    TapHandler { onTapped: root.selectPage(tab.modelData.id) }
-                    Keys.onReturnPressed: function(event) {
-                        root.selectPage(tab.modelData.id);
-                        event.accepted = true;
-                    }
-                    Keys.onSpacePressed: function(event) {
-                        root.selectPage(tab.modelData.id);
-                        event.accepted = true;
-                    }
-                }
-            }
-        }
-
         Item {
             id: pageStage
             Layout.fillWidth: true
@@ -195,22 +133,22 @@ Item {
             Loader {
                 id: wifiLoader
                 anchors.fill: parent
-                active: true
-                visible: root.activePage === "wifi"
+                active: root.activePage === "wifi"
+                visible: active
                 source: "WifiDrawer.qml"
             }
             Loader {
                 id: bluetoothLoader
                 anchors.fill: parent
-                active: true
-                visible: root.activePage === "bluetooth"
+                active: root.activePage === "bluetooth"
+                visible: active
                 source: "BluetoothDrawer.qml"
             }
             Loader {
                 id: hotspotLoader
                 anchors.fill: parent
-                active: root.hotspotVisited
-                visible: root.activePage === "hotspot"
+                active: root.activePage === "hotspot"
+                visible: active
                 source: "HotspotDrawer.qml"
             }
         }
@@ -218,11 +156,13 @@ Item {
 
     Connections {
         target: wifiLoader.item
+        ignoreUnknownSignals: true
         function onHotspotPageRequested(): void { root.selectPage("hotspot"); }
         function onCloseRequested(): void { root.closeRequested(); }
     }
     Connections {
         target: bluetoothLoader.item
+        ignoreUnknownSignals: true
         function onCloseRequested(): void { root.closeRequested(); }
     }
 }

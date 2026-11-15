@@ -44,6 +44,7 @@ Item {
     }
     readonly property real activeContentHeight: {
         var loaded = currentTab === "Home" ? homeLoader.item
+            : currentTab === "Power" ? powerLoader.item
             : currentTab === "System" ? systemLoader.item
             : currentTab === "Notifications" ? notificationLoader.item : configLoader.item;
         return loaded ? Math.max(0, loaded.implicitHeight) : 370;
@@ -213,6 +214,7 @@ Item {
                                 { id: "Home", name: "Home", icon: "󰋜" },
                                 { id: "Notifications", name: "Alerts", icon: "󰂚" },
                                 { id: "System", name: "System", icon: "󰍹" },
+                                { id: "Power", name: "Power", icon: "󰁹" },
                                 { id: "Config", name: "Config", icon: "󰒓" }
                             ]
 
@@ -332,6 +334,14 @@ Item {
                                     active: dashboardWindow.visible && dashboardWindow.currentTab === "System"
                                     visible: dashboardWindow.currentTab === "System"
                                     sourceComponent: System {}
+                                }
+
+                                Loader {
+                                    id: powerLoader
+                                    anchors.fill: parent
+                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "Power"
+                                    visible: dashboardWindow.currentTab === "Power"
+                                    source: "Power.qml"
                                 }
 
                                 Loader {

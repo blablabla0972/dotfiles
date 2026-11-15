@@ -42,6 +42,12 @@ FocusScope {
 
     HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
 
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        enabled: root.hasDetails
+        onTapped: root.detailsRequested()
+    }
+
     Item {
         id: primaryAction
         anchors.left: parent.left
@@ -114,12 +120,9 @@ FocusScope {
         }
 
         TapHandler {
-            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            acceptedButtons: Qt.LeftButton
             enabled: primaryAction.enabled
-            onTapped: (eventPoint, button) => {
-                if (button === Qt.RightButton && root.hasDetails) root.detailsRequested();
-                else if (button === Qt.LeftButton) root.activated();
-            }
+            onTapped: root.activated()
         }
     }
 

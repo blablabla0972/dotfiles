@@ -250,3 +250,25 @@ Before declaring work done:
 2. Run the relevant focused tests and the full suite when behavior changes; run the palette matrix when touching colors/templates. Report skips and external tools that were unavailable.
 3. For live configuration changes, validate the affected native configuration and compositor errors when available. Distinguish that result from screenshot, monitor, input, lock, or performance checks that were not performed.
 4. State changed files, verification results, rollback/ownership details, and unresolved questions. Do not claim full visual or hardware acceptance from isolated tests.
+
+## Control Center and launcher update — 2026-11-15
+
+Connectivity opens only the selected Wi-Fi, Bluetooth, or Hotspot menu, with no
+combined tab strip. Right-click details remain available while the main toggle
+is unavailable or pending. The media card centers artwork, title/artist and
+transport controls; seek behavior is preserved. A new Power tab reads battery
+charge/state/time from UPower and selects native Power Saver, Balanced or
+Performance profiles, with confirmation feedback and unsupported-profile guards.
+Launcher caches normalized desktop entries and category/zero-state results;
+`tests/test_launcher_cache.py` checks search ranking, categories and command mode.
+
+Live Quickshell reload and screenshots were checked. Isolated QML checks covered
+exclusive connectivity loading, idle/active media layouts at 340×320 and 260×300,
+and real power-profile changes followed by restoration to the initial profile.
+These checks do not establish physical mouse/keyboard acceptance. Local rollback
+copies remain in `config/quickshell/rice-shell/backups/` and are not published;
+the previous Git revision can restore the reviewed source files.
+
+Publication checks: all 410 unittests passed without skips, including updated
+isolated Connectivity menu/Escape coverage and launcher cache/search coverage;
+`python3 tests/validate.py` and `git diff --cached --check` passed.

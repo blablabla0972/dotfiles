@@ -103,28 +103,40 @@ PanelWindow {
     }
 
     function getZeroStateApps(): var {
-        var raw = allApps;
-        if (!raw || raw.length === 0) return [];
-
-        var valid = [];
-        for (var i = 0; i < raw.length; i++) {
-            var a = raw[i];
-            if (a && a.name && !a.noDisplay) {
-                if (matchesCategory(a, selectedCategory)) {
-                    valid.push(a);
-                }
-            }
-        }
-
-        valid.sort(function(x, y) {
-            return (x.name || "").localeCompare(y.name || "");
-        });
-
-        return valid;
+        return zeroStateApps;
     }
 
     // Filter desktop entries based on search query and category
     readonly property var allApps: DesktopEntries.applications ? DesktopEntries.applications.values : []
+    readonly property var indexedApps: {
+        var records = [];
+        for (var i = 0; i < allApps.length; i++) {
+            var app = allApps[i];
+            if (!app || !app.name || app.noDisplay) continue;
+            var keywords = [];
+            if (app.keywords) {
+                for (var k = 0; k < app.keywords.length; k++) {
+                    if (app.keywords[k]) keywords.push(app.keywords[k].toLowerCase());
+                }
+            }
+            records.push({
+                app: app,
+                name: app.name.toLowerCase(),
+                generic: (app.genericName || "").toLowerCase(),
+                comment: (app.comment || "").toLowerCase(),
+                keywords: keywords
+            });
+        }
+        return records;
+    }
+    readonly property var categoryApps: indexedApps.filter(function(record) {
+        return launcherWindow.matchesCategory(record.app, launcherWindow.selectedCategory);
+    })
+    readonly property var zeroStateApps: {
+        var apps = categoryApps.map(function(record) { return record.app; });
+        apps.sort(function(x, y) { return x.name.localeCompare(y.name); });
+        return apps;
+    }
     readonly property var filteredApps: {
         var query = searchText.trim();
 
@@ -152,17 +164,13 @@ PanelWindow {
         var nameMatches = [];
         var otherMatches = [];
 
-        var apps = allApps;
+        var apps = categoryApps;
         for (var i = 0; i < apps.length; i++) {
-            var app = apps[i];
-            if (!app || !app.name || app.noDisplay) continue;
-
-            // Apply active category filter
-            if (!matchesCategory(app, selectedCategory)) continue;
-
-            var name = (app.name || "").toLowerCase();
-            var generic = (app.genericName || "").toLowerCase();
-            var comment = (app.comment || "").toLowerCase();
+            var record = apps[i];
+            var app = record.app;
+            var name = record.name;
+            var generic = record.generic;
+            var comment = record.comment;
 
             if (name.startsWith(lower)) {
                 startsMatches.push(app);
@@ -172,9 +180,9 @@ PanelWindow {
                 otherMatches.push(app);
             } else {
                 var matchedKeyword = false;
-                if (app.keywords) {
-                    for (var k = 0; k < app.keywords.length; k++) {
-                        if (app.keywords[k] && app.keywords[k].toLowerCase().includes(lower)) {
+                if (record.keywords) {
+                    for (var k = 0; k < record.keywords.length; k++) {
+                        if (record.keywords[k].includes(lower)) {
                             matchedKeyword = true;
                             break;
                         }

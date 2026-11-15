@@ -520,7 +520,8 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
         self.assertIn("brightnessctl", DESKTOP_CONTROLS_QML.read_text())
         # Reusable tiles own activation and details gestures; services own the actions.
         self.assertEqual(content.count("QuickSettingTile {"), 7)
-        self.assertIn("Qt.LeftButton | Qt.RightButton", tile)
+        self.assertIn("acceptedButtons: Qt.LeftButton", tile)
+        self.assertIn("acceptedButtons: Qt.RightButton", tile)
         self.assertIn('label: qsTr("Wi-Fi")', content)
         self.assertIn('label: qsTr("Bluetooth")', content)
         self.assertIn('label: qsTr("Hotspot")', content)
@@ -1293,14 +1294,13 @@ ShellRoot {
         self.assertIn('onDetailsRequested: root.requestSideDrawer("hotspot")', qs_content)
 
         # ConnectivityCenter owns the Wi-Fi, Bluetooth, and Hotspot pages.
-        self.assertIn('Accessible.name: "Connectivity Center"', center_content)
-        self.assertIn('{ id: "wifi", label: "Wi-Fi"', center_content)
-        self.assertIn('{ id: "bluetooth", label: "Bluetooth"', center_content)
-        self.assertIn('{ id: "hotspot", label: "Hotspot"', center_content)
+        self.assertIn("Accessible.name: pageTitle", center_content)
+        self.assertNotIn("Repeater {", center_content)
         self.assertIn('source: "WifiDrawer.qml"', center_content)
         self.assertIn('source: "BluetoothDrawer.qml"', center_content)
         self.assertIn('source: "HotspotDrawer.qml"', center_content)
-        self.assertIn("active: root.hotspotVisited", center_content)
+        for page in ("wifi", "bluetooth", "hotspot"):
+            self.assertIn(f'active: root.activePage === "{page}"', center_content)
         self.assertIn("onHotspotPageRequested", center_content)
 
         # Dashboard owns one lazy-loaded ConnectivityCenter sidecar.

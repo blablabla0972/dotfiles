@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 class ConnectivityCenterTest(unittest.TestCase):
-    def test_connectivity_center_loads_selects_tabs_and_routes_escape_offscreen(self):
+    def test_connectivity_center_loads_only_selected_menu_and_routes_escape_offscreen(self):
         qs = shutil.which("qs")
         if qs is None:
             self.skipTest("Quickshell executable is unavailable")
@@ -45,8 +45,11 @@ class ConnectivityCenterTest(unittest.TestCase):
         }}
     
         Timer {{
+            property int step: 0
+            property int closeRequests: 0
             interval: 200
             running: true
+            repeat: true
             onTriggered: {{
                 function fail(message) {{
                     console.error("CONNECTIVITY_CENTER_FAIL: " + message);
@@ -59,58 +62,49 @@ class ConnectivityCenterTest(unittest.TestCase):
     
                 const wifiPage = findObject(center, object => typeof object.cancelPassword === "function");
                 const bluetoothPage = findObject(center, object => object.objectName === "bluetoothDrawerPage");
-                const wifiTab = findObject(center, object => object.modelData && object.modelData.id === "wifi"
-                    && typeof object.selected === "boolean");
-                const bluetoothTab = findObject(center, object => object.modelData && object.modelData.id === "bluetooth"
-                    && typeof object.selected === "boolean");
-                const hotspotTab = findObject(center, object => object.modelData && object.modelData.id === "hotspot"
-                    && typeof object.selected === "boolean");
                 const hotspotLoader = findObject(center, object => typeof object.active === "boolean"
                     && String(object.source).endsWith("HotspotDrawer.qml"));
-    
-                if (!wifiPage || !bluetoothPage || !wifiTab || !bluetoothTab || !hotspotTab || !hotspotLoader)
-                    return fail("a page, tab, or lazy Hotspot loader did not load");
-                if (center.activePage !== "wifi" || !wifiTab.selected || bluetoothTab.selected
-                        || hotspotTab.selected || center.hotspotVisited || hotspotLoader.active)
-                    return fail("initial Wi-Fi selection or lazy Hotspot state is wrong");
-    
-                let closeRequests = 0;
-                center.closeRequested.connect(function() {{ closeRequests++; }});
-                center.pageSelected.connect(function(page) {{ center.currentPage = page; }});
-                if (center.handleEscape() !== false || closeRequests !== 0)
-                    return fail("idle Wi-Fi Escape should pass through to the owner");
-    
-                center.selectPage("bluetooth");
-                if (center.activePage !== "bluetooth" || !bluetoothTab.selected || wifiTab.selected
-                        || center.hotspotVisited || hotspotLoader.active)
-                    return fail("Bluetooth selection or deferred Hotspot loading is wrong");
-    
-                bluetoothPage.expandedDeviceKey = "test-device";
-                if (center.handleEscape() !== true || bluetoothPage.expandedDeviceKey !== "")
-                    return fail("Escape should collapse Bluetooth details first");
-                if (center.handleEscape() !== false || closeRequests !== 1)
-                    return fail("idle Bluetooth Escape should request close and pass through");
-    
-                center.selectPage("wifi");
-                if (center.activePage !== "wifi" || !wifiTab.selected || bluetoothTab.selected)
-                    return fail("Wi-Fi selection did not restore its selected tab");
-
-                center.selectPage("hotspot");
-                if (center.activePage !== "hotspot" || !hotspotTab.selected || !center.hotspotVisited || !hotspotLoader.active)
-                    return fail("Hotspot selection failed to activate lazy loader");
-                const hotspotPage = hotspotLoader.item;
-                if (!hotspotPage)
-                    return fail("HotspotDrawer did not instantiate");
-                if (center.handleEscape() !== false)
-                    return fail("idle Hotspot Escape should pass through");
-                hotspotPage.passwordText = "secret123";
-                hotspotPage.revealPassword = true;
-                hotspotPage.visible = false;
-                if (hotspotPage.passwordText !== "" || hotspotPage.revealPassword !== false)
-                    return fail("HotspotDrawer should clear password and reveal state on invisible");
-
-                console.log("CONNECTIVITY_CENTER_PASS");
-                Qt.quit();
+                const page = step === 1 ? "bluetooth" : step === 3 ? "hotspot" : "wifi";
+                if (center.activePage !== page || center.wifiLoaded !== (page === "wifi")
+                        || center.bluetoothLoaded !== (page === "bluetooth")
+                        || center.hotspotLoaded !== (page === "hotspot"))
+                    return fail("only the selected menu should be loaded: " + page);
+                if (findObject(center, object => object.modelData && object.modelData.id === "wifi"))
+                    return fail("the combined tab strip should not exist");
+                if (step === 0) {{
+                    if (!wifiPage || bluetoothPage || !hotspotLoader || hotspotLoader.active)
+                        return fail("Wi-Fi should load without Bluetooth or Hotspot");
+                    center.closeRequested.connect(() => closeRequests++);
+                    center.pageSelected.connect(selected => center.currentPage = selected);
+                    if (center.handleEscape() !== false || closeRequests !== 0)
+                        return fail("idle Wi-Fi Escape should pass through to the owner");
+                    center.selectPage("bluetooth");
+                }} else if (step === 1) {{
+                    if (!bluetoothPage || wifiPage) return fail("Bluetooth menu should be isolated");
+                    bluetoothPage.expandedDeviceKey = "test-device";
+                    if (center.handleEscape() !== true || bluetoothPage.expandedDeviceKey !== "")
+                        return fail("Escape should collapse Bluetooth details first");
+                    if (center.handleEscape() !== false || closeRequests !== 1)
+                        return fail("idle Bluetooth Escape should request close and pass through");
+                    center.selectPage("wifi");
+                }} else if (step === 2) {{
+                    if (!wifiPage || bluetoothPage) return fail("Wi-Fi should reopen independently");
+                    center.selectPage("hotspot");
+                }} else {{
+                    const hotspotPage = hotspotLoader && hotspotLoader.item;
+                    if (!hotspotPage || wifiPage || bluetoothPage)
+                        return fail("Hotspot menu should be isolated");
+                    if (center.handleEscape() !== false)
+                        return fail("idle Hotspot Escape should pass through");
+                    hotspotPage.passwordText = "secret123";
+                    hotspotPage.revealPassword = true;
+                    hotspotPage.visible = false;
+                    if (hotspotPage.passwordText !== "" || hotspotPage.revealPassword !== false)
+                        return fail("HotspotDrawer should clear secrets on invisible");
+                    console.log("CONNECTIVITY_CENTER_PASS");
+                    Qt.quit();
+                }}
+                step++;
             }}
         }}
     }}
