@@ -46,7 +46,7 @@ Item {
         }
     }
     readonly property bool hotspotActive: root.hotspotService !== null
-        && root.hotspotService.active === true
+        && (root.hotspotService.active === true || root.hotspotService.busy === true)
     readonly property var hotspotWifiDevice: {
         if (!root.hotspotActive || root.hotspotDevicePath.length === 0) return null;
         for (var i = 0; i < root.wifiDevices.length; i++) {
@@ -715,7 +715,7 @@ Item {
                         id: refreshButton
                         width: 30
                         height: 30
-                        radius: 8
+                        radius: 14
                         anchors.verticalCenter: parent.verticalCenter
                         color: refreshHover.hovered
                             ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
@@ -834,7 +834,7 @@ Item {
                     textFormat: Text.PlainText
                 }
 
-                Button {
+                RoundedButton {
                     text: "Hotspot"
                     Accessible.name: "Open Hotspot tab"
                     onClicked: root.hotspotPageRequested()
@@ -1110,7 +1110,7 @@ Item {
                         }
                     }
 
-                    Button {
+                    RoundedButton {
                         id: connectBtn
                         Layout.minimumWidth: 68
                         implicitHeight: 28
@@ -1142,7 +1142,7 @@ Item {
                             verticalAlignment: Text.AlignVCenter
                         }
                         background: Rectangle {
-                            radius: 8
+                            radius: 14
                             color: !connectBtn.enabled ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
                                 : (networkRow.isCurrent
                                     ? (connectBtn.hovered ? Qt.rgba(0.92, 0.38, 0.4, 0.22) : Qt.rgba(0.92, 0.38, 0.4, 0.12))
@@ -1171,22 +1171,22 @@ Item {
                             verticalAlignment: Text.AlignVCenter
                         }
                         background: Rectangle {
-                            radius: 8
+                            radius: 14
                             color: rowMoreBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.6) : "transparent"
                             border.color: rowMoreBtn.hovered ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3) : "transparent"
                             border.width: 1
                             Behavior on color { ColorAnimation { duration: 120 } }
                         }
 
-                        Menu {
+                        ActionMenu {
                             id: rowMenu
 
-                            MenuItem {
+                            ActionMenuItem {
                                 text: networkRow.showingDetails ? "Hide details" : "Details"
                                 onTriggered: root.toggleDetails(networkRow.network)
                             }
 
-                            MenuItem {
+                            ActionMenuItem {
                                 text: "Forget saved profiles…"
                                 visible: networkRow.network.known
                                 enabled: !root.hotspotBlocksSelectedWifi
@@ -1245,7 +1245,7 @@ Item {
                                 if (visible) forceActiveFocus();
                             }
                             background: Rectangle {
-                                radius: 8
+                                radius: 14
                                 color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.8)
                                 border.color: passwordField.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
                                 border.width: passwordField.activeFocus ? 2 : 1
@@ -1270,7 +1270,7 @@ Item {
                                 verticalAlignment: Text.AlignVCenter
                             }
                             background: Rectangle {
-                                radius: 8
+                                radius: 14
                                 color: showPassBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.35)
                                 border.color: showPassBtn.hovered ? Tokens.outline : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                                 border.width: 1
@@ -1282,7 +1282,7 @@ Item {
                         Layout.fillWidth: true
                         Item { Layout.fillWidth: true }
 
-                        Button {
+                        RoundedButton {
                             id: cancelPassBtn
                             text: "Cancel"
                             implicitHeight: 28
@@ -1297,14 +1297,14 @@ Item {
                                 verticalAlignment: Text.AlignVCenter
                             }
                             background: Rectangle {
-                                radius: 8
+                                radius: 14
                                 color: cancelPassBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.6) : "transparent"
                                 border.color: cancelPassBtn.hovered ? Tokens.outline : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                                 border.width: 1
                             }
                         }
 
-                        Button {
+                        RoundedButton {
                             id: submitPassBtn
                             text: "Connect"
                             implicitHeight: 28
@@ -1321,7 +1321,7 @@ Item {
                                 verticalAlignment: Text.AlignVCenter
                             }
                             background: Rectangle {
-                                radius: 8
+                                radius: 14
                                 color: submitPassBtn.enabled ? (submitPassBtn.hovered ? Qt.darker(Tokens.accent, 1.1) : Tokens.accent) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
                             }
                         }
@@ -1342,7 +1342,7 @@ Item {
                         textFormat: Text.PlainText
                     }
 
-                    Button {
+                    RoundedButton {
                         id: cancelForgetBtn
                         text: "Cancel"
                         implicitHeight: 28
@@ -1356,14 +1356,14 @@ Item {
                             verticalAlignment: Text.AlignVCenter
                         }
                         background: Rectangle {
-                            radius: 8
+                            radius: 14
                             color: cancelForgetBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.6) : "transparent"
                             border.color: cancelForgetBtn.hovered ? Tokens.outline : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                             border.width: 1
                         }
                     }
 
-                    Button {
+                    RoundedButton {
                         id: confirmForgetBtn
                         text: "Forget"
                         implicitHeight: 28
@@ -1379,7 +1379,7 @@ Item {
                             verticalAlignment: Text.AlignVCenter
                         }
                         background: Rectangle {
-                            radius: 8
+                            radius: 14
                             color: confirmForgetBtn.enabled
                                 ? (confirmForgetBtn.hovered ? Qt.rgba(0.82, 0.25, 0.27, 0.28) : Qt.rgba(0.82, 0.25, 0.27, 0.16))
                                 : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)

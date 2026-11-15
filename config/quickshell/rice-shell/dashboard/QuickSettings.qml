@@ -12,7 +12,7 @@ Rectangle {
 
     implicitWidth: 276
     implicitHeight: 420
-    radius: 16
+    radius: 24
     color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.24)
     border.width: 1
@@ -256,8 +256,9 @@ Rectangle {
                     columnSpacing: 6
 
                     QuickSettingTile {
+                        Layout.columnSpan: 2
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 52
+                        Layout.preferredHeight: 48
                         icon: "󰤨"
                         label: qsTr("Wi-Fi")
                         sublabel: root.wifiError || root.wifiSublabel
@@ -270,8 +271,9 @@ Rectangle {
                     }
 
                     QuickSettingTile {
+                        Layout.columnSpan: 2
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 52
+                        Layout.preferredHeight: 48
                         icon: "󰂯"
                         label: qsTr("Bluetooth")
                         sublabel: root.bluetoothError || root.btSublabel
@@ -286,7 +288,7 @@ Rectangle {
                     QuickSettingTile {
                         Layout.columnSpan: 2
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 46
+                        Layout.preferredHeight: 48
                         icon: "󰀃"
                         label: qsTr("Hotspot")
                         sublabel: Hotspot.tileStatus
@@ -295,8 +297,13 @@ Rectangle {
                         pending: Hotspot.busy
                         hasDetails: true
                         onActivated: {
-                            if (Hotspot.canStart || Hotspot.active) Hotspot.toggle();
-                            else root.requestSideDrawer("hotspot");
+                            if (Hotspot.active) {
+                                Hotspot.toggle();
+                            } else if (Hotspot.clientConflict || !Hotspot.canStart) {
+                                root.requestSideDrawer("hotspot");
+                            } else {
+                                Hotspot.toggle();
+                            }
                         }
                         onDetailsRequested: root.requestSideDrawer("hotspot")
                     }

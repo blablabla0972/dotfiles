@@ -33,7 +33,15 @@ Item {
     }
     readonly property bool sideDrawerOpen: expanded && activeSideDrawer.length > 0
     readonly property bool drawerOverlay: !cardDimensions.sideBySide
-    readonly property real drawerOffset: drawerOverlay ? 0 : Math.min(156, sideDrawerContainer.width * 0.52)
+    property real drawerProgress: sideDrawerOpen ? 1 : 0
+    readonly property real drawerOffset: drawerOverlay ? 0
+        : Math.min(156, cardDimensions.drawerWidth * 0.52) * drawerProgress
+    Behavior on drawerProgress {
+        NumberAnimation {
+            duration: dashboardWindow.sideDrawerOpen ? 260 : 220
+            easing.type: dashboardWindow.sideDrawerOpen ? Easing.OutCubic : Easing.InOutQuad
+        }
+    }
     readonly property real activeContentHeight: {
         var loaded = currentTab === "Home" ? homeLoader.item
             : currentTab === "System" ? systemLoader.item
@@ -353,23 +361,17 @@ Item {
     Item {
         id: sideDrawerContainer
         anchors.top: morphContainer.top
-        x: dashboardWindow.drawerOverlay ? morphContainer.x
-            : morphContainer.x + morphContainer.width + 12
-        width: dashboardWindow.sideDrawerOpen
-            ? (dashboardWindow.drawerOverlay ? dashboardWindow.cardDimensions.width
-                : dashboardWindow.cardDimensions.drawerWidth) : 0
+        x: (dashboardWindow.drawerOverlay ? morphContainer.x
+            : morphContainer.x + morphContainer.width + 12)
+            + 20 * (1 - dashboardWindow.drawerProgress)
+        width: dashboardWindow.drawerOverlay ? dashboardWindow.cardDimensions.width
+            : dashboardWindow.cardDimensions.drawerWidth
         height: morphContainer.height
         clip: true
-        visible: width > 0
+        visible: dashboardWindow.drawerProgress > 0
         enabled: dashboardWindow.sideDrawerOpen
-        opacity: dashboardWindow.sideDrawerOpen ? 1.0 : 0.0
-
-        Behavior on width {
-            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-        }
-        Behavior on opacity {
-            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-        }
+        opacity: dashboardWindow.drawerProgress
+        transform: Translate { y: 8 * (1 - dashboardWindow.drawerProgress) }
 
         // Absorb inner clicks
         MouseArea {
@@ -383,7 +385,7 @@ Item {
             Loader {
                 id: connectivityLoader
                 anchors.fill: parent
-                active: (dashboardWindow.sideDrawerOpen || sideDrawerContainer.width > 0)
+                active: dashboardWindow.sideDrawerOpen || dashboardWindow.drawerProgress > 0
                 sourceComponent: ConnectivityCenter {
                     currentPage: dashboardWindow.renderedSideDrawer
                     onPageSelected: (page) => dashboardWindow.selectSideDrawer(page)

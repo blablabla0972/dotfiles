@@ -13,10 +13,16 @@ PopupWindow {
     property real clickX: 0
     property real clickY: 0
     property var menuPath: []
-    readonly property var currentMenu: menuPath.length
-        ? menuPath[menuPath.length - 1]
-        : menuHandle
-    onMenuPathChanged: menuFlickable.contentY = 0
+    property var activeSubmenuOpener: null
+    function updateActiveSubmenu() {
+        activeSubmenuOpener = menuPath.length
+            ? submenuOpeners.objectAt(menuPath.length - 1) : null;
+    }
+    onMenuPathChanged: {
+        menuFlickable.contentY = 0;
+        activeSubmenuOpener = null;
+        Qt.callLater(updateActiveSubmenu);
+    }
 
     color: "transparent"
     visible: false
@@ -24,7 +30,8 @@ PopupWindow {
     implicitWidth: anchorWindow
         ? Math.max(1, Math.min(244, anchorWindow.width - 16)) : 244
     implicitHeight: anchorWindow
-        ? Math.max(1, Math.min(menuList.implicitHeight + 16, 520, anchorWindow.height - 16))
+        ? Math.max(1, Math.min(menuList.implicitHeight + 16, 520,
+            anchorWindow.screen.height - anchorWindow.height - 16))
         : Math.min(menuList.implicitHeight + 16, 520)
 
     onVisibleChanged: {
@@ -40,7 +47,7 @@ PopupWindow {
             ? Math.max(8, Math.min(root.clickX, root.anchorWindow.width - root.width - 8))
             : 8
         rect.y: root.anchorWindow
-            ? Math.max(8, Math.min(root.clickY + 6, root.anchorWindow.height - root.height - 8))
+            ? Math.max(root.clickY + 6, root.anchorWindow.height + 6)
             : 8
         rect.width: 1
         rect.height: 1
@@ -66,7 +73,21 @@ PopupWindow {
 
     QsMenuOpener {
         id: menuOpener
-        menu: root.currentMenu
+        menu: root.menuHandle
+    }
+
+    Instantiator {
+        id: submenuOpeners
+        model: root.menuPath
+        onObjectAdded: (index, object) => root.updateActiveSubmenu()
+        onObjectRemoved: (index, object) => {
+            if (root.activeSubmenuOpener === object) root.activeSubmenuOpener = null;
+            Qt.callLater(root.updateActiveSubmenu);
+        }
+        delegate: QsMenuOpener {
+            required property var modelData
+            menu: modelData
+        }
     }
 
     Shortcut {
@@ -136,7 +157,9 @@ PopupWindow {
                 }
 
                 Repeater {
-                    model: menuOpener.children
+                    model: root.menuPath.length
+                        ? (root.activeSubmenuOpener ? root.activeSubmenuOpener.children : null)
+                        : menuOpener.children
 
                     delegate: Item {
                         id: menuRow
@@ -204,6 +227,9 @@ PopupWindow {
                             Text {
                                 text: menuRow.modelData.hasChildren
                                     ? "›"
+                                    : menuRow.modelData.buttonType === QsMenuButtonType.RadioButton
+                                        ? (menuRow.modelData.checkState === Qt.Checked ? "●" : "○")
+                                    : menuRow.modelData.buttonType !== QsMenuButtonType.CheckBox ? ""
                                     : menuRow.modelData.checkState === Qt.Checked ? "✓"
                                     : menuRow.modelData.checkState === Qt.Unchecked ? "□"
                                     : menuRow.modelData.checkState === Qt.PartiallyChecked ? "−" : ""

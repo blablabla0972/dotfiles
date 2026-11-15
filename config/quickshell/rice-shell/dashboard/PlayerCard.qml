@@ -141,6 +141,7 @@ Rectangle {
 
                 Rectangle {
                     id: artworkMask
+                    layer.enabled: true
                     anchors.fill: parent
                     radius: 13
                     color: "white"

@@ -96,6 +96,7 @@ def _profile_is_valid(settings):
     wireless = _setting(settings, "802-11-wireless")
     security = _setting(settings, "802-11-wireless-security")
     ipv4 = _setting(settings, "ipv4")
+    wireless_sec = wireless.get("security")
     return (
         connection.get("uuid") == OWNED_UUID
         and connection.get("type") == "802-11-wireless"
@@ -103,7 +104,7 @@ def _profile_is_valid(settings):
         and bool(connection.get("interface-name"))
         and wireless.get("mode") == "ap"
         and _ssid_is_valid(wireless.get("ssid"))
-        and wireless.get("security") == "802-11-wireless-security"
+        and (wireless_sec is None or wireless_sec == "802-11-wireless-security")
         and security.get("key-mgmt") == "wpa-psk"
         and security.get("proto") == ["rsn"]
         and security.get("pairwise") == ["ccmp"]
@@ -183,8 +184,9 @@ class HotspotManager:
             result["requestId"] = request_id
         return result
 
-    def snapshot(self):
-        state = self.nm.snapshot()
+    def snapshot(self, state=None):
+        if state is None:
+            state = self.nm.snapshot()
         profile = _owned_profile(state)
         profile_settings = profile.get("settings", {}) if profile else {}
         profile_valid = bool(profile and _profile_is_valid(profile_settings))
@@ -246,11 +248,20 @@ class HotspotManager:
              and item.get("default")),
             None,
         )
+
+        independent_upstream = None
+        if upstream and device:
+            if device.get("path") not in upstream.get("devices", []):
+                independent_upstream = upstream
+        elif upstream and not device:
+            independent_upstream = upstream
+
         permissions = state.get("permissions", {})
         modify_allowed = state.get("can_modify", True) and _permission(
             permissions, "settings.modify.system"
         )
         network_allowed = _permission(permissions, "network-control")
+        wifi_share_allowed = _permission(permissions, "wifi.share.protected")
         wifi_ready = bool(
             state.get("networking_enabled")
             and state.get("wireless_enabled")
@@ -262,13 +273,12 @@ class HotspotManager:
         )
         can_configure = bool(device and modify_allowed)
         can_start = bool(
-            device and wifi_ready and network_allowed and configured
-            and profile_device_matches and upstream and not active
+            device and wifi_ready and network_allowed and wifi_share_allowed and configured
+            and profile_device_matches and (independent_upstream or (active_client and active_client.get("default"))) and not active
         )
 
         if active and verified_active:
-            tile_status = "On"
-            lifecycle_state = "active"
+            tile_status, lifecycle_state = "On", "active"
         elif active and owned_active.get("state") == 1:
             tile_status, lifecycle_state = "Starting…", "starting"
         elif active and owned_active.get("state") == 3:
@@ -285,7 +295,7 @@ class HotspotManager:
             tile_status, lifecycle_state = "Secure AP unavailable", "unavailable"
         elif not configured and not modify_allowed:
             tile_status, lifecycle_state = "Permission required", "unavailable"
-        elif not network_allowed:
+        elif not network_allowed or not wifi_share_allowed:
             tile_status, lifecycle_state = "Permission required", "unavailable"
         elif profile and not profile_valid:
             tile_status, lifecycle_state = "Profile needs repair", "error"
@@ -293,25 +303,40 @@ class HotspotManager:
             tile_status, lifecycle_state = "Saved adapter unavailable", "error"
         elif not configured:
             tile_status, lifecycle_state = "Set up hotspot", "off"
-        elif not upstream:
+        elif not upstream and not independent_upstream:
             tile_status, lifecycle_state = "No upstream", "off"
+        elif not independent_upstream:
+            tile_status, lifecycle_state = "Local AP only", "off"
         else:
             tile_status, lifecycle_state = "Ready", "off"
 
         upstream_type = ""
-        if upstream:
+        effective_upstream = independent_upstream if independent_upstream else (upstream if not active else None)
+        if effective_upstream:
             upstream_type = {
                 "802-3-ethernet": "Ethernet",
                 "802-11-wireless": "Wi-Fi",
-            }.get(upstream.get("type"), "Other network")
-        if active and upstream:
-            upstream_status = upstream_type + " route available; internet reachability is unverified."
+            }.get(effective_upstream.get("type"), "Other network")
+
+        if active and verified_active:
+            if independent_upstream:
+                upstream_status = upstream_type + " route available; internet reachability is unverified."
+                upstream_available = True
+            else:
+                upstream_status = "No active upstream route; internet sharing is unavailable."
+                upstream_available = False
         elif active:
-            upstream_status = "No active upstream route; internet sharing is unavailable."
-        elif upstream:
+            upstream_status = "NetworkManager status is unverified; internet sharing is unavailable."
+            upstream_available = False
+        elif independent_upstream:
             upstream_status = upstream_type + " route available."
+            upstream_available = True
+        elif active_client and active_client.get("default"):
+            upstream_status = "Wi-Fi client on " + (device.get("interface", "this adapter")) + " will disconnect. Starting will provide a local network with no Internet sharing."
+            upstream_available = False
         else:
             upstream_status = "Connect an upstream network before starting."
+            upstream_available = False
 
         profile_ssid = _decode_ssid(_setting(profile_settings, "802-11-wireless").get("ssid"))
         interface_name = device.get("interface", "") if device else ""
@@ -331,7 +356,7 @@ class HotspotManager:
             "profileConfigured": configured,
             "security": "WPA2-Personal (RSN)" if configured and verified_active
             else ("Unverified active profile" if active else "WPA2-Personal (RSN) required"),
-            "upstreamAvailable": bool(upstream),
+            "upstreamAvailable": upstream_available,
             "upstreamStatus": upstream_status,
             "clientConflict": bool(active_client),
             "error": "The owned profile settings do not match the secure hotspot configuration."
@@ -367,7 +392,7 @@ class HotspotManager:
         ssid = request.get("ssid")
         password = request.get("password", "")
         state = self.nm.snapshot()
-        status = self.snapshot()
+        status = self.snapshot(state)
         if status["active"]:
             raise HotspotError("Stop the hotspot before changing its profile.")
         if not status["canConfigure"]:
@@ -384,8 +409,7 @@ class HotspotManager:
             )
             if ssid != existing_ssid or existing_interface != status["deviceName"]:
                 raise HotspotError("Enter the saved password to change the network name or adapter.")
-            result = {"ok": True, "snapshot": self.snapshot()}
-            return result
+            return {"ok": True, "snapshot": self.snapshot(state)}
         if not password:
             raise HotspotError("Enter a WPA2 password to save this hotspot.")
         profile_settings = build_profile_settings(ssid, password, status["deviceName"])
@@ -393,20 +417,25 @@ class HotspotManager:
             self.nm.update_profile(profile["path"], profile_settings)
         else:
             self.nm.add_profile(profile_settings)
-        return {"ok": True, "snapshot": self.snapshot()}
+        fresh_state = self.nm.snapshot()
+        fresh_profile = _owned_profile(fresh_state)
+        fresh_status = self.snapshot(fresh_state)
+        if not fresh_profile or not _profile_is_valid(fresh_profile.get("settings", {})):
+            raise HotspotError("NetworkManager did not accept the profile settings.")
+        return {"ok": True, "snapshot": fresh_status}
 
     def _confirmation_token(self, device, client):
         identity = "\0".join((
             OWNED_UUID,
-            device.get("path", ""),
-            client.get("path", ""),
-            client.get("uuid", ""),
+            device.get("path", "") if device else "",
+            client.get("path", "") if client else "",
+            client.get("uuid", "") if client else "",
         ))
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
 
     def _start(self, request):
         state = self.nm.snapshot()
-        status = self.snapshot()
+        status = self.snapshot(state)
         if status["active"]:
             return {"ok": True, "snapshot": status}
         profile = _owned_profile(state)
@@ -417,10 +446,13 @@ class HotspotManager:
         if not status["canStart"]:
             raise HotspotError(status["tileStatus"] + ". Hotspot was not started.")
         device = next(
-            item for item in state.get("devices", [])
-            if item.get("interface") == status["deviceName"]
-            and item.get("device_type") == WIFI_DEVICE_TYPE
+            (item for item in state.get("devices", [])
+             if item.get("interface") == status["deviceName"]
+             and item.get("device_type") == WIFI_DEVICE_TYPE),
+            None,
         )
+        if not device:
+            raise HotspotError("The Wi-Fi adapter was removed before the hotspot could start.")
         conflict = next(
             (item for item in state.get("active_connections", [])
              if item.get("type") == "802-11-wireless"
@@ -443,15 +475,18 @@ class HotspotManager:
         previous_profile_path = conflict.get("connection", "") if conflict else ""
         try:
             self.nm.activate(profile["path"], device["path"])
-            deadline = time.monotonic() + 15.0
+            deadline = time.monotonic() + 10.0
             while time.monotonic() < deadline:
-                verified = self.snapshot()
+                fresh_state = self.nm.snapshot()
+                verified = self.snapshot(fresh_state)
                 if verified.get("verifiedActive"):
                     return {"ok": True, "snapshot": verified}
-                time.sleep(0.25)
+                time.sleep(0.2)
             raise HotspotError("NetworkManager did not confirm the hotspot became active.")
-        except Exception:
+        except Exception as error:
             self._rollback_partial_start(device["path"], previous_profile_path)
+            if isinstance(error, HotspotError):
+                raise
             raise HotspotError("Hotspot activation failed; unrelated connections and profiles were preserved.")
 
     def _rollback_partial_start(self, device_path, previous_profile_path):
@@ -485,14 +520,15 @@ class HotspotManager:
         if active and active.get("state", ACTIVE_STATE_ACTIVATED) in (1, ACTIVE_STATE_ACTIVATED):
             self.nm.deactivate(active["path"])
         if active and active.get("state", ACTIVE_STATE_ACTIVATED) in (1, ACTIVE_STATE_ACTIVATED, 3):
-            deadline = time.monotonic() + 10.0
+            deadline = time.monotonic() + 8.0
             while time.monotonic() < deadline:
-                status = self.snapshot()
+                fresh_state = self.nm.snapshot()
+                status = self.snapshot(fresh_state)
                 if not status["active"]:
                     return {"ok": True, "snapshot": status}
                 time.sleep(0.2)
             raise HotspotError("NetworkManager did not confirm the hotspot stopped.")
-        return {"ok": True, "snapshot": self.snapshot()}
+        return {"ok": True, "snapshot": self.snapshot(state)}
 
 
 def _deep_unpack(value):
@@ -566,7 +602,16 @@ class GioNetworkManager:
 
         active_connections = []
         for path in manager.get("ActiveConnections", []):
-            props = self._properties(path, NM_ACTIVE_IFACE)
+            try:
+                props = self._properties(path, NM_ACTIVE_IFACE)
+            except self.glib.Error as error:
+                # A replaced Wi-Fi client may disappear after the list was read.
+                if self.gio.DBusError.get_remote_error(error) in (
+                    "org.freedesktop.DBus.Error.UnknownObject",
+                    "org.freedesktop.DBus.Error.UnknownMethod",
+                ):
+                    continue
+                raise
             active_connections.append({
                 "path": path,
                 "connection": props.get("Connection", "/"),
@@ -579,14 +624,21 @@ class GioNetworkManager:
             })
 
         profiles = []
-        for path in settings.get("Connections", []):
-            try:
+        try:
+            owned_path = self._call(
+                NM_SETTINGS_PATH, NM_SETTINGS_IFACE, "GetConnectionByUuid", "s", (OWNED_UUID,)
+            )[0]
+            if owned_path:
                 profile_settings = self._call(
-                    path, NM_PROFILE_IFACE, "GetSettings"
+                    owned_path, NM_PROFILE_IFACE, "GetSettings"
                 )[0]
-            except Exception:
-                continue
-            profiles.append({"path": path, "settings": profile_settings})
+                profiles.append({"path": owned_path, "settings": profile_settings})
+        except Exception as error:
+            err_msg = str(error).lower()
+            if "no connection with the uuid" in err_msg or "invalidconnection" in err_msg or "not found" in err_msg:
+                profiles = []
+            else:
+                raise
 
         return {
             "networking_enabled": manager.get("NetworkingEnabled", False),

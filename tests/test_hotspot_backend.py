@@ -1,8 +1,10 @@
 import copy
 import json
 import sys
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SERVICE_DIR = (
@@ -31,6 +33,7 @@ class FakeNetworkManager:
             "permissions": {
                 "network-control": "yes",
                 "settings.modify.system": "yes",
+                "wifi.share.protected": "yes",
             },
             "devices": [
                 {
@@ -406,6 +409,349 @@ class HotspotBackendTests(unittest.TestCase):
         self.assertEqual(call_args.get_type_string(), "(a{sa{sv}}ua{sv})")
         self.assertEqual(bytes(unpacked["802-11-wireless"]["ssid"]), b"Rice Test")
         self.assertEqual(unpacked["802-11-wireless-security"]["psk"], password)
+
+    def test_profile_valid_without_deprecated_wireless_security_property(self):
+        settings = hotspot_backend.build_profile_settings("Rice Test", "safe-test-pass", "wlan0")
+        del settings["802-11-wireless"]["security"]
+        self.assertTrue(hotspot_backend._profile_is_valid(settings))
+        settings["802-11-wireless"]["security"] = "802-11-wireless-security"
+        self.assertTrue(hotspot_backend._profile_is_valid(settings))
+        settings["802-11-wireless"]["security"] = "wep"
+        self.assertFalse(hotspot_backend._profile_is_valid(settings))
+
+    def test_configure_rejects_invalid_normalized_profile(self):
+        def corrupted_add_profile(settings):
+            corrupted = copy.deepcopy(settings)
+            corrupted["ipv4"]["method"] = "auto"
+            path = "/org/freedesktop/NetworkManager/Settings/42"
+            self.nm.state["profiles"].append({"path": path, "settings": corrupted})
+            return path
+        self.nm.add_profile = corrupted_add_profile
+        response = self.configure()
+        self.assertFalse(response["ok"])
+        self.assertIn("NetworkManager did not accept the profile settings", response["error"])
+
+    def test_start_with_ethernet_upstream(self):
+        self.configure()
+        eth_device = "/org/freedesktop/NetworkManager/Devices/1"
+        eth_active = "/org/freedesktop/NetworkManager/ActiveConnection/1"
+        self.nm.state["devices"].append({
+            "path": eth_device,
+            "interface": "eno1",
+            "device_type": 1,
+            "managed": True,
+            "state": 100,
+            "mode": 0,
+            "capabilities": 0,
+            "active_connection": eth_active,
+        })
+        self.nm.state["active_connections"].append({
+            "path": eth_active,
+            "uuid": "ethernet-uuid",
+            "type": "802-3-ethernet",
+            "devices": [eth_device],
+            "state": 2,
+            "default": True,
+            "default6": False,
+        })
+        self.nm.state["devices"][0]["active_connection"] = "/"
+        self.nm.state["active_connections"] = [
+            conn for conn in self.nm.state["active_connections"]
+            if conn["path"] == eth_active
+        ]
+        status = self.manager.handle({"op": "status"})["snapshot"]
+        self.assertTrue(status["canStart"])
+        self.assertTrue(status["upstreamAvailable"])
+        self.assertEqual(status["tileStatus"], "Ready")
+        self.assertFalse(status["clientConflict"])
+
+        started = self.manager.handle({"op": "start"})
+        self.assertTrue(started["ok"])
+        self.assertTrue(started["snapshot"]["active"])
+        self.assertTrue(started["snapshot"]["upstreamAvailable"])
+
+    def test_start_with_independent_wifi_upstream(self):
+        self.configure()
+        wlan1_device = "/org/freedesktop/NetworkManager/Devices/9"
+        wlan1_active = "/org/freedesktop/NetworkManager/ActiveConnection/9"
+        self.nm.state["devices"].append({
+            "path": wlan1_device,
+            "interface": "wlan1",
+            "device_type": 2,
+            "managed": True,
+            "state": 100,
+            "mode": 2,
+            "capabilities": 0x68,
+            "active_connection": wlan1_active,
+        })
+        self.nm.state["active_connections"].append({
+            "path": wlan1_active,
+            "uuid": "wlan1-client-uuid",
+            "type": "802-11-wireless",
+            "devices": [wlan1_device],
+            "state": 2,
+            "default": True,
+            "default6": False,
+        })
+        self.nm.state["devices"][0]["active_connection"] = "/"
+        self.nm.state["active_connections"] = [
+            conn for conn in self.nm.state["active_connections"]
+            if conn["path"] == wlan1_active
+        ]
+        status = self.manager.handle({"op": "status"})["snapshot"]
+        self.assertTrue(status["canStart"])
+        self.assertTrue(status["upstreamAvailable"])
+        self.assertEqual(status["tileStatus"], "Ready")
+
+        started = self.manager.handle({"op": "start"})
+        self.assertTrue(started["ok"])
+        self.assertTrue(started["snapshot"]["active"])
+        self.assertTrue(started["snapshot"]["upstreamAvailable"])
+
+    def test_single_adapter_upstream_conflict(self):
+        self.configure()
+        status = self.manager.handle({"op": "status"})["snapshot"]
+        self.assertTrue(status["canStart"])
+        self.assertFalse(status["upstreamAvailable"])
+        self.assertEqual(status["tileStatus"], "Local AP only")
+        self.assertTrue(status["clientConflict"])
+        self.assertIn("will disconnect", status["upstreamStatus"])
+
+        first = self.manager.handle({"op": "start"})
+        self.assertTrue(first["confirmationRequired"])
+        self.assertIn("confirmationToken", first)
+
+    def test_upstream_removed_after_activation(self):
+        self.test_start_with_ethernet_upstream()
+        self.nm.state["active_connections"] = [
+            conn for conn in self.nm.state["active_connections"]
+            if conn["type"] != "802-3-ethernet"
+        ]
+        status = self.manager.handle({"op": "status"})["snapshot"]
+        self.assertTrue(status["active"])
+        self.assertTrue(status["verifiedActive"])
+        self.assertFalse(status["upstreamAvailable"])
+        self.assertIn("No active upstream route", status["upstreamStatus"])
+
+    def test_start_uses_consistent_snapshot(self):
+        self.configure()
+        state = self.nm.snapshot()
+        status = self.manager.snapshot(state)
+        self.assertIsNotNone(status)
+        self.assertEqual(status["state"], "off")
+
+    def test_adapter_removed_during_start(self):
+        self.configure()
+        first = self.manager.handle({"op": "start"})
+        token = first["confirmationToken"]
+        self.nm.state["devices"] = []
+        result = self.manager.handle({"op": "start", "confirmationToken": token})
+        self.assertFalse(result["ok"])
+        self.assertIn("Hotspot was not started", result["error"])
+
+    def test_protected_sharing_permission_denied(self):
+        self.configure()
+        self.nm.state["permissions"]["wifi.share.protected"] = "no"
+        status = self.manager.handle({"op": "status"})["snapshot"]
+        self.assertFalse(status["canStart"])
+        self.assertEqual(status["tileStatus"], "Permission required")
+        result = self.manager.handle({"op": "start"})
+        self.assertFalse(result["ok"])
+        self.assertIn("Permission required", result["error"])
+
+    def test_activation_timeout_rolls_back_only_owned_connection(self):
+        self.configure()
+        first = self.manager.handle({"op": "start"})
+        token = first["confirmationToken"]
+
+        def slow_activate(profile_path, device_path):
+            self.nm.activate_calls.append((profile_path, device_path))
+            self.nm.state["active_connections"].append({
+                "path": HOTSPOT_ACTIVE,
+                "uuid": hotspot_backend.OWNED_UUID,
+                "type": "802-11-wireless",
+                "devices": [device_path],
+                "state": 1,
+                "default": False,
+                "default6": False,
+            })
+            return HOTSPOT_ACTIVE
+
+        self.nm.activate = slow_activate
+        current_time = [0.0]
+        def mock_monotonic():
+            t = current_time[0]
+            current_time[0] += 6.0
+            return t
+
+        with mock.patch("time.monotonic", side_effect=mock_monotonic), mock.patch("time.sleep"):
+            result = self.manager.handle({"op": "start", "confirmationToken": token})
+
+        self.assertFalse(result["ok"])
+        self.assertIn("did not confirm the hotspot became active", result["error"])
+        self.assertIn(HOTSPOT_ACTIVE, self.nm.deactivate_calls)
+
+    def test_rollback_does_not_replace_new_client_connection(self):
+        self.configure()
+        client_connection_path = "/org/freedesktop/NetworkManager/Settings/4"
+        self.nm.state["active_connections"] = [
+            {
+                "path": "/org/freedesktop/NetworkManager/ActiveConnection/new-client",
+                "uuid": "new-client-uuid",
+                "type": "802-11-wireless",
+                "devices": [WIFI_DEVICE],
+                "state": 2,
+                "default": True,
+                "default6": False,
+            }
+        ]
+        self.manager._rollback_partial_start(WIFI_DEVICE, client_connection_path)
+        self.assertEqual(self.nm.activate_calls, [])
+
+    def test_stop_is_idempotent(self):
+        self.configure()
+        result = self.manager.handle({"op": "stop"})
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["snapshot"]["active"])
+        self.assertEqual(self.nm.deactivate_calls, [])
+
+        self.test_start_with_ethernet_upstream()
+        result2 = self.manager.handle({"op": "stop"})
+        self.assertTrue(result2["ok"])
+        self.assertFalse(result2["snapshot"]["active"])
+        self.assertIn(HOTSPOT_ACTIVE, self.nm.deactivate_calls)
+
+        result3 = self.manager.handle({"op": "stop"})
+        self.assertTrue(result3["ok"])
+
+    def test_owned_profile_lookup_does_not_read_unrelated_profiles(self):
+        calls = []
+        class MockGioManager:
+            def _call(self, path, iface, method, sig=None, args=None):
+                calls.append((path, iface, method, args))
+                if method == "GetConnectionByUuid":
+                    return ("/org/freedesktop/NetworkManager/Settings/42",)
+                if method == "GetSettings":
+                    return ({
+                        "connection": {"uuid": hotspot_backend.OWNED_UUID, "id": "Rice Shell Hotspot", "type": "802-11-wireless", "interface-name": "wlan0"},
+                        "802-11-wireless": {"mode": "ap", "ssid": [82, 105, 99, 101]},
+                        "802-11-wireless-security": {"key-mgmt": "wpa-psk", "proto": ["rsn"], "pairwise": ["ccmp"], "group": ["ccmp"]},
+                        "ipv4": {"method": "shared"},
+                    },)
+                return ({},)
+            def _properties(self, path, iface):
+                return {}
+
+        gio_nm = hotspot_backend.GioNetworkManager.__new__(hotspot_backend.GioNetworkManager)
+        gio_nm._call = MockGioManager()._call
+        gio_nm._properties = MockGioManager()._properties
+        res = gio_nm.snapshot()
+        self.assertEqual(len(res["profiles"]), 1)
+        self.assertEqual(res["profiles"][0]["path"], "/org/freedesktop/NetworkManager/Settings/42")
+        uuid_calls = [c for c in calls if c[2] == "GetConnectionByUuid"]
+        self.assertEqual(len(uuid_calls), 1)
+        self.assertEqual(uuid_calls[0][3], (hotspot_backend.OWNED_UUID,))
+
+    def test_dbus_lookup_error_is_not_treated_as_missing_profile(self):
+        class MockFailingGioManager:
+            def _call(self, path, iface, method, sig=None, args=None):
+                if method == "GetConnectionByUuid":
+                    raise Exception("GDBus.Error:org.freedesktop.DBus.Error.AccessDenied: Permission denied")
+                return ({},)
+            def _properties(self, path, iface):
+                return {}
+
+        gio_nm = hotspot_backend.GioNetworkManager.__new__(hotspot_backend.GioNetworkManager)
+        gio_nm._call = MockFailingGioManager()._call
+        gio_nm._properties = MockFailingGioManager()._properties
+        with self.assertRaises(Exception) as ctx:
+            gio_nm.snapshot()
+        self.assertIn("AccessDenied", str(ctx.exception))
+
+    def test_disappearing_connection_does_not_abort_hotspot_verification(self):
+        class BusError(Exception):
+            pass
+
+        stale_path = "/org/freedesktop/NetworkManager/ActiveConnection/old"
+        ethernet_path = "/org/freedesktop/NetworkManager/ActiveConnection/ethernet"
+        profile_path = "/org/freedesktop/NetworkManager/Settings/42"
+        properties = {
+            hotspot_backend.NM_PATH: {
+                "NetworkingEnabled": True, "WirelessEnabled": True,
+                "WirelessHardwareEnabled": True, "Devices": [WIFI_DEVICE],
+                "ActiveConnections": [stale_path, ethernet_path, HOTSPOT_ACTIVE],
+            },
+            hotspot_backend.NM_SETTINGS_PATH: {"CanModify": True},
+            ethernet_path: {
+                "Uuid": "ethernet", "Type": "802-3-ethernet", "State": 2,
+                "Default": True, "Devices": ["/ethernet"],
+            },
+            HOTSPOT_ACTIVE: {
+                "Uuid": hotspot_backend.OWNED_UUID, "Type": "802-11-wireless",
+                "State": 2, "Devices": [WIFI_DEVICE], "Connection": profile_path,
+            },
+        }
+        adapter = hotspot_backend.GioNetworkManager(
+            None,
+            SimpleNamespace(DBusError=SimpleNamespace(get_remote_error=str)),
+            SimpleNamespace(Error=BusError),
+        )
+        profile = hotspot_backend.build_profile_settings("Rice Test", "password123", "wlan0")
+
+        def read_properties(path, interface):
+            if path == stale_path:
+                raise BusError(remote_error)
+            if path == WIFI_DEVICE:
+                if interface == hotspot_backend.NM_WIFI_IFACE:
+                    return {"Mode": 3, "WirelessCapabilities": 0x68}
+                return {"DeviceType": 2, "Interface": "wlan0", "Managed": True}
+            return properties[path]
+
+        def call(path, interface, method, *args):
+            return {
+                "GetPermissions": (self.nm.state["permissions"],),
+                "GetConnectionByUuid": (profile_path,),
+                "GetSettings": (profile,),
+            }[method]
+
+        adapter._properties = read_properties
+        adapter._call = call
+        for name in ("UnknownMethod", "UnknownObject", "AccessDenied"):
+            remote_error = "org.freedesktop.DBus.Error." + name
+            with self.subTest(error=name):
+                if name == "AccessDenied":
+                    with self.assertRaises(BusError):
+                        adapter.snapshot()
+                    continue
+                status = hotspot_backend.HotspotManager(adapter).snapshot()
+                self.assertTrue(status["verifiedActive"])
+                self.assertTrue(status["upstreamAvailable"])
+                self.assertEqual(status["state"], "active")
+
+    def test_backend_errors_never_expose_password(self):
+        secret_pass = "super-secret-passphrase-never-leak"
+        def failing_add(settings):
+            raise Exception("DBus secret fail: " + secret_pass)
+        self.nm.add_profile = failing_add
+        response = self.configure(ssid="Rice Test", password=secret_pass)
+        self.assertFalse(response["ok"])
+        response_str = json.dumps(response)
+        self.assertNotIn(secret_pass, response_str)
+
+    def test_foreign_ap_remains_untouched(self):
+        self.configure()
+        foreign_active = "/org/freedesktop/NetworkManager/ActiveConnection/99"
+        self.nm.state["active_connections"].append({
+            "path": foreign_active,
+            "uuid": "foreign-ap-uuid",
+            "type": "802-11-wireless",
+            "devices": ["/org/freedesktop/NetworkManager/Devices/99"],
+            "state": 2,
+            "default": False,
+            "default6": False,
+        })
+        self.manager.handle({"op": "stop"})
+        self.assertNotIn(foreign_active, self.nm.deactivate_calls)
 
 
 if __name__ == "__main__":

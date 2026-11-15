@@ -6,6 +6,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Networking
+import Quickshell.Services.UPower
 import "../theme"
 import "../services"
 
@@ -166,6 +167,25 @@ PanelWindow {
                 HoverHandler { id: internetHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: barRoot.requestSideDrawer("wifi")
+                }
+            }
+
+            RowLayout {
+                visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 5
+
+                Text {
+                    text: UPower.displayDevice.state === UPowerDeviceState.Charging ? "󰂄" : "󰁹"
+                    font.pixelSize: 14
+                    color: Tokens.accent
+                }
+                Text {
+                    text: Math.round(UPower.displayDevice.percentage * 100) + "%"
+                        + (UPower.displayDevice.state === UPowerDeviceState.Charging ? " ⚡" : "")
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: Tokens.text_primary
                 }
             }
 

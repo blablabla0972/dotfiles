@@ -67,7 +67,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 22
+        radius: 26
         color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.97)
         border.width: 1
         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.38)
@@ -76,8 +76,8 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
+        anchors.margins: 16
+        spacing: 10
 
         RowLayout {
             Layout.fillWidth: true
@@ -223,10 +223,6 @@ Item {
     }
     Connections {
         target: bluetoothLoader.item
-        function onCloseRequested(): void { root.closeRequested(); }
-    }
-    Connections {
-        target: hotspotLoader.item
         function onCloseRequested(): void { root.closeRequested(); }
     }
 }

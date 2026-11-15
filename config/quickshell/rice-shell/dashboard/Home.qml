@@ -8,7 +8,7 @@ Item {
     id: root
 
     implicitWidth: 900
-    implicitHeight: 520
+    implicitHeight: wideLayout ? 434 : 520
     readonly property bool wideLayout: width >= 820
     readonly property bool mediumLayout: width >= 650 && width < 820
     readonly property int layoutColumns: homeGrid.columns
@@ -40,7 +40,7 @@ Item {
                 Layout.fillHeight: true
                 Layout.minimumWidth: 0
                 Layout.preferredWidth: root.wideLayout
-                    ? (homeGrid.width - 2 * homeGrid.columnSpacing) * 0.25
+                    ? (homeGrid.width - 2 * homeGrid.columnSpacing) * 0.24
                     : root.mediumLayout
                         ? (homeGrid.width - homeGrid.columnSpacing) * 0.42
                         : homeGrid.width
@@ -65,7 +65,7 @@ Item {
                 Layout.fillHeight: true
                 Layout.minimumWidth: 0
                 Layout.preferredWidth: root.wideLayout
-                    ? (homeGrid.width - 2 * homeGrid.columnSpacing) * 0.43
+                    ? (homeGrid.width - 2 * homeGrid.columnSpacing) * 0.40
                     : root.mediumLayout
                         ? (homeGrid.width - homeGrid.columnSpacing) * 0.58
                         : homeGrid.width
@@ -90,7 +90,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: root.wideLayout
                 Layout.preferredWidth: root.wideLayout
-                    ? (homeGrid.width - 2 * homeGrid.columnSpacing) * 0.32
+                    ? (homeGrid.width - 2 * homeGrid.columnSpacing) * 0.36
                     : homeGrid.width
                 Layout.preferredHeight: 420
                 onRequestSideDrawer: (type) => root.requestSideDrawer(type)

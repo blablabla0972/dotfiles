@@ -1,6 +1,7 @@
 """Tests for Quickshell App Launcher and Top Bar Integration."""
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -115,8 +116,8 @@ class QuickshellAppLauncherTest(unittest.TestCase):
         content = LAUNCHER_QML.read_text()
         escape = content.split("Keys.onEscapePressed:", 1)[1].split("Keys.onReturnPressed:", 1)[0]
 
-        self.assertTrue("launcherWindow.visible = false;" in escape, "Escape must dismiss the launcher")
-        self.assertTrue("onTapped: launcherWindow.visible = false" in content, "outside click must dismiss the launcher")
+        self.assertIn("launcherWindow.dismiss();", escape, "Escape must dismiss the launcher")
+        self.assertIn("launcherWindow.dismiss()", content, "outside click must dismiss the launcher")
 
     def test_launcher_clamps_selection_when_results_change(self):
         content = LAUNCHER_QML.read_text()
@@ -131,7 +132,9 @@ class QuickshellAppLauncherTest(unittest.TestCase):
     def test_launcher_has_explicit_dismiss_method(self):
         content = LAUNCHER_QML.read_text()
 
-        self.assertTrue("function dismiss(): void {\n        visible = false;\n    }" in content)
+        dismiss = content.split("function dismiss(): void {", 1)[1].split("function cycleCategory", 1)[0]
+        self.assertIn("closing = true;", dismiss)
+        self.assertIn("closeTimer.restart();", dismiss)
 
     def test_launcher_offscreen_qml_open_reset_dismiss_focus_lifecycle(self):
         qmlscene = shutil.which("qmlscene6")
@@ -142,6 +145,7 @@ class QuickshellAppLauncherTest(unittest.TestCase):
             root = Path(tmp)
             (root / "stubs").mkdir()
             (root / "launcher").mkdir()
+            shutil.copy2(LAUNCHER_QML.parent / "LaunchCommand.js", root / "launcher/LaunchCommand.js")
             stubs = {
                 "qmldir": """\
                     module LauncherTestStubs
@@ -173,6 +177,7 @@ class QuickshellAppLauncherTest(unittest.TestCase):
                         property color outline: "#808080"
                         property real panelOpacity: 1
                         property color surface: "#202020"
+                        property color background: "#181818"
                         property color surface_high: "#303030"
                         property color text_primary: "#ffffff"
                         property color text_secondary: "#aaaaaa"
@@ -206,7 +211,7 @@ class QuickshellAppLauncherTest(unittest.TestCase):
             source = source.replace("PanelWindow {", "TestPanelWindow {")
             source = source.replace("Region {", "TestRegion {")
             source = source.replace("    WlrLayershell.layer: WlrLayer.Overlay\n", "")
-            source = source.replace("    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None\n", "")
+            source = re.sub(r'^    WlrLayershell.keyboardFocus:.*\n', '', source, flags=re.M)
             source = source.replace("""    anchors {
         top: true
         bottom: true
@@ -270,6 +275,14 @@ class QuickshellAppLauncherTest(unittest.TestCase):
                             if (launcher.filteredApps.length === 0 || launcher.selectedIndex !== 0) { Qt.exit(17); return; }
                             if (typeof launcher.dismiss !== "function") { Qt.exit(18); return; }
                             launcher.dismiss();
+                            closed.start();
+                        }
+                    }
+
+                    Timer {
+                        id: closed
+                        interval: 160
+                        onTriggered: {
                             if (launcher.visible) { Qt.exit(19); return; }
                             launcher.searchText = "stale";
                             launcher.selectedCategory = "System";

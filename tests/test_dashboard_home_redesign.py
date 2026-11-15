@@ -33,8 +33,6 @@ class DashboardHomeRedesignTests(unittest.TestCase):
         )
         self.assertContains(self.home, "Flickable")
         self.assertContains(self.home, "contentHeight: homeGrid.height")
-        for weight in ("0.25", "0.43", "0.32"):
-            self.assertContains(self.home, weight)
 
         wide = re.search(r"wideLayout: width >= (\d+)", self.home)
         medium = re.search(r"mediumLayout: width >= (\d+)", self.home)

@@ -94,7 +94,21 @@ class ConnectivityCenterTest(unittest.TestCase):
                 center.selectPage("wifi");
                 if (center.activePage !== "wifi" || !wifiTab.selected || bluetoothTab.selected)
                     return fail("Wi-Fi selection did not restore its selected tab");
-    
+
+                center.selectPage("hotspot");
+                if (center.activePage !== "hotspot" || !hotspotTab.selected || !center.hotspotVisited || !hotspotLoader.active)
+                    return fail("Hotspot selection failed to activate lazy loader");
+                const hotspotPage = hotspotLoader.item;
+                if (!hotspotPage)
+                    return fail("HotspotDrawer did not instantiate");
+                if (center.handleEscape() !== false)
+                    return fail("idle Hotspot Escape should pass through");
+                hotspotPage.passwordText = "secret123";
+                hotspotPage.revealPassword = true;
+                hotspotPage.visible = false;
+                if (hotspotPage.passwordText !== "" || hotspotPage.revealPassword !== false)
+                    return fail("HotspotDrawer should clear password and reveal state on invisible");
+
                 console.log("CONNECTIVITY_CENTER_PASS");
                 Qt.quit();
             }}

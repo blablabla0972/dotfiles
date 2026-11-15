@@ -126,6 +126,8 @@ QtObject {
     property real contentOpacity: cardContent.opacity
     property bool viewportClips: cardContent.parent.clip
     property real drawerWidth: sideDrawerContainer.width
+    property real drawerOpacity: sideDrawerContainer.opacity
+    property bool drawerVisible: sideDrawerContainer.visible
     property real drawerX: sideDrawerContainer.x
     property real morphX: morphContainer.x
     property bool homeLoaded: homeLoader.item !== null
@@ -172,6 +174,8 @@ QtObject {
     property int heightDuration: islandShape.animDurationHeight
     property bool viewportClips: dashboard.viewportClips
     property real drawerWidth: dashboard.drawerWidth
+    property real drawerOpacity: dashboard.drawerOpacity
+    property bool drawerVisible: dashboard.drawerVisible
     property real drawerX: dashboard.drawerX
     property real dashboardCardWidth: dashboard.cardDimensions.width
     property real dashboardCardHeight: dashboard.cardDimensions.height
@@ -313,7 +317,7 @@ int main(int argc, char **argv) {
     auto snapshot = [&](const char *name) {
         QJsonObject row;
         for (auto key : {"contentWidth", "contentHeight", "contentY", "contentOpacity",
-                         "panelWidth", "panelHeight", "panelY", "drawerWidth", "drawerX", "morphX", "widthDuration", "heightDuration",
+                         "panelWidth", "panelHeight", "panelY", "drawerWidth", "drawerOpacity", "drawerX", "morphX", "widthDuration", "heightDuration",
                          "tabOpacity", "tabOffset", "dashboardCardWidth", "dashboardCardHeight",
                          "homeContentHeight", "homeLayoutColumns", "tabContentHeight",
                          "expandedTargetWidth", "expandedTargetHeight", "expandedContentWidth",
@@ -326,7 +330,7 @@ int main(int argc, char **argv) {
                          "dashboardActiveFocus", "scrimInteractive", "pinned", "hoverActive", "hoverPointer",
                          "wifiLoaded", "bluetoothLoaded", "homeLoaded",
                          "alertTimerRunning", "tabInputEnabled", "drawerHitTest", "drawerOverlay",
-                         "tabScrollInteractive"})
+                         "tabScrollInteractive", "drawerVisible", "contracting"})
             row[key] = w->property(key).toBool();
         for (auto key : {"alertType", "alertSummary", "mode", "tabName"})
             row[key] = w->property(key).toString();
@@ -335,6 +339,12 @@ int main(int argc, char **argv) {
         row["osdValue"] = w->property("osdValue").toDouble();
         row["osdFillValue"] = w->property("osdFillValue").toDouble();
         row["osdType"] = w->property("osdType").toString();
+        auto compactMedia = w->findChild<QQuickItem *>("compactMediaContent");
+        row["compactMediaOpacity"] = compactMedia ? compactMedia->opacity() : -1;
+        auto osdReadout = w->findChild<QQuickItem *>("feedbackOsdReadout");
+        row["osdReadout"] = osdReadout ? osdReadout->property("text").toString() : QString();
+        auto osdRing = w->findChild<QQuickItem *>("feedbackOsdRing");
+        row["osdRingProgress"] = osdRing ? osdRing->property("progress").toDouble() : -1;
         row["mediaSeekCalls"] = w->property("mediaSeekCalls").toInt();
         row["mediaPreviousCalls"] = w->property("mediaPreviousCalls").toInt();
         row["mediaNextCalls"] = w->property("mediaNextCalls").toInt();
@@ -356,8 +366,8 @@ int main(int argc, char **argv) {
         if (argc > 2 && (std::strcmp(name, "spotifyExpanded") == 0
                          || std::strcmp(name, "youtubeExpanded") == 0)) {
             const QImage frame = w->grabWindow();
-            const int cropX = (frame.width() - 380) / 2;
-            frame.copy(cropX, 0, 380, 132).save(
+            const int cropX = (frame.width() - 420) / 2;
+            frame.copy(cropX, 0, 420, 160).save(
                 QString::fromLocal8Bit(argv[2]) + "/" + name + ".png");
         }
     };
@@ -371,7 +381,8 @@ int main(int argc, char **argv) {
     QTest::qWait(100); snapshot("opening200");
     QTest::qWait(170); snapshot("opened");
     dismiss(); QTest::qWait(45); snapshot("closing45");
-    QTest::qWait(185); snapshot("closed230");
+    QTest::qWait(55); snapshot("closing100");
+    QTest::qWait(130); snapshot("closed230");
     QTest::qWait(170); snapshot("closed400");
     toggle(); QTest::qWait(100); dismiss(); QTest::qWait(45);
     snapshot("beforeReopen"); toggle(); snapshot("afterReopen");
@@ -392,7 +403,8 @@ int main(int argc, char **argv) {
     w->setWidth(1920); w->setHeight(1080); QTest::qWait(360);
     QMetaObject::invokeMethod(w, "toggle", Q_ARG(QVariant, QVariant("System")));
     QTest::qWait(30); snapshot("systemTabEntering");
-    QTest::qWait(240); snapshot("systemTabSettled");
+    QTest::qWaitFor([&] { return !w->property("drawerVisible").toBool()
+        && w->property("tabOpacity").toDouble() >= 1; }, 1000); snapshot("systemTabSettled");
     QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("unknown")));
     QTest::qWait(30); snapshot("unknownDrawerIgnored");
     QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("wifi")));
@@ -420,7 +432,16 @@ int main(int argc, char **argv) {
     QMetaObject::invokeMethod(w, "simulateMedia");
     QTest::qWait(400); snapshot("mediaRest");
     toggle(); QTest::qWait(400); snapshot("mediaDashboard");
-    dismiss(); QTest::qWait(400); snapshot("mediaReturn");
+    dismiss();
+    QTest::qWaitFor([&] { return w->property("panelHeight").toDouble() == 32
+        && w->property("panelWidth").toDouble() == 232; }, 1000);
+    snapshot("mediaShapeSettled");
+    QTest::qWait(400); snapshot("mediaReturn");
+    QMetaObject::invokeMethod(w, "pin"); QTest::qWait(370);
+    QMetaObject::invokeMethod(w, "unpin"); QTest::qWait(45);
+    snapshot("beforeOsdInterruptsShrink");
+    QMetaObject::invokeMethod(w, "osd"); snapshot("osdInterruptsShrink");
+    QMetaObject::invokeMethod(w, "clearAlert"); QTest::qWait(370);
     QMetaObject::invokeMethod(w, "osd"); snapshot("osdFromMedia");
     QMetaObject::invokeMethod(w, "osdVolume125"); snapshot("osdVolume125");
     QMetaObject::invokeMethod(w, "osdVolume150"); snapshot("osdVolume150");
@@ -554,9 +575,9 @@ int main(int argc, char **argv) {
 
     def test_expanded_capsule_is_horizontal_and_uses_seek_fallback(self):
         expanded = self.rows["youtubeExpanded"]
-        self.assertEqual((expanded["expandedTargetWidth"], expanded["expandedTargetHeight"]), (380, 132))
-        self.assertEqual(expanded["expandedContentWidth"], 348)
-        self.assertEqual((expanded["expandedArtworkWidth"], expanded["expandedArtworkHeight"]), (68, 68))
+        self.assertEqual((expanded["expandedTargetWidth"], expanded["expandedTargetHeight"]), (420, 160))
+        self.assertEqual(expanded["expandedContentWidth"], 380)
+        self.assertEqual((expanded["expandedArtworkWidth"], expanded["expandedArtworkHeight"]), (100, 100))
         self.assertGreaterEqual(expanded["expandedTimelineX"], expanded["expandedArtworkRight"] + 8, expanded)
         self.assertEqual(expanded["previousActionLabel"], "−10s")
         self.assertEqual(expanded["nextActionLabel"], "+10s")
@@ -583,7 +604,7 @@ int main(int argc, char **argv) {
         self.assertLess(first['contentY'], middle['contentY'])
         self.assertLess(first['contentOpacity'], middle['contentOpacity'])
         self.assertEqual((opened['panelWidth'], opened['panelHeight'], opened['panelY']),
-                         (900, 520, 0))
+                         (900, 520, 6))
         self.assertEqual((opened['contentY'], opened['contentOpacity']), (0, 1))
         self.assertNotIn('ReferenceError', self.stderr)
         self.assertNotIn('TypeError', self.stderr)
@@ -600,6 +621,24 @@ int main(int argc, char **argv) {
         self.assertFalse(self.rows['closed400']['dashboardVisible'], self.rows['closed400'])
         self.assertEqual(self.rows['closed400']['panelHeight'], 32)
         self.assertEqual(self.rows['closed400']['panelWidth'], 138)
+
+    def test_close_does_not_collapse_most_of_the_surface_in_the_first_frames(self):
+        opened = self.rows['opened']['panelHeight']
+        target = self.rows['closed400']['panelHeight']
+        midway = (opened - self.rows['closing100']['panelHeight']) / (opened - target)
+        self.assertLess(midway, 0.7,
+                        'closing rushes to the target then spends its remaining time creeping')
+
+    def test_compact_media_is_ready_when_the_surface_finishes_contracting(self):
+        self.assertEqual(self.rows['mediaShapeSettled']['compactMediaOpacity'], 1,
+                         'a second opacity animation must not trail the shrinking surface')
+
+    def test_osd_interrupt_keeps_contracting_from_the_rendered_size(self):
+        before = self.rows['beforeOsdInterruptsShrink']
+        interrupted = self.rows['osdInterruptsShrink']
+        self.assertGreater(before['panelHeight'], 48)
+        self.assertTrue(interrupted['contracting'], interrupted)
+        self.assertEqual(interrupted['heightDuration'], self.rows['closing45']['heightDuration'])
 
     def test_reopening_during_close_reverses_without_reset(self):
         self.assertAlmostEqual(self.rows['beforeReopen']['panelHeight'],
@@ -658,7 +697,9 @@ int main(int argc, char **argv) {
         self.assertFalse(entering['sideDrawerOpen'], entering)
         self.assertGreater(entering['drawerWidth'], 0, entering)
         self.assertFalse(entering['drawerHitTest'], entering)
-        self.assertEqual(settled['drawerWidth'], 0)
+        self.assertEqual(settled['drawerWidth'], 360)
+        self.assertEqual(settled['drawerOpacity'], 0)
+        self.assertFalse(settled['drawerVisible'])
         self.assertFalse(settled['wifiLoaded'])
         self.assertFalse(self.rows['homeTabRestored']['sideDrawerOpen'])
 
@@ -715,7 +756,7 @@ int main(int argc, char **argv) {
 
         normal = self.rows['drawer1280Viewport']
         self.assertEqual(normal['homeLayoutColumns'], 3, normal)
-        self.assertEqual(normal['homeContentHeight'], 520, normal)
+        self.assertLessEqual(normal['homeContentHeight'], normal['tabViewportHeight'], normal)
         narrow = self.rows['drawer768Viewport']
         self.assertEqual(narrow['homeLayoutColumns'], 2, narrow)
         self.assertEqual(narrow['homeContentHeight'], 520, narrow)
@@ -748,11 +789,14 @@ int main(int argc, char **argv) {
         self.assertEqual(amplified['osdType'], 'volume')
         self.assertEqual(amplified['osdValue'], 1.25)
         self.assertEqual(amplified['osdFillValue'], 1)
+        self.assertEqual(amplified['osdReadout'], '125%')
+        self.assertEqual(amplified['osdRingProgress'], 1)
         self.assertEqual(self.rows['osdVolume150']['osdValue'], 1.5)
         self.assertEqual(self.rows['osdVolume150']['osdFillValue'], 1)
         self.assertEqual(self.rows['osdBrightnessOverflow']['osdType'], 'brightness')
         self.assertEqual(self.rows['osdBrightnessOverflow']['osdValue'], 1)
         self.assertEqual(self.rows['osdBrightnessOverflow']['osdFillValue'], 1)
+        self.assertEqual(self.rows['osdBrightnessOverflow']['osdReadout'], '100%')
         self.assertEqual(self.rows['osdInvalid']['osdValue'], 0)
         self.assertEqual(self.rows['osdInvalid']['osdFillValue'], 0)
 
@@ -806,7 +850,7 @@ int main(int argc, char **argv) {
                 self.assertEqual(self.rows[name]['hoverActive'], preview, self.rows[name])
 
     def test_media_pin_outside_dismiss_and_hover_rearms_after_exit(self):
-        self.assertEqual(self.rows['hoverSettledBeforePin']['panelHeight'], 132)
+        self.assertEqual(self.rows['hoverSettledBeforePin']['panelHeight'], 160)
         self.assertTrue(self.rows['hoverPinnedByClick']['pinned'], self.rows['hoverSettledBeforePin'])
         self.assertTrue(self.rows['hoverPinnedByClick']['scrimInteractive'])
         self.assertFalse(self.rows['hoverDismissedInPlace']['pinned'])

@@ -2,6 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Shapes
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 import "../theme"
@@ -16,9 +18,10 @@ PanelWindow {
     screen: targetScreen
     color: "transparent"
     visible: true
+    readonly property real topGap: 6
     // Grow ahead of the pill animation; delay shrinking until the morph settles.
-    readonly property real requestedLayerHeight: Math.ceil(Math.max(currentDims.height, islandShape.pillHeight) + 8)
-    property real retainedLayerHeight: IslandState.targetDimensions(IslandState.State.IDLE).height + 8
+    readonly property real requestedLayerHeight: Math.ceil(Math.max(currentDims.height, islandShape.pillHeight) + topGap + 8)
+    property real retainedLayerHeight: IslandState.targetDimensions(IslandState.State.IDLE).height + topGap + 8
     implicitHeight: Math.max(requestedLayerHeight, retainedLayerHeight)
 
     function reconcileLayerHeight(): void {
@@ -64,15 +67,15 @@ PanelWindow {
     WlrLayershell.keyboardFocus: dashboard.expanded ? WlrKeyboardFocus.Exclusive
         : (isPinned ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
 
-    // Match the interactive body, excluding the transparent anti-corner margins.
+    // Match the floating surface, including its rounded top corners.
     mask: Region {
         item: islandWindow.modalOpen ? scrim : null
         x: islandContainer.x + islandShape.a
         y: islandContainer.y
         width: islandShape.pillWidth
         height: islandShape.pillHeight
-        topLeftRadius: 0
-        topRightRadius: 0
+        topLeftRadius: islandWindow.modalOpen ? 0 : islandShape.r
+        topRightRadius: islandWindow.modalOpen ? 0 : islandShape.r
         bottomLeftRadius: islandWindow.modalOpen ? 0 : islandShape.r
         bottomRightRadius: islandWindow.modalOpen ? 0 : islandShape.r
     }
@@ -81,6 +84,7 @@ PanelWindow {
 
     // State properties
     property string activeMode: "idle"
+    property bool contracting: false
     property var activeAlert: null
     property bool hoverPreview: false
     property bool isPinned: false
@@ -156,7 +160,16 @@ PanelWindow {
     }
 
     function updateMode(): void {
-        activeMode = IslandState.resolveState(activeAlert, hasMedia, hoverPreview, isPinned, dashboard.expanded);
+        const nextMode = IslandState.resolveState(activeAlert, hasMedia, hoverPreview, isPinned, dashboard.expanded);
+        if (nextMode === activeMode) return;
+        const nextDims = nextMode === IslandState.State.DASHBOARD
+            ? dashboardDimensions : IslandState.targetDimensions(nextMode);
+        // Latch direction before retargeting; keep timing stable through the final frame.
+        const fromHeight = islandShape ? islandShape.pillHeight : currentDims.height;
+        const fromWidth = islandShape ? islandShape.pillWidth : currentDims.width;
+        contracting = nextDims.height < fromHeight
+            || (nextDims.height === fromHeight && nextDims.width < fromWidth);
+        activeMode = nextMode;
     }
 
     onHoverPreviewChanged: updateMode()
@@ -267,7 +280,7 @@ PanelWindow {
         Item {
             id: islandContainer
             anchors.top: parent.top
-            anchors.topMargin: 0
+            anchors.topMargin: islandWindow.topGap
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.horizontalCenterOffset: -dashboard.drawerOffset
             width: islandShape.width
@@ -279,17 +292,20 @@ PanelWindow {
                 pillWidth: islandWindow.currentDims.width
                 pillHeight: islandWindow.currentDims.height
                 bottomRadius: islandWindow.currentDims.radius
-                antiCornerRadius: 7
-                animDurationWidth: dashboard.expanded ? 320 : dashboard.closing ? 200 : islandWindow.activeMode === IslandState.State.EXPANDED ? 340 : 270
-                animDurationHeight: dashboard.expanded ? 320 : dashboard.closing ? 200 : islandWindow.activeMode === IslandState.State.EXPANDED ? 320 : 250
+                antiCornerRadius: 0
+                animDurationWidth: islandWindow.contracting ? 220
+                    : dashboard.expanded || islandWindow.activeMode === IslandState.State.EXPANDED ? 320 : 260
+                animDurationHeight: islandShape.animDurationWidth
+                easingTypeWidth: islandWindow.contracting ? Easing.InOutQuad : Easing.OutQuint
+                easingTypeHeight: islandShape.easingTypeWidth
                 onPillWidthChanged: islandWindow.finishDashboardClose()
                 onPillHeightChanged: islandWindow.finishDashboardClose()
                 overshoot: 0
                 fillColor: islandWindow.islandColor
                 borderColor: Tokens.outline
-                showAntiCorners: true
+                showAntiCorners: false
                 Behavior on bottomRadius {
-                    NumberAnimation { duration: 270; easing.type: Easing.OutCubic }
+                    NumberAnimation { duration: islandShape.animDurationHeight; easing.type: islandShape.easingTypeHeight }
                 }
             }
 
@@ -333,7 +349,7 @@ PanelWindow {
 
                 RowLayout {
                     opacity: islandWindow.reveal(IslandState.State.IDLE)
-                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
                     visible: opacity > 0
                     enabled: opacity > 0.9
                     anchors.centerIn: parent
@@ -353,8 +369,9 @@ PanelWindow {
                 }
 
                 RowLayout {
+                    objectName: "compactMediaContent"
                     opacity: islandWindow.reveal(IslandState.State.MEDIA)
-                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
                     visible: opacity > 0
                     enabled: opacity > 0.9
                     anchors.centerIn: parent
@@ -415,71 +432,90 @@ PanelWindow {
                     }
                 }
 
-            // 2. OSD Volume/Brightness Content (Refined & Modernized)
+            // Compact feedback inspired by Tide Island: a clear readout and progress ring.
             RowLayout {
+                id: osdContent
                 opacity: islandWindow.reveal(IslandState.State.OSD)
-                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
                 visible: opacity > 0
-                enabled: opacity > 0.9
                 anchors.centerIn: parent
                 width: IslandState.targetDimensions(IslandState.State.OSD).width - 32
-                height: 32
+                height: 34
                 spacing: 10
 
-                // Prominent Audio Glyph
-                Text {
-                    Layout.alignment: Qt.AlignVCenter
-                    text: islandWindow.osdIcon
-                    font.pixelSize: 18
-                    color: Tokens.accent
-                }
-
-                // Volume Progress Track
                 Rectangle {
-                    Layout.fillWidth: true
-                    height: 5
-                    radius: 2.5
-                    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.9)
-                    clip: true
-
-                    Rectangle {
-                        height: parent.height
-                        width: parent.width * islandWindow.osdFill
-                        radius: 2.5
+                    Layout.preferredWidth: 30
+                    Layout.preferredHeight: 30
+                    radius: 15
+                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.14)
+                    Text {
+                        anchors.centerIn: parent
+                        text: islandWindow.osdIcon
+                        font.pixelSize: 17
                         color: Tokens.accent
-
-                        Behavior on width {
-                            NumberAnimation { duration: 110; easing.type: Easing.OutCubic }
-                        }
                     }
                 }
 
-                // Value Percentage Text with Tabular Digits
-                Text {
-                    Layout.alignment: Qt.AlignVCenter
-                    Layout.preferredWidth: 34
-                    horizontalAlignment: Text.AlignRight
-                    text: Math.round(islandWindow.osdProgress * 100) + "%"
-                    font.pixelSize: 12
-                    font.bold: true
-                    font.features: { "tnum": 1 }
-                    color: Tokens.text_primary
+                Column {
+                    Layout.fillWidth: true
+                    spacing: 0
+                    Text {
+                        text: islandWindow.osdKind === "brightness" ? qsTr("Brightness")
+                            : islandWindow.osdProgress > 1 ? qsTr("Volume · Boost") : qsTr("Volume")
+                        font.pixelSize: 10
+                        color: Tokens.text_secondary
+                    }
+                    Text {
+                        objectName: "feedbackOsdReadout"
+                        text: Math.round(islandWindow.osdProgress * 100) + "%"
+                        font.pixelSize: 18
+                        font.weight: Font.DemiBold
+                        font.features: { "tnum": 1 }
+                        color: Tokens.text_primary
+                    }
                 }
 
-                Text {
-                    Layout.alignment: Qt.AlignVCenter
-                    Layout.preferredWidth: 9
-                    text: islandWindow.osdKind === "volume" && islandWindow.osdProgress > 1 ? "+" : ""
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Tokens.accent
+                Shape {
+                    id: osdRing
+                    objectName: "feedbackOsdRing"
+                    Layout.preferredWidth: 30
+                    Layout.preferredHeight: 30
+                    preferredRendererType: Shape.CurveRenderer
+                    readonly property real progress: islandWindow.osdFill
+                    property real displayedProgress: progress
+                    Behavior on displayedProgress {
+                        enabled: osdContent.opacity > 0.95
+                        SmoothedAnimation { velocity: 1.8; duration: 180 }
+                    }
+                    ShapePath {
+                        fillColor: "transparent"
+                        strokeColor: Qt.rgba(Tokens.text_primary.r, Tokens.text_primary.g, Tokens.text_primary.b, 0.16)
+                        strokeWidth: 3
+                        PathAngleArc {
+                            centerX: 15; centerY: 15
+                            radiusX: 12; radiusY: 12
+                            startAngle: -90; sweepAngle: 360
+                        }
+                    }
+                    ShapePath {
+                        fillColor: "transparent"
+                        strokeColor: Tokens.text_primary
+                        strokeWidth: 3
+                        capStyle: ShapePath.RoundCap
+                        PathAngleArc {
+                            centerX: 15; centerY: 15
+                            radiusX: 12; radiusY: 12
+                            startAngle: -90
+                            sweepAngle: 360 * osdRing.displayedProgress
+                        }
+                    }
                 }
             }
 
             // 4. Notification Alert Content
             RowLayout {
                 opacity: islandWindow.reveal(IslandState.State.NOTIFICATION)
-                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
                 visible: opacity > 0
                 enabled: opacity > 0.9
                 anchors.centerIn: parent
@@ -562,13 +598,13 @@ PanelWindow {
             Item {
                 id: expandedMediaContent
                 opacity: islandWindow.reveal(IslandState.State.EXPANDED)
-                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
                 visible: opacity > 0
                 // Enable visible controls during the final part of the reveal animation.
                 enabled: islandWindow.activeMode === IslandState.State.EXPANDED && opacity > 0.5
                 anchors.centerIn: parent
-                width: IslandState.targetDimensions(IslandState.State.EXPANDED).width - 32
-                height: IslandState.targetDimensions(IslandState.State.EXPANDED).height - 24
+                width: IslandState.targetDimensions(IslandState.State.EXPANDED).width - 40
+                height: IslandState.targetDimensions(IslandState.State.EXPANDED).height - 32
 
                 // MPRIS position is read on demand; refresh bindings while the card is visible.
                 Timer {
@@ -614,39 +650,52 @@ PanelWindow {
 
                 RowLayout {
                     anchors.fill: parent
-                    spacing: 24
+                    spacing: 20
 
                     Rectangle {
-                        Layout.preferredWidth: 68
-                        Layout.minimumWidth: 68
-                        Layout.maximumWidth: 68
-                        Layout.preferredHeight: 68
+                        Layout.preferredWidth: 100
+                        Layout.minimumWidth: 100
+                        Layout.maximumWidth: 100
+                        Layout.preferredHeight: 100
                         Layout.alignment: Qt.AlignVCenter
-                        radius: 14
+                        radius: 18
                         color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
                                        Tokens.surface_high.b, 0.72)
                         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
                                               Tokens.outline.b, 0.42)
                         border.width: 1
-                        clip: true
 
                         Image {
                             id: expandedArtwork
                             anchors.fill: parent
                             source: Media.hasPlayer ? Media.trackArtUrl : ""
-                            sourceSize.width: 204
-                            sourceSize.height: 204
+                            sourceSize.width: 300
+                            sourceSize.height: 300
                             fillMode: Image.PreserveAspectCrop
                             visible: Media.hasPlayer && Media.trackArtUrl.length > 0
                                 && status === Image.Ready
                             asynchronous: true
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                maskEnabled: true
+                                maskSource: expandedArtworkMask
+                            }
+                        }
+
+                        Rectangle {
+                            id: expandedArtworkMask
+                            anchors.fill: expandedArtwork
+                            radius: 18
+                            color: "white"
+                            layer.enabled: true
+                            visible: false
                         }
 
                         Text {
                             objectName: "expandedArtworkFallback"
                             anchors.centerIn: parent
                             text: "󰎆"
-                            font.pixelSize: 26
+                            font.pixelSize: 32
                             color: Tokens.text_secondary
                             visible: expandedArtwork.status !== Image.Ready
                         }
@@ -656,15 +705,14 @@ PanelWindow {
                         id: expandedMediaDetails
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        Layout.topMargin: 8
-                        spacing: 3
+                        spacing: 6
 
                         Text {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 24
                             text: islandWindow.hasMedia ? Media.trackTitle : "No media playing"
                             textFormat: Text.PlainText
-                            font.pixelSize: 16
+                            font.pixelSize: 17
                             font.weight: Font.DemiBold
                             color: Tokens.text_primary
                             elide: Text.ElideRight
@@ -673,7 +721,7 @@ PanelWindow {
 
                         Text {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 15
+                            Layout.preferredHeight: 18
                             text: islandWindow.hasMedia
                                 ? (Media.trackArtist || "Active audio stream")
                                 : "Play something to get started"
@@ -686,13 +734,13 @@ PanelWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 17
+                            Layout.preferredHeight: 20
                             spacing: 7
                             visible: Media.length > 0
 
                             Text {
                                 text: Media.formatTime(Media.position)
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.weight: Font.Medium
                                 font.features: { "tnum": 1 }
                                 color: Tokens.text_secondary
@@ -702,19 +750,18 @@ PanelWindow {
                                 id: progressBarTrack
                                 objectName: "mediaSeekTimeline"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 3
-                                Layout.minimumHeight: 3
-                                Layout.maximumHeight: 3
-                                radius: 1.5
+                                Layout.preferredHeight: 4
+                                Layout.minimumHeight: 4
+                                Layout.maximumHeight: 4
+                                radius: 2
                                 opacity: expandedMediaContent.seekAvailable ? 1 : 0.55
                                 color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
                                                Tokens.surface_high.b, 0.88)
-                                clip: true
 
                                 Rectangle {
                                     height: parent.height
                                     width: Math.min(parent.width, Math.max(0, parent.width * Media.progress))
-                                    radius: 1.5
+                                    radius: 2
                                     color: Tokens.accent
 
                                     Behavior on width {
@@ -737,7 +784,7 @@ PanelWindow {
 
                             Text {
                                 text: Media.length > 0 ? Media.formatTime(Media.length) : "--:--"
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.weight: Font.Medium
                                 font.features: { "tnum": 1 }
                                 color: Tokens.text_secondary
@@ -746,32 +793,28 @@ PanelWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 28
-                            Layout.topMargin: 1
+                            Layout.preferredHeight: 42
+                            Layout.topMargin: 2
                             spacing: 7
 
                             Item { Layout.fillWidth: true }
 
                             Rectangle {
                                 objectName: "mediaShuffleButton"
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                radius: 10
+                                Layout.preferredWidth: 30
+                                Layout.preferredHeight: 30
+                                radius: 15
                                 enabled: expandedMediaContent.shuffleAvailable
                                 opacity: expandedMediaContent.shuffleAvailable ? 1 : 0.35
                                 color: shuffleTap.pressed
                                     ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
                                     : (shuffleHover.hovered
                                         ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
-                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
-                                border.width: 1
-                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
-                                    Tokens.outline.b, 0.55)
-
+                                        : "transparent")
                                 Text {
                                     anchors.centerIn: parent
                                     text: "󰒟"
-                                    font.pixelSize: 13
+                                    font.pixelSize: 15
                                     color: Media.activePlayer && Media.activePlayer.shuffle
                                         ? Tokens.accent : Tokens.text_secondary
                                 }
@@ -789,9 +832,9 @@ PanelWindow {
 
                             Rectangle {
                                 objectName: "mediaPreviousButton"
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                radius: 12
+                                Layout.preferredWidth: 34
+                                Layout.preferredHeight: 34
+                                radius: 17
                                 enabled: islandWindow.hasMedia
                                     && (Media.canPrev || expandedMediaContent.seekAvailable)
                                 opacity: enabled ? 1 : 0.35
@@ -799,17 +842,13 @@ PanelWindow {
                                     ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
                                     : (previousHover.hovered
                                         ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
-                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
-                                border.width: 1
-                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b,
-                                    previousHover.hovered || previousTap.pressed ? 0.7 : 0.36)
-
+                                        : "transparent")
                                 Text {
                                     objectName: "mediaPreviousActionLabel"
                                     anchors.centerIn: parent
                                     text: Media.canPrev ? "󰒮"
                                         : (expandedMediaContent.seekAvailable ? "−10s" : "󰒮")
-                                    font.pixelSize: Media.canPrev || !expandedMediaContent.seekAvailable ? 14 : 8
+                                    font.pixelSize: Media.canPrev || !expandedMediaContent.seekAvailable ? 19 : 10
                                     font.weight: Font.DemiBold
                                     color: previousHover.hovered ? Tokens.accent : Tokens.text_secondary
                                 }
@@ -832,25 +871,19 @@ PanelWindow {
 
                             Rectangle {
                                 objectName: "mediaPlayButton"
-                                Layout.preferredWidth: 28
-                                Layout.preferredHeight: 28
-                                radius: 14
+                                Layout.preferredWidth: 42
+                                Layout.preferredHeight: 42
+                                radius: 21
                                 enabled: islandWindow.hasMedia && Media.canToggle
                                 opacity: enabled ? 1 : 0.35
-                                color: playTap.pressed
-                                    ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.82)
-                                    : (playHover.hovered
-                                        ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.62)
-                                        : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.36))
-                                border.width: 1
-                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b,
-                                    playHover.hovered || playTap.pressed ? 0.72 : 0.45)
+                                color: playTap.pressed ? Qt.darker(Tokens.accent, 1.12)
+                                    : (playHover.hovered ? Qt.lighter(Tokens.accent, 1.08) : Tokens.accent)
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: Media.isPlaying ? "󰏤" : "󰐊"
-                                    font.pixelSize: 14
-                                    color: playHover.hovered ? Tokens.accent : Tokens.text_primary
+                                    font.pixelSize: 23
+                                    color: Tokens.on_accent
                                 }
                                 HoverHandler {
                                     id: playHover
@@ -866,9 +899,9 @@ PanelWindow {
 
                             Rectangle {
                                 objectName: "mediaNextButton"
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                radius: 12
+                                Layout.preferredWidth: 34
+                                Layout.preferredHeight: 34
+                                radius: 17
                                 enabled: islandWindow.hasMedia
                                     && (Media.canNext || expandedMediaContent.seekAvailable)
                                 opacity: enabled ? 1 : 0.35
@@ -876,17 +909,13 @@ PanelWindow {
                                     ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
                                     : (nextHover.hovered
                                         ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
-                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
-                                border.width: 1
-                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b,
-                                    nextHover.hovered || nextTap.pressed ? 0.7 : 0.36)
-
+                                        : "transparent")
                                 Text {
                                     objectName: "mediaNextActionLabel"
                                     anchors.centerIn: parent
                                     text: Media.canNext ? "󰒭"
                                         : (expandedMediaContent.seekAvailable ? "+10s" : "󰒭")
-                                    font.pixelSize: Media.canNext || !expandedMediaContent.seekAvailable ? 14 : 8
+                                    font.pixelSize: Media.canNext || !expandedMediaContent.seekAvailable ? 19 : 10
                                     font.weight: Font.DemiBold
                                     color: nextHover.hovered ? Tokens.accent : Tokens.text_secondary
                                 }
@@ -909,26 +938,22 @@ PanelWindow {
 
                             Rectangle {
                                 objectName: "mediaLoopButton"
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                radius: 10
+                                Layout.preferredWidth: 30
+                                Layout.preferredHeight: 30
+                                radius: 15
                                 enabled: expandedMediaContent.loopAvailable
                                 opacity: expandedMediaContent.loopAvailable ? 1 : 0.35
                                 color: loopTap.pressed
                                     ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
                                     : (loopHover.hovered
                                         ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
-                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
-                                border.width: 1
-                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
-                                    Tokens.outline.b, 0.55)
-
+                                        : "transparent")
                                 Text {
                                     anchors.centerIn: parent
                                     text: Media.activePlayer
                                         && Media.activePlayer.loopState === Media.loopTrack
                                         ? "󰑗" : "󰑖"
-                                    font.pixelSize: 13
+                                    font.pixelSize: 15
                                     color: Media.activePlayer
                                         && Media.activePlayer.loopState !== Media.loopNone
                                         ? Tokens.accent : Tokens.text_secondary
@@ -947,22 +972,18 @@ PanelWindow {
 
                             Rectangle {
                                 objectName: "mediaPinButton"
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                radius: 10
+                                Layout.preferredWidth: 30
+                                Layout.preferredHeight: 30
+                                radius: 15
                                 color: pinTap.pressed
                                     ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.72)
                                     : (pinHover.hovered
                                         ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.46)
-                                        : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.12))
-                                border.width: 1
-                                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
-                                    Tokens.outline.b, pinHover.hovered ? 0.7 : 0.36)
-
+                                        : "transparent")
                                 Text {
                                     anchors.centerIn: parent
                                     text: islandWindow.isPinned ? "󰅖" : "󰐃"
-                                    font.pixelSize: 13
+                                    font.pixelSize: 15
                                     color: pinHover.hovered || islandWindow.isPinned ? Tokens.accent : Tokens.text_secondary
                                 }
                                 HoverHandler {

@@ -6,6 +6,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Wayland
 import "../theme"
+import "LaunchCommand.js" as LaunchCommand
 
 PanelWindow {
     id: launcherWindow
@@ -14,6 +15,13 @@ PanelWindow {
     screen: targetScreen
     color: "transparent"
     visible: false
+    property bool closing: false
+
+    Timer {
+        id: closeTimer
+        interval: 110
+        onTriggered: launcherWindow.visible = false
+    }
 
     anchors {
         top: true
@@ -24,7 +32,7 @@ PanelWindow {
 
     exclusiveZone: 0
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: visible && !closing ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     mask: Region {
         item: launcherWindow.visible ? scrim : null
@@ -183,11 +191,14 @@ PanelWindow {
     }
 
     function toggle(): void {
-        visible = !visible;
+        if (visible) dismiss();
+        else visible = true;
     }
 
     function dismiss(): void {
-        visible = false;
+        if (!visible || closing) return;
+        closing = true;
+        closeTimer.restart();
     }
 
     function cycleCategory(step: int): void {
@@ -202,6 +213,7 @@ PanelWindow {
     }
 
     function executeCommand(cmd: string): void {
+        if (closing) return;
         var cleanCmd = cmd ? cmd.trim() : "";
         if (cleanCmd.startsWith(">")) {
             cleanCmd = cleanCmd.substring(1).trim();
@@ -212,13 +224,14 @@ PanelWindow {
         var args = ["uwsm", "app", "--", terminal, "-e", "bash", "-c", cleanCmd];
         try {
             Quickshell.execDetached(args);
-            launcherWindow.visible = false;
+            dismiss();
         } catch (e) {
             console.warn("Command execution failed: " + e);
         }
     }
 
     function launchSelected(): void {
+        if (closing) return;
         var query = searchText.trim();
         if (query.startsWith(">")) {
             executeCommand(query);
@@ -232,8 +245,11 @@ PanelWindow {
             if (item.isCommand) {
                 executeCommand(item.command);
             } else if (typeof item.execute === "function") {
-                item.execute();
-                launcherWindow.visible = false;
+                const context = LaunchCommand.launchContext(item,
+                    Quickshell.env("TERMINAL"), Quickshell.env("HOME"));
+                if (context) Quickshell.execDetached(context);
+                else item.execute();
+                dismiss();
             }
         }
     }
@@ -249,6 +265,8 @@ PanelWindow {
     }
 
     onVisibleChanged: {
+        closeTimer.stop();
+        closing = false;
         if (visible) {
             searchText = "";
             selectedCategory = "All";
@@ -260,36 +278,43 @@ PanelWindow {
         }
     }
 
-    // Backdrop Scrim (transparent: no dimming or blur, dismisses launcher on outside click)
+    // Backdrop Scrim: keep application names readable over busy windows.
     Rectangle {
         id: scrim
         anchors.fill: parent
-        color: "transparent"
+        color: Qt.rgba(Tokens.background.r, Tokens.background.g, Tokens.background.b,
+                       launcherWindow.visible && !launcherWindow.closing ? 0.22 : 0)
+        Behavior on color { ColorAnimation { duration: 110 } }
 
         TapHandler {
-            onTapped: launcherWindow.visible = false
+            onTapped: (eventPoint) => {
+                const p = launcherCard.mapFromItem(scrim, eventPoint.position.x, eventPoint.position.y);
+                if (p.x < 0 || p.y < 0 || p.x > launcherCard.width || p.y > launcherCard.height)
+                    launcherWindow.dismiss();
+            }
         }
 
         // Center Launcher Card
         Rectangle {
             id: launcherCard
             anchors.centerIn: parent
-            width: Math.min(580, parent.width - 32)
-            height: Math.min(540, parent.height - 48)
-            radius: 18
-            color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Tokens.panelOpacity)
+            width: Math.min(620, parent.width - 32)
+            height: Math.min(570, parent.height - 48)
+            radius: 26
+            color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Math.max(0.97, Tokens.panelOpacity))
             border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
             border.width: 1
             clip: true
 
-            scale: launcherWindow.visible ? 1.0 : 0.96
-            opacity: launcherWindow.visible ? 1.0 : 0.0
+            enabled: !launcherWindow.closing
+            scale: launcherWindow.visible && !launcherWindow.closing ? 1.0 : 0.98
+            opacity: launcherWindow.visible && !launcherWindow.closing ? 1.0 : 0.0
 
             Behavior on scale {
-                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: launcherWindow.closing ? 110 : 150; easing.type: Easing.OutCubic }
             }
             Behavior on opacity {
-                NumberAnimation { duration: 160; easing.type: Easing.OutQuad }
+                NumberAnimation { duration: launcherWindow.closing ? 100 : 130; easing.type: Easing.OutQuad }
             }
 
             TapHandler {
@@ -298,14 +323,30 @@ PanelWindow {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 16
-                spacing: 12
+                anchors.margins: 20
+                spacing: 14
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "Applications"
+                        font.pixelSize: 16
+                        font.weight: Font.DemiBold
+                        color: Tokens.text_primary
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: launcherWindow.filteredApps.length + " results"
+                        font.pixelSize: 11
+                        color: Tokens.text_secondary
+                    }
+                }
 
                 // Search Input Box
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 44
-                    radius: 12
+                    height: 52
+                    radius: 18
                     color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.8)
                     border.color: searchInput.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                     border.width: searchInput.activeFocus ? 1.5 : 1
@@ -318,7 +359,7 @@ PanelWindow {
 
                         Text {
                             text: launcherWindow.searchText.trim().startsWith(">") ? "󰞷" : "󰍉"
-                            font.pixelSize: 18
+                            font.pixelSize: 21
                             color: Tokens.accent
                         }
 
@@ -326,10 +367,20 @@ PanelWindow {
                             id: searchInput
                             Layout.fillWidth: true
                             color: Tokens.text_primary
-                            font.pixelSize: 14
+                            font.pixelSize: 16
                             verticalAlignment: TextInput.AlignVCenter
                             activeFocusOnPress: true
                             selectByMouse: true
+                            clip: true
+
+                            Text {
+                                anchors.fill: parent
+                                visible: searchInput.text.length === 0
+                                text: "Search applications…"
+                                color: Tokens.text_secondary
+                                font: searchInput.font
+                                verticalAlignment: Text.AlignVCenter
+                            }
 
                             onTextChanged: {
                                 launcherWindow.searchText = text;
@@ -338,7 +389,7 @@ PanelWindow {
                             }
 
                             Keys.onEscapePressed: (event) => {
-                                launcherWindow.visible = false;
+                                launcherWindow.dismiss();
                                 event.accepted = true;
                             }
 
@@ -497,6 +548,8 @@ PanelWindow {
                         id: appList
                         anchors.fill: parent
                         model: launcherWindow.filteredApps
+                        reuseItems: true
+                        cacheBuffer: 120
                         spacing: 4
                         currentIndex: launcherWindow.selectedIndex
                         boundsBehavior: Flickable.StopAtBounds
@@ -509,14 +562,14 @@ PanelWindow {
                             readonly property bool isCommand: appDelegate.modelData && appDelegate.modelData.isCommand === true
 
                             width: appList.width
-                            height: 48
-                            radius: 12
+                            height: 56
+                            radius: 16
 
                             color: isSelected
-                                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
+                                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.12)
                                 : (appHover.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.5) : "transparent")
                             border.color: isSelected
-                                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.45)
+                                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.26)
                                 : (appHover.hovered ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25) : "transparent")
                             border.width: 1
 
@@ -529,20 +582,10 @@ PanelWindow {
                                 anchors.rightMargin: 12
                                 spacing: 12
 
-                                // Active selection indicator bar on left
-                                Rectangle {
-                                    Layout.preferredWidth: 3
-                                    Layout.preferredHeight: 20
-                                    radius: 1.5
-                                    color: Tokens.accent
-                                    opacity: appDelegate.isSelected ? 1.0 : 0.0
-                                    Behavior on opacity { NumberAnimation { duration: 120 } }
-                                }
-
                                 // Icon container
                                 Item {
-                                    Layout.preferredWidth: 28
-                                    Layout.preferredHeight: 28
+                                    Layout.preferredWidth: 36
+                                    Layout.preferredHeight: 36
 
                                     // Command runner icon box
                                     Rectangle {
@@ -570,6 +613,7 @@ PanelWindow {
                                             ? (Quickshell.iconPath(appDelegate.modelData.icon) || appDelegate.modelData.icon)
                                             : ""
                                         asynchronous: true
+                                        sourceSize: Qt.size(36, 36)
                                         fillMode: Image.PreserveAspectFit
                                     }
 
@@ -591,9 +635,9 @@ PanelWindow {
                                     Text {
                                         Layout.fillWidth: true
                                         text: (appDelegate.modelData && appDelegate.modelData.name) ? appDelegate.modelData.name : ""
-                                        font.pixelSize: 13
-                                        font.bold: appDelegate.isSelected
-                                        color: appDelegate.isSelected ? Tokens.accent : Tokens.text_primary
+                                        font.pixelSize: 14
+                                        font.weight: appDelegate.isSelected ? Font.DemiBold : Font.Normal
+                                        color: Tokens.text_primary
                                         elide: Text.ElideRight
                                     }
 
@@ -604,16 +648,16 @@ PanelWindow {
                                             if (appDelegate.isCommand) return appDelegate.modelData.comment || "";
                                             return appDelegate.modelData.comment || appDelegate.modelData.genericName || "";
                                         }
-                                        font.pixelSize: 10
+                                        font.pixelSize: 11
                                         color: Tokens.text_secondary
                                         elide: Text.ElideRight
                                         visible: text.length > 0
                                     }
                                 }
 
-                                // Command runner hint badge
+                                // The selected row states the Enter action.
                                 Rectangle {
-                                    visible: appDelegate.isCommand
+                                    visible: appDelegate.isCommand || appDelegate.isSelected
                                     Layout.preferredHeight: 20
                                     radius: 10
                                     color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
@@ -627,7 +671,7 @@ PanelWindow {
                                         spacing: 4
 
                                         Text {
-                                            text: "↵ Run"
+                                            text: appDelegate.isCommand ? "↵ Run" : "↵ Open"
                                             font.pixelSize: 10
                                             font.bold: true
                                             color: Tokens.accent

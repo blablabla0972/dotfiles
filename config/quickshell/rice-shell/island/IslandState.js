@@ -61,19 +61,19 @@ function dashboardGeometry(screenWidth, screenHeight, antiCornerRadius) {
 function targetDimensions(state, details) {
     switch (state) {
         case State.IDLE:
-            return { width: 138, height: 32, radius: 12 };
+            return { width: 138, height: 32, radius: 16 };
         case State.MEDIA:
-            return { width: 232, height: 32, radius: 12 };
+            return { width: 232, height: 32, radius: 16 };
         case State.OSD:
-            return { width: 264, height: 38, radius: 15 };
+            return { width: 244, height: 48, radius: 24 };
         case State.NOTIFICATION:
             return { width: 390, height: 88, radius: 20 };
         case State.DASHBOARD:
             return { width: Dashboard.width, height: Dashboard.height, radius: Dashboard.radius };
         case State.EXPANDED:
-            return { width: 380, height: 132, radius: 24 };
+            return { width: 420, height: 160, radius: 26 };
         default:
-            return { width: 138, height: 32, radius: 12 };
+            return { width: 138, height: 32, radius: 16 };
     }
 }
 

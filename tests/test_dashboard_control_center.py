@@ -533,6 +533,113 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
         self.assertIn("Mute", content)
         self.assertIn("Do Not Disturb", content)
 
+    def test_quick_setting_slider_native_pointer_keyboard_and_amplification(self):
+        from test_qml_input import environment
+
+        if not shutil.which("c++") or not shutil.which("pkg-config"):
+            self.skipTest("Qt development tools unavailable")
+        flags = subprocess.run(
+            ["pkg-config", "--cflags", "--libs", "Qt6Quick", "Qt6Qml", "Qt6Test"],
+            capture_output=True, text=True,
+        )
+        if flags.returncode:
+            self.skipTest("Qt6 Quick/Qml/Test development packages unavailable")
+        with tempfile.TemporaryDirectory(prefix="rice-slider-input-") as directory:
+            isolated = Path(directory)
+            dashboard = isolated / "dashboard"
+            dashboard.mkdir()
+            shutil.copyfile(QUICKSETTING_SLIDER_QML, dashboard / "QuickSettingSlider.qml")
+            theme = isolated / "theme"
+            theme.mkdir()
+            (theme / "qmldir").write_text("singleton Tokens 1.0 Tokens.qml\n")
+            (theme / "Tokens.qml").write_text('''pragma Singleton
+import QtQuick
+QtObject {
+    property color surface: "#24282c"
+    property color surface_high: "#30343a"
+    property color outline: "#686d73"
+    property color accent: "#77caff"
+    property color text_primary: "#ffffff"
+    property color text_secondary: "#bbbbbb"
+    property color focus_ring: "#77caff"
+}
+''')
+            (isolated / "main.qml").write_text('''import QtQuick
+import "./dashboard"
+Window {
+    width: 280; height: 100; visible: true
+    QuickSettingSlider {
+        objectName: "control"
+        x: 10; y: 10; width: 240; height: implicitHeight
+        label: "Volume"; valueText: Math.round(value * 100) + "%"
+        value: 0.5; maximum: 1.5
+        onValueRequested: requested => value = requested
+    }
+}
+''')
+            (isolated / "main.cpp").write_text(r'''
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQuickItem>
+#include <QQuickWindow>
+#include <QTest>
+#include <cmath>
+#include <cstdio>
+int main(int argc, char **argv) {
+    QGuiApplication app(argc, argv); QQmlApplicationEngine engine;
+    engine.load(QUrl::fromLocalFile(argv[1]));
+    if (engine.rootObjects().isEmpty()) return 2;
+    auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+    auto control = window->findChild<QQuickItem *>("control");
+    int failures = 0;
+    auto check = [&](bool ok, const char *message) { if (!ok) { fprintf(stderr, "%s\n", message); ++failures; } };
+    auto value = [&]() { return control->property("value").toDouble(); };
+    QTest::qWait(150); window->requestActivate();
+    check(control->height() == 64, "slider module must reserve 64px");
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, QPoint(100, 20));
+    check(std::abs(value() - 0.5) < 0.001, "header click changed the value");
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, QPoint(30, 56));
+    QTest::mouseMove(window, QPoint(240, 56), 20);
+    check(std::abs(value() - 1.5) < 0.001, "pill drag failed to reach amplified maximum");
+    check(control->property("displayedValue").toDouble() == 1, "drag feedback lagged behind the pointer");
+    QTest::mouseMove(window, QPoint(20, 56), 20);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, QPoint(20, 56));
+    check(std::abs(value()) < 0.001, "pill drag failed to reach zero");
+    control->forceActiveFocus();
+    QTest::keyClick(window, Qt::Key_End);
+    check(std::abs(value() - 1.5) < 0.001, "End lost amplified maximum");
+    QTest::keyClick(window, Qt::Key_Left);
+    check(std::abs(value() - 1.45) < 0.001, "Left ignored step");
+    QTest::keyClick(window, Qt::Key_Home);
+    QTest::keyClick(window, Qt::Key_Up);
+    check(std::abs(value() - 0.05) < 0.001, "Home or Up ignored step");
+    control->setProperty("value", 2.1);
+    check(value() == 2.1 && control->property("normalizedValue").toDouble() == 1,
+          "display clamp discarded the reported amplified value");
+    QTest::qWait(60);
+    const auto intermediate = control->property("displayedValue").toDouble();
+    check(intermediate > 0.05 && intermediate < 1, "external value update did not ease between positions");
+    QTest::qWait(180);
+    check(control->property("displayedValue").toDouble() == 1, "external value update did not settle");
+    control->setProperty("value", 0.7); control->setProperty("available", false);
+    QTest::keyClick(window, Qt::Key_End);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, QPoint(240, 56));
+    check(value() == 0.7, "unavailable slider accepted input");
+    return failures ? 1 : 0;
+}
+''')
+            built = subprocess.run(
+                ["c++", "-fPIC", str(isolated / "main.cpp"), "-o", str(isolated / "check")]
+                + flags.stdout.split(), capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(built.returncode, 0, built.stderr)
+            result = subprocess.run(
+                [str(isolated / "check"), str(isolated / "main.qml")],
+                capture_output=True, text=True, timeout=8, env=environment(isolated),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotRegex(result.stderr, r"ReferenceError|TypeError|Unable to assign|is not a type")
+
     def test_quick_settings_brightness_drag_keeps_last_value(self):
         if not shutil.which("quickshell"):
             self.skipTest("quickshell binary unavailable")
@@ -1216,7 +1323,9 @@ ShellRoot {
         shell_dir = WIFI_DRAWER_QML.parents[1]
         with tempfile.TemporaryDirectory(prefix="rice-wifi-hardening-test-") as directory:
             isolated = Path(directory)
-            for relative in ("dashboard/WifiDrawer.qml", "theme/Tokens.qml", "theme/qmldir"):
+            for relative in ("dashboard/WifiDrawer.qml", "dashboard/RoundedButton.qml",
+                             "dashboard/ActionMenu.qml", "dashboard/ActionMenuItem.qml",
+                             "theme/Tokens.qml", "theme/qmldir"):
                 destination = isolated / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(shell_dir / relative, destination)

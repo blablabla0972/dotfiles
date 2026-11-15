@@ -23,12 +23,12 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        radius: 12
+        radius: Math.min(24, height / 2)
         color: !root.available
             ? Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.55)
             : root.active
-                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.10)
-                : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.78)
+                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, tileHover.hovered ? 0.24 : 0.17)
+                : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, tileHover.hovered ? 0.98 : 0.68)
         border.width: primaryAction.activeFocus || detailsAction.activeFocus ? 2 : 1
         border.color: primaryAction.activeFocus || detailsAction.activeFocus
             ? Tokens.focus_ring
@@ -39,6 +39,8 @@ FocusScope {
         Behavior on color { ColorAnimation { duration: 140 } }
         Behavior on border.color { ColorAnimation { duration: 140 } }
     }
+
+    HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
 
     Item {
         id: primaryAction
@@ -63,25 +65,30 @@ FocusScope {
             anchors.rightMargin: 4
             spacing: 8
 
-            Text {
-                width: 20
+            Rectangle {
+                width: 28
+                height: 28
+                radius: 14
                 anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignHCenter
-                text: root.pending ? "󰔟" : root.icon
-                font.pixelSize: 18
-                color: root.pending ? Tokens.accent
-                    : root.active ? Tokens.accent : Tokens.text_secondary
+                color: root.active ? Tokens.accent
+                    : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.12)
+                Text {
+                    anchors.centerIn: parent
+                    text: root.pending ? "󰔟" : root.icon
+                    font.pixelSize: 16
+                    color: root.active ? Tokens.on_accent : Tokens.text_secondary
+                }
             }
 
             Column {
                 anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(0, parent.width - 28)
+                width: Math.max(0, parent.width - 36)
                 spacing: 2
 
                 Text {
                     width: parent.width
                     text: root.label
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.weight: Font.Medium
                     color: Tokens.text_primary
                     elide: Text.ElideRight

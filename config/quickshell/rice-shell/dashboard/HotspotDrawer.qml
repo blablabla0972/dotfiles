@@ -23,6 +23,14 @@ Item {
     property string formMessage: ""
     property string _loadedSsid: Hotspot.ssid
 
+    onVisibleChanged: {
+        if (!visible) {
+            root.passwordText = "";
+            root.revealPassword = false;
+            if (conflictDialog.visible) conflictDialog.reject();
+        }
+    }
+
     function handleEscape(): bool {
         if (conflictDialog.visible) {
             conflictDialog.reject();
@@ -77,6 +85,19 @@ Item {
                 Layout.fillWidth: true
                 spacing: 10
 
+                Rectangle {
+                    Layout.preferredWidth: 42
+                    Layout.preferredHeight: 42
+                    radius: 14
+                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.14)
+                    Text {
+                        anchors.centerIn: parent
+                        text: "󰖩"
+                        color: Tokens.accent
+                        font.pixelSize: 21
+                    }
+                }
+
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 3
@@ -89,7 +110,7 @@ Item {
                     }
 
                     Text {
-                        text: qsTr("Protected sharing managed by NetworkManager")
+                        text: qsTr("Share your internet connection")
                         color: Tokens.text_secondary
                         font.pixelSize: 11
                         wrapMode: Text.Wrap
@@ -150,7 +171,11 @@ Item {
                             Accessible.name: Hotspot.active
                                 ? qsTr("Stop hotspot") : qsTr("Start hotspot")
                             onToggled: {
-                                if (checked !== Hotspot.active) Hotspot.toggle();
+                                const target = !Hotspot.active;
+                                checked = Qt.binding(() => Hotspot.active);
+                                if (target !== Hotspot.active) {
+                                    Hotspot.toggle();
+                                }
                             }
 
                             indicator: Rectangle {
@@ -218,11 +243,17 @@ Item {
                     spacing: 9
 
                     Text {
-                        text: qsTr("CONFIGURATION")
-                        color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.75)
-                        font.pixelSize: 10
-                        font.letterSpacing: 1.1
-                        font.weight: Font.Bold
+                        text: qsTr("Network settings")
+                        color: Tokens.text_primary
+                        font.pixelSize: 14
+                        font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                        text: qsTr("Network name")
+                        color: Tokens.text_secondary
+                        font.pixelSize: 11
+                        font.weight: Font.Medium
                     }
 
                     TextField {
@@ -238,11 +269,18 @@ Item {
                         font.pixelSize: 12
                         onTextEdited: root.networkName = text
                         background: Rectangle {
-                            radius: 8
+                            radius: 14
                             color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.75)
                             border.color: ssidField.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                             border.width: ssidField.activeFocus ? 2 : 1
                         }
+                    }
+
+                    Text {
+                        text: qsTr("Password")
+                        color: Tokens.text_secondary
+                        font.pixelSize: 11
+                        font.weight: Font.Medium
                     }
 
                     RowLayout {
@@ -255,7 +293,7 @@ Item {
                             implicitHeight: 38
                             text: root.passwordText
                             placeholderText: Hotspot.profileConfigured
-                                ? qsTr("Leave blank to keep password")
+                                ? qsTr("Leave blank to keep current")
                                 : qsTr("WPA2 password (8–63 chars)")
                             echoMode: root.revealPassword ? TextInput.Normal : TextInput.Password
                             passwordMaskDelay: 0
@@ -267,14 +305,14 @@ Item {
                             font.pixelSize: 12
                             onTextEdited: root.passwordText = text
                             background: Rectangle {
-                                radius: 8
+                                radius: 14
                                 color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.75)
                                 border.color: passwordField.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                                 border.width: passwordField.activeFocus ? 2 : 1
                             }
                         }
 
-                        Button {
+                        RoundedButton {
                             id: showPassBtn
                             implicitHeight: 38
                             implicitWidth: 58
@@ -293,7 +331,7 @@ Item {
                                 verticalAlignment: Text.AlignVCenter
                             }
                             background: Rectangle {
-                                radius: 8
+                                radius: 14
                                 color: showPassBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45)
                                 border.color: showPassBtn.hovered ? Tokens.outline : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                                 border.width: 1
@@ -303,7 +341,7 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: qsTr("SSID length is checked in UTF-8 bytes. The password is stored by NetworkManager and is never returned to this page.")
+                        text: qsTr("Your saved password stays private and cannot be displayed here.")
                         color: Tokens.text_secondary
                         font.pixelSize: 10
                         wrapMode: Text.Wrap
@@ -315,18 +353,17 @@ Item {
 
                         Text {
                             Layout.fillWidth: true
-                            visible: root.formMessage.length > 0
                             text: root.formMessage
                             color: Tokens.text_secondary
                             font.pixelSize: 10
                             wrapMode: Text.Wrap
                         }
 
-                        Button {
+                        RoundedButton {
                             id: saveProfileBtn
                             implicitHeight: 32
-                            implicitWidth: 80
-                            text: qsTr("Save")
+                            implicitWidth: 110
+                            text: qsTr("Save settings")
                             enabled: !Hotspot.active && !Hotspot.busy && Hotspot.canConfigure
                             Accessible.name: qsTr("Save hotspot profile")
                             onClicked: root.saveProfile()
@@ -339,7 +376,7 @@ Item {
                                 verticalAlignment: Text.AlignVCenter
                             }
                             background: Rectangle {
-                                radius: 8
+                                radius: 14
                                 color: saveProfileBtn.enabled
                                     ? (saveProfileBtn.hovered ? Qt.darker(Tokens.accent, 1.1) : Tokens.accent)
                                     : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
@@ -412,7 +449,7 @@ Item {
         id: conflictDialog
         parent: root
         anchors.centerIn: parent
-        width: 340
+        width: Math.min(312, parent.width - 16)
         modal: true
         title: qsTr("Wi-Fi connection may be interrupted")
         standardButtons: Dialog.NoButton
@@ -439,7 +476,7 @@ Item {
         }
 
         contentItem: Text {
-            width: 308
+            width: conflictDialog.availableWidth
             text: qsTr("Starting the hotspot on %1 may disconnect its active Wi-Fi client. If that client is the upstream, shared internet will be unavailable until another IPv4 default route is active. The saved client profile remains in NetworkManager.")
                 .arg(Hotspot.deviceName || qsTr("this adapter"))
             color: Tokens.text_secondary
@@ -457,7 +494,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
 
-                Button {
+                RoundedButton {
                     id: cancelConflictBtn
                     implicitHeight: 30
                     implicitWidth: 68
@@ -473,7 +510,7 @@ Item {
                         verticalAlignment: Text.AlignVCenter
                     }
                     background: Rectangle {
-                        radius: 8
+                        radius: 14
                         color: cancelConflictBtn.hovered
                             ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75)
                             : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.40)
@@ -482,7 +519,7 @@ Item {
                     }
                 }
 
-                Button {
+                RoundedButton {
                     id: confirmConflictBtn
                     implicitHeight: 30
                     implicitWidth: 96
@@ -498,7 +535,7 @@ Item {
                         verticalAlignment: Text.AlignVCenter
                     }
                     background: Rectangle {
-                        radius: 8
+                        radius: 14
                         color: confirmConflictBtn.hovered
                             ? Qt.darker(Tokens.accent, 1.1)
                             : Tokens.accent

@@ -92,7 +92,7 @@ QtObject {
             lifecycleState = "stopping";
             tileStatus = "Stopping…";
         }
-        if (busy) operationTimeout.restart();
+        operationTimeout.restart();
         backendProcess.write(serialized);
         request = null;
         serialized = "";
@@ -131,24 +131,32 @@ QtObject {
             errorMessage = "Hotspot service returned an invalid status.";
             return;
         }
+        if (message.snapshot) {
+            applySnapshot(message.snapshot);
+            _restartCount = 0;
+        }
         if (message.requestId !== undefined && message.requestId !== null) {
             if (message.requestId !== _pendingRequest) return;
             _pendingRequest = -1;
             operationTimeout.stop();
             busy = false;
-        }
-        if (message.snapshot) applySnapshot(message.snapshot);
-        if (message.confirmationRequired === true) {
-            confirmationRequired = true;
-            _confirmationToken = String(message.confirmationToken || "");
-        }
-        if (message.error) errorMessage = String(message.error);
-        else if (message.ok === true) errorMessage = "";
-        if (message.requestId !== undefined && message.requestId !== null) {
             var operation = pendingOperation;
             pendingOperation = "";
+            if (message.confirmationRequired === true) {
+                confirmationRequired = true;
+                _confirmationToken = String(message.confirmationToken || "");
+            }
+            if (message.error) {
+                errorMessage = String(message.error);
+            } else if (message.ok === true) {
+                errorMessage = "";
+            }
             operationFinished(operation, message.ok === true,
                               String(message.error || ""));
+        } else {
+            if (message.snapshot && message.snapshot.error) {
+                errorMessage = String(message.snapshot.error);
+            }
         }
     }
 
@@ -164,14 +172,21 @@ QtObject {
             onRead: _line => {}
         }
         onExited: (code) => {
+            var op = root.pendingOperation;
             root.busy = false;
             root._pendingRequest = -1;
             root.pendingOperation = "";
             root.operationTimeout.stop();
             root.available = false;
             root.canStart = false;
-            root.tileStatus = "NetworkManager service unavailable";
-            if (root._restartCount < 1) {
+            root.canConfigure = false;
+            root.confirmationRequired = false;
+            root._confirmationToken = "";
+            root.tileStatus = "Service unavailable";
+            if (op && op.length > 0) {
+                root.operationFinished(op, false, "Hotspot backend service stopped.");
+            }
+            if (root._restartCount < 2) {
                 root._restartCount += 1;
                 root.restartTimer.restart();
             } else {
@@ -182,9 +197,18 @@ QtObject {
     }
 
     property Timer operationTimeout: Timer {
-        interval: 30000
+        interval: 20000
         repeat: false
-        onTriggered: root.errorMessage = "NetworkManager is still processing the request."
+        onTriggered: {
+            var op = root.pendingOperation;
+            root.busy = false;
+            root._pendingRequest = -1;
+            root.pendingOperation = "";
+            root.errorMessage = "NetworkManager request timed out.";
+            if (op && op.length > 0) {
+                root.operationFinished(op, false, "NetworkManager request timed out.");
+            }
+        }
     }
 
     property Timer restartTimer: Timer {

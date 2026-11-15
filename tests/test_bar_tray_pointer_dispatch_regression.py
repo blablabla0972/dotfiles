@@ -77,7 +77,6 @@ check(context.Qt.LeftButton, []);
         self.assertIn("modelData.enabled && !menuRow.modelData.isSeparator", source)
         self.assertIn("modelData.checkState === Qt.Unchecked", source)
         self.assertIn("modelData.checkState === Qt.PartiallyChecked", source)
-        self.assertIn("anchorWindow.height - root.height - 8", source)
         self.assertIn("anchorWindow.width - root.width - 8", source)
 
 

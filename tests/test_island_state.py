@@ -113,7 +113,7 @@ vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), c);
 console.log(JSON.stringify(c.targetDimensions(c.State.EXPANDED)));
 """
         result = subprocess.run(["node", "-e", script, str(STATE)], capture_output=True, text=True, check=True)
-        self.assertEqual(json.loads(result.stdout), {"width": 380, "height": 132, "radius": 24})
+        self.assertEqual(json.loads(result.stdout), {"width": 420, "height": 160, "radius": 26})
 
 if __name__ == "__main__":
     unittest.main()

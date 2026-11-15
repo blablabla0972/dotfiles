@@ -810,7 +810,7 @@ Item {
 
         implicitWidth: Math.max(58, actionText.implicitWidth + 24)
         implicitHeight: 34
-        radius: 10
+        radius: height / 2
         color: !actionButton.actionable
             ? Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.35)
             : actionButton.danger

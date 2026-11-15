@@ -16,128 +16,151 @@ FocusScope {
 
     signal valueRequested(real value)
 
-    implicitHeight: 44
+    implicitHeight: 64
     activeFocusOnTab: root.available
 
     Accessible.role: Accessible.Slider
     Accessible.name: root.label
     Accessible.description: root.available ? root.valueText : qsTr("Unavailable")
 
-    Column {
+    Rectangle {
         anchors.fill: parent
-        spacing: 3
+        radius: 16
+        color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.78)
+        border.width: 1
+        border.color: root.activeFocus ? Tokens.focus_ring
+            : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.14)
+    }
 
-        Row {
-            width: parent.width
-            height: 16
-            spacing: 6
+    Item {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.leftMargin: 12
+        anchors.rightMargin: 12
+        anchors.topMargin: 8
+        height: 16
 
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.icon
-                font.pixelSize: 14
-                color: root.available ? Tokens.accent : Tokens.text_secondary
-            }
+        Text {
+            anchors.left: parent.left
+            anchors.right: percentage.left
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.label
+            font.pixelSize: 13
+            font.weight: Font.Medium
+            color: root.available ? Tokens.text_primary : Tokens.text_secondary
+            elide: Text.ElideRight
+        }
 
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.label
-                font.pixelSize: 11
-                font.weight: Font.Medium
-                color: root.available ? Tokens.text_primary : Tokens.text_secondary
-            }
+        Text {
+            id: percentage
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, parent.width * 0.56)
+            text: root.valueText
+            font.pixelSize: 12
+            font.weight: Font.Medium
+            font.features: ({ "tnum": 1 })
+            color: Tokens.text_secondary
+            horizontalAlignment: Text.AlignRight
+            elide: Text.ElideRight
+        }
+    }
 
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "·"
-                font.pixelSize: 11
-                color: Tokens.text_secondary
-                visible: root.valueText.length > 0
-            }
+    Rectangle {
+        id: sliderTrack
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: 10
+        anchors.rightMargin: 10
+        anchors.bottomMargin: 8
+        height: 24
+        radius: height / 2
+        color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b,
+            pointer.pressed ? 0.34 : (pointer.containsMouse ? 0.26 : 0.18))
+        opacity: root.available ? 1 : 0.6
 
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.valueText
-                font.pixelSize: 11
-                font.weight: Font.Medium
-                color: root.available ? Tokens.accent : Tokens.text_secondary
+        Behavior on color {
+            ColorAnimation { duration: 120; easing.type: Easing.OutCubic }
+        }
+
+        Rectangle {
+            width: thumb.x + thumb.width
+            height: parent.height
+            radius: height / 2
+            color: Qt.rgba(Tokens.text_primary.r, Tokens.text_primary.g, Tokens.text_primary.b, 0.76)
+        }
+
+        Rectangle {
+            visible: root.maximum > 1
+            x: 12 + Math.max(0, parent.width - 24) / root.maximum - width / 2
+            anchors.verticalCenter: parent.verticalCenter
+            width: 1
+            height: 10
+            radius: 1
+            color: root.displayedValue >= 1 / root.maximum
+                ? Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.64)
+                : Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.7)
+        }
+
+        Rectangle {
+            id: thumb
+            x: Math.max(0, parent.width - width) * root.displayedValue
+            anchors.verticalCenter: parent.verticalCenter
+            width: 24
+            height: 24
+            radius: 12
+            color: Tokens.text_primary
+            scale: pointer.pressed ? 0.92 : 1
+
+            Behavior on scale {
+                NumberAnimation { duration: 100; easing.type: Easing.OutCubic }
             }
         }
 
-        Item {
-            id: sliderTrack
-            width: parent.width
-            height: 22
-            opacity: root.available ? 1 : 0.48
+        Text {
+            x: 4
+            width: 16
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.icon
+            font.pixelSize: 14
+            horizontalAlignment: Text.AlignHCenter
+            color: Tokens.surface
+        }
 
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                height: 4
-                radius: 2
-                color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.45)
+        MouseArea {
+            id: pointer
+            anchors.fill: parent
+            enabled: root.available
+            hoverEnabled: true
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            property real dragValue: 0
+
+            function setFromX(x) {
+                dragValue = Math.max(0, Math.min(1, (x - 12) / Math.max(1, width - 24)));
+                root.valueRequested(dragValue * root.maximum);
             }
 
-            Rectangle {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(0, Math.min(parent.width, parent.width * root.normalizedValue))
-                height: 4
-                radius: 2
-                color: root.available ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.86)
-                    : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
+            onPressed: (mouse) => {
+                root.forceActiveFocus();
+                setFromX(mouse.x);
             }
-
-            Rectangle {
-                visible: root.maximum > 1
-                x: parent.width / root.maximum - width / 2
-                anchors.verticalCenter: parent.verticalCenter
-                width: 1
-                height: 10
-                radius: 1
-                color: Qt.rgba(Tokens.text_secondary.r, Tokens.text_secondary.g, Tokens.text_secondary.b, 0.7)
-            }
-
-            Rectangle {
-                x: Math.max(0, Math.min(parent.width - width, parent.width * root.normalizedValue - width / 2))
-                anchors.verticalCenter: parent.verticalCenter
-                width: 12
-                height: 12
-                radius: 6
-                color: root.activeFocus ? Tokens.focus_ring : (root.available ? Tokens.accent : Tokens.text_secondary)
-                border.width: 2
-                border.color: Tokens.surface_high
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                radius: 9
-                color: "transparent"
-                border.width: root.activeFocus ? 1 : 0
-                border.color: Tokens.focus_ring
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                enabled: root.available
-                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-
-                function setFromX(x) {
-                    var fraction = Math.max(0, Math.min(1, x / width));
-                    root.valueRequested(fraction * root.maximum);
-                }
-
-                onPressed: (mouse) => setFromX(mouse.x)
-                onPositionChanged: (mouse) => {
-                    if (pressed) setFromX(mouse.x);
-                }
+            onPositionChanged: (mouse) => {
+                if (pressed) setFromX(mouse.x);
             }
         }
     }
 
     readonly property real normalizedValue: !isFinite(root.value) || root.maximum <= 0
         ? 0 : Math.max(0, Math.min(1, root.value / root.maximum))
+
+    property real displayedValue: pointer.pressed ? pointer.dragValue : root.normalizedValue
+    Behavior on displayedValue {
+        enabled: !pointer.pressed
+        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+    }
 
     function adjust(delta: real): void {
         if (root.available) root.valueRequested(Math.max(0, Math.min(root.maximum, root.value + delta)));
