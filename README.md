@@ -111,6 +111,14 @@ Với cấu hình Quickshell, `hypridle.conf` giảm sáng sau 3 phút, khóa sa
 
 Service swww dùng `ExecSearchPath` của systemd ≥250 để tìm daemon trong `~/.local/bin` hoặc `/usr/bin`. Carousel tạo thumbnail ngay khi mở và nạp dần từ cache; chuyển wallpaper lấy FPS từ màn hình đang bật (mặc định 60 khi không đọc được IPC). GTK4 dùng CSS semantic cho cả dark/light, và Brave không còn ép dark mode. Artifact `graphify-out/` được giữ cục bộ, không theo dõi trong Git.
 
+## Clipboard history
+
+`Super+V` mở/đóng lịch sử clipboard: tìm kiếm trong danh sách, xem trước chữ hoặc
+ảnh, rồi nhấn `Enter`, bấm Copy hoặc nhấp đúp để chép lại nội dung; `Esc` đóng.
+Xóa từng mục và xóa lịch sử đều có bước xác nhận. Dữ liệu dùng lại `cliphist`
+do watcher `wl-paste` hiện có lưu; mở bảng và xem trước không đổi clipboard.
+Preview chữ giới hạn 20000 ký tự, Copy vẫn giữ toàn bộ dữ liệu gốc.
+
 ## Workflow rice với worktree (từ 2026-10-16)
 
 Các thành phần desktop dùng symlink vào checkout live (phần lớn trên nhánh `main`):
