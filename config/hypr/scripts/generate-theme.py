@@ -228,6 +228,29 @@ def cached_matugen_outputs(cache, names):
         return None
 
 
+def configured_matugen_outputs(config_dir):
+    """Resolve every configured Matugen output so transaction backups stay complete."""
+    source = config_dir / 'matugen/config.toml'
+    settings = tomllib.loads(source.read_text())
+    home_config = Path.home() / '.config'
+    outputs = set(MATUGEN_OUTPUTS)
+    for template in settings.get('templates', {}).values():
+        output = template.get('output_path')
+        if not output:
+            continue
+        output_path = Path(output).expanduser()
+        if output_path.is_relative_to(home_config):
+            output_path = config_dir / output_path.relative_to(home_config)
+        elif not output_path.is_absolute():
+            output_path = source.parent / output_path
+        output_path = Path(os.path.abspath(output_path))
+        try:
+            outputs.add(str(output_path.relative_to(config_dir)))
+        except ValueError:
+            raise RuntimeError('Matugen outputs must stay inside the managed config directory')
+    return tuple(sorted(outputs))
+
+
 def render_matugen(wallpaper, config_dir, mode):
     source = config_dir / 'matugen/config.toml'
     settings = tomllib.loads(source.read_text())
@@ -235,7 +258,8 @@ def render_matugen(wallpaper, config_dir, mode):
     if wallpaper_options is not None and wallpaper_options.get('set', True):
         raise RuntimeError('Matugen wallpaper changes bypass the transaction; set config.wallpaper.set=false')
     home_config = Path.home() / '.config'
-    outputs = {config_dir / name for name in MATUGEN_OUTPUTS}
+    output_names = configured_matugen_outputs(config_dir)
+    outputs = {config_dir / name for name in output_names}
     for template in settings.get('templates', {}).values():
         if any(template.get(hook) for hook in ('pre_hook', 'post_hook')):
             raise RuntimeError('Matugen template hooks need backup paths before transactional theme generation')
@@ -252,7 +276,7 @@ def render_matugen(wallpaper, config_dir, mode):
             if key == 'output_path' and path not in outputs:
                 raise RuntimeError('Additional Matugen outputs need backup paths before theme generation')
             template[key] = str(path)
-    names = {name for name in MATUGEN_OUTPUTS if any(
+    names = {name for name in output_names if any(
         template.get('output_path') == str(config_dir / name)
         for template in settings.get('templates', {}).values())}
     try:
@@ -666,7 +690,7 @@ def theme_snapshot_paths(config_dir, state_dir):
              'qt5ct/colors/noctalia.conf', 'qt6ct/colors/noctalia.conf', 'kdeglobals',
              'btop/btop.conf', 'btop/themes/noctalia.theme', 'alacritty/alacritty.toml', 'alacritty/themes/noctalia.toml']
     return (
-        [config_dir / p for p in (*names, *MATUGEN_OUTPUTS)]
+        [config_dir / p for p in (*names, *configured_matugen_outputs(config_dir))]
         + [state_dir / 'noctalia/settings.toml', share / 'color-schemes/noctalia.colors', adaptive_path(state_dir)]
     )
 
@@ -996,7 +1020,7 @@ def main():
                     record['palette_revision'] = apply(wallpaper, config_dir, state_dir, runtime, backend=backend, target_mode=args.mode)
                 record.update(status='applied', error_code=None)
             else:
-                snap = Snapshot([config_dir / name for name in MATUGEN_OUTPUTS]
+                snap = Snapshot([config_dir / name for name in configured_matugen_outputs(config_dir)]
                                 + [state_dir / 'noctalia/settings.toml', adaptive_path(state_dir)], state_dir)
                 palette_changed = False
                 try:
