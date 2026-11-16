@@ -165,6 +165,9 @@ hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("grim - | wl-copy 2>/dev/null || 
 -- Theming and Wallpaper
 hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd(noctCall .. "panel-toggle wallpaper"))
 
+-- Clipboard
+hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("qs ipc -c clipboard-history call clipboard close 2>/dev/null || qs -c clipboard-history -n"))
+
 
 -- Notifications
 hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(qsRice .. "toggleNotifications 2>/dev/null || " .. noctCall .. "panel-toggle control-center notifications"))

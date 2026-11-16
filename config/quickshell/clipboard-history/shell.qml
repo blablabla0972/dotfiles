@@ -149,7 +149,7 @@ ShellRoot {
 
         Rectangle {
             anchors.fill: parent
-            color: "#55000000"
+            color: "transparent"
             TapHandler {
                 onTapped: point => {
                     if (point.position.x < card.x || point.position.x > card.x + card.width
