@@ -6,6 +6,9 @@ rice_config="${config_home%/}/quickshell/rice-shell"
 rice_qml="${rice_config}/shell.qml"
 notifications=${ENABLE_NOTIFICATIONS:-1}
 
+# Prepare persistent previews at login without blocking shell startup.
+bash "${config_home%/}/quickshell/wallpaper-switcher/generate-thumbs.sh" >/dev/null 2>&1 &
+
 has_rice_instance() {
     command -v quickshell >/dev/null 2>&1 || return 1
     quickshell list -p "$rice_config" --json 2>/dev/null \

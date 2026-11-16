@@ -7,6 +7,14 @@ hl.window_rule({ match = { class = persistentFloatApps }, float = true, persiste
 -- Fast-path for modal dialogs
 hl.window_rule({ match = { modal = true }, float = true, center = true })
 
+-- Keep screenshot tools below Dynamic Island without resizing the captured image.
+hl.window_rule({
+    match  = { class = "^local\\.screenshot\\.Editor$" },
+    float  = true,
+    center = true,
+    size   = { "monitor_w*0.70", "monitor_h*0.70" },
+})
+
 -- Picture-in-Picture
 hl.window_rule({
     match             = { title = "^([Pp]icture[-\\s]?[Ii]n[-\\s]?[Pp]icture)(.*)$" },
@@ -151,6 +159,13 @@ hl.window_rule({
     no_blur   = true,
     no_shadow = true,
     rounding  = 0,
+})
+
+-- Screenshot overlays must appear and disappear without compositor animations.
+hl.layer_rule({
+    name = "screenshot-overlays",
+    match = { namespace = "^(hyprpicker|selection)$" },
+    no_anim = true,
 })
 
 -- Noctalia layer rule
