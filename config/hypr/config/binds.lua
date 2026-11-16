@@ -159,14 +159,12 @@ hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("brightnessctl set 5%- && " .. 
 
 -- Screen Capture
 hl.bind(mainMod .. " + P",     hl.dsp.exec_cmd("hyprpicker -a -n"))
-hl.bind("Print",               hl.dsp.exec_cmd("~/.config/hypr/scripts/screenshot-region.sh"))
+hl.bind("Print",               hl.dsp.exec_cmd("grim -g \"$(slurp)\" - | wl-copy 2>/dev/null || " .. noctCall .. "screenshot-region"))
 hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("grim - | wl-copy 2>/dev/null || " .. noctCall .. "screenshot-fullscreen"))
 
 -- Theming and Wallpaper
 hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd(noctCall .. "panel-toggle wallpaper"))
 
--- Clipboard
-hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("quickshell -c clipboard-history -n"))
 
 -- Notifications
 hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(qsRice .. "toggleNotifications 2>/dev/null || " .. noctCall .. "panel-toggle control-center notifications"))
