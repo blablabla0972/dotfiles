@@ -1,5 +1,13 @@
 | Task | Status | Evidence |
 |---|---|---|
+| Balanced spring 2026-11-16: Explore current project and live owner | done | Active rice-shell resolves to quickshell-professional-polish; Noctalia is not running; six inherited WIP files preserved. |
+| Balanced spring 2026-11-16: Clarify constraints and compare approaches | done | Native balanced spring recommended over strong ColorOS bounce or OutBack imitation; preserve layout/colors/services. |
+| Balanced spring 2026-11-16: Present design and obtain approval | done | User selected Lò xo cân bằng (Recommended). |
+| Balanced spring 2026-11-16: Record design and implementation plan | done | 2026-11-16-control-center-spring-design.md and 2026-11-16-control-center-spring.md. |
+| Balanced spring 2026-11-16: Preserve baseline in isolated worktree | done | Six hashes match both backup and untouched original checkout; isolated baseline 412 tests OK, no skips, 107.157s; no dependencies installed. |
+| Balanced spring 2026-11-16: Action-menu native spring regression and implementation | in progress | Real popup scale/opacity, exit contraction, interrupted reopen and focus lifecycle. |
+| Balanced spring 2026-11-16: Specification then quality review | pending | Review connected popup caller and inherited lifecycle, without unrelated changes. |
+| Balanced spring 2026-11-16: Full verification and live preview | pending | Full suite, validator, diff check, Quickshell-only installer preview, IPC/logs and live captures. |
 | Task 1: Installer & env safety (install.sh, wt-prep.sh, env-hyprland) | done | tests/test_installer.py: 3 tests pass |
 | Task 2: Systemd user unit portability & relative symlinks | done | %h used, relative symlinks in .wants |
 | Task 3: IPC exception handling, snapshot retention & GTK sync | done | generate-theme.py updated, snapshot retention active |
