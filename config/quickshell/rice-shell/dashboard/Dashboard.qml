@@ -37,9 +37,12 @@ Item {
     readonly property real drawerOffset: drawerOverlay ? 0
         : Math.min(156, cardDimensions.drawerWidth * 0.52) * drawerProgress
     Behavior on drawerProgress {
-        NumberAnimation {
-            duration: dashboardWindow.sideDrawerOpen ? 260 : 220
-            easing.type: dashboardWindow.sideDrawerOpen ? Easing.OutCubic : Easing.InOutQuad
+        id: drawerMotion
+        SpringAnimation {
+            id: drawerSpring
+            spring: 4.0
+            damping: drawerMotion.targetValue === 1 ? 0.34 : 0.4
+            epsilon: 0.002
         }
     }
     readonly property real activeContentHeight: {
@@ -378,9 +381,9 @@ Item {
             : dashboardWindow.cardDimensions.drawerWidth
         height: morphContainer.height
         clip: true
-        visible: dashboardWindow.drawerProgress > 0
+        visible: dashboardWindow.sideDrawerOpen || drawerSpring.running
         enabled: dashboardWindow.sideDrawerOpen
-        opacity: dashboardWindow.drawerProgress
+        opacity: Math.max(0, Math.min(1, dashboardWindow.drawerProgress))
         transform: Translate { y: 8 * (1 - dashboardWindow.drawerProgress) }
 
         // Absorb inner clicks
@@ -395,7 +398,7 @@ Item {
             Loader {
                 id: connectivityLoader
                 anchors.fill: parent
-                active: dashboardWindow.sideDrawerOpen || dashboardWindow.drawerProgress > 0
+                active: sideDrawerContainer.visible
                 sourceComponent: ConnectivityCenter {
                     currentPage: dashboardWindow.renderedSideDrawer
                     onPageSelected: (page) => dashboardWindow.selectSideDrawer(page)

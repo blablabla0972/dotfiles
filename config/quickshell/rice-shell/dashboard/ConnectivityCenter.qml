@@ -112,7 +112,10 @@ Item {
                 }
 
                 HoverHandler { id: closeHover }
-                TapHandler { onTapped: root.closeRequested() }
+                TapHandler {
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                    onTapped: root.closeRequested()
+                }
                 Keys.onReturnPressed: function(event) {
                     root.closeRequested();
                     event.accepted = true;

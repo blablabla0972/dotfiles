@@ -22,6 +22,14 @@ animation with a native spring, anchor scaling at the menu's top-right, and add
 a short scale contraction to its exit. Keep Qt Controls responsible for popup
 visibility, focus and dismissal; add no custom lifecycle timer or dependency.
 
+Native testing found that `QQuickMenu::setVisible()` has an additional visibility
+guard, unlike `QQuickPopup::setVisible()`: reopening during exit is ignored.
+The single Wi-Fi caller now uses `requestOpen()`, which remembers that request
+and reopens on the native `closed` signal via `Qt.callLater` (after Qt restores
+the popup properties). A request during completed-but-not-yet-stopped cleanup is
+also deferred one event-loop turn. This small menu completes its 140 ms exit
+before reopening; only the shared pill/drawer springs reverse immediately.
+
 ## Verification and ownership
 
 An isolated native Qt test must observe actual popup scale/opacity, a restrained

@@ -31,14 +31,20 @@ class DashboardMotionTests(unittest.TestCase):
         for name in ('IslandShape.qml', 'IslandState.js'):
             shutil.copy2(SHELL / 'island' / name, base / 'island' / name)
         # Only hardware-backed bodies and palette loading are replaced.
-        for name in ('System', 'Config', 'NotificationCenter', 'WifiDrawer', 'BluetoothDrawer', 'ConnectivityCenter'):
+        for name in ('System', 'Config', 'NotificationCenter', 'WifiDrawer', 'BluetoothDrawer', 'HotspotDrawer'):
             body = ('import QtQuick\nItem { property string currentPage: ""; signal requestSideDrawer(string type); '
                     'signal closeRequested(); signal pageSelected(string page); function handleEscape() { return false; } '
                     'property bool wifiLoaded: currentPage === "wifi" || currentPage === ""; '
                     'property bool bluetoothLoaded: currentPage === "bluetooth"; '
                     + ('TextInput { objectName: "wifiPassword"; text: "password" }'
-                       if name in ('WifiDrawer', 'ConnectivityCenter') else '') + ' }\n')
+                       if name == 'WifiDrawer' else '') + ' }\n')
             (base / f'dashboard/{name}.qml').write_text(body)
+        connectivity = (SHELL / 'dashboard/ConnectivityCenter.qml').read_text()
+        connectivity = connectivity.replace(
+            'Accessible.name: qsTr("Close %1 menu").arg(root.pageTitle)',
+            'objectName: "connectivityClose"\n'
+            '                Accessible.name: qsTr("Close %1 menu").arg(root.pageTitle)')
+        (base / 'dashboard/ConnectivityCenter.qml').write_text(connectivity)
         shutil.copy2(SHELL / 'dashboard/Home.qml', base / 'dashboard/Home.qml')
         for name, width, height in (
                 ('ProfileCard', 200, 95), ('CalendarCard', 200, 210),
@@ -170,8 +176,10 @@ QtObject {
     property real panelWidth: islandShape.pillWidth
     property real panelHeight: islandShape.pillHeight
     property real panelY: islandContainer.y
-    property int widthDuration: islandShape.animDurationWidth
-    property int heightDuration: islandShape.animDurationHeight
+    property real layerHeightBudget: islandWindow.requestedLayerHeight
+    property bool shapeAnimating: islandShape.morphing
+    property real drawerProgressValue: dashboard.drawerProgress
+    property bool drawerAnimating: dashboard.drawerProgress !== (dashboard.sideDrawerOpen ? 1 : 0)
     property bool viewportClips: dashboard.viewportClips
     property real drawerWidth: dashboard.drawerWidth
     property real drawerOpacity: dashboard.drawerOpacity
@@ -317,7 +325,7 @@ int main(int argc, char **argv) {
     auto snapshot = [&](const char *name) {
         QJsonObject row;
         for (auto key : {"contentWidth", "contentHeight", "contentY", "contentOpacity",
-                         "panelWidth", "panelHeight", "panelY", "drawerWidth", "drawerOpacity", "drawerX", "morphX", "widthDuration", "heightDuration",
+                         "panelWidth", "panelHeight", "panelY", "layerHeightBudget", "drawerWidth", "drawerOpacity", "drawerX", "morphX", "drawerProgressValue",
                          "tabOpacity", "tabOffset", "dashboardCardWidth", "dashboardCardHeight",
                          "homeContentHeight", "homeLayoutColumns", "tabContentHeight",
                          "expandedTargetWidth", "expandedTargetHeight", "expandedContentWidth",
@@ -330,7 +338,7 @@ int main(int argc, char **argv) {
                          "dashboardActiveFocus", "scrimInteractive", "pinned", "hoverActive", "hoverPointer",
                          "wifiLoaded", "bluetoothLoaded", "homeLoaded",
                          "alertTimerRunning", "tabInputEnabled", "drawerHitTest", "drawerOverlay",
-                         "tabScrollInteractive", "drawerVisible", "contracting"})
+                         "tabScrollInteractive", "drawerVisible", "contracting", "shapeAnimating", "drawerAnimating"})
             row[key] = w->property(key).toBool();
         for (auto key : {"alertType", "alertSummary", "mode", "tabName"})
             row[key] = w->property(key).toString();
@@ -375,32 +383,71 @@ int main(int argc, char **argv) {
         return QMetaObject::invokeMethod(w, "toggle", Q_ARG(QVariant, QVariant("Home")));
     };
     auto dismiss = [&]() { return QMetaObject::invokeMethod(w, "dismiss"); };
+    auto settle = [&]() {
+        QTest::qWait(1);
+        if (!QTest::qWaitFor([&] {
+                return !w->property("shapeAnimating").toBool()
+                    && !w->property("drawerAnimating").toBool()
+                    && w->property("panelY").toDouble() == w->property("targetTopGap").toDouble();
+            }, 1600)) {
+            fprintf(stderr, "Spring did not settle: y=%g targetY=%g height=%g shape=%d drawer=%d\n",
+                w->property("panelY").toDouble(), w->property("targetTopGap").toDouble(),
+                w->property("panelHeight").toDouble(), w->property("shapeAnimating").toBool(),
+                w->property("drawerAnimating").toBool());
+            qFatal("Island or drawer spring did not settle");
+        }
+    };
     if (!toggle()) return 3;
     QTest::qWait(45); snapshot("opening45");
     QTest::qWait(55); snapshot("opening100");
     QTest::qWait(100); snapshot("opening200");
-    QTest::qWait(170); snapshot("opened");
+    settle(); snapshot("opened");
     dismiss(); QTest::qWait(45); snapshot("closing45");
     QTest::qWait(55); snapshot("closing100");
     QTest::qWait(130); snapshot("closed230");
-    QTest::qWait(170); snapshot("closed400");
+    settle(); snapshot("closedSettled");
     toggle(); QTest::qWait(100); dismiss(); QTest::qWait(45);
     snapshot("beforeReopen"); toggle(); snapshot("afterReopen");
-    QTest::qWait(370); snapshot("reopened");
-    if (!w->property("dashboardVisible").toBool()) { toggle(); QTest::qWait(370); }
+    settle(); snapshot("reopened");
+    if (!w->property("dashboardVisible").toBool()) { toggle(); settle(); }
+    for (const auto *kind : {"wifi", "bluetooth", "hotspot"}) {
+        QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString(kind)));
+        double peak = 0, minimumOpacity = 1, maximumOpacity = 0;
+        for (int frame = 0; frame < 48; ++frame) {
+            QTest::qWait(16);
+            peak = qMax(peak, w->property("drawerProgressValue").toDouble());
+            minimumOpacity = qMin(minimumOpacity, w->property("drawerOpacity").toDouble());
+            maximumOpacity = qMax(maximumOpacity, w->property("drawerOpacity").toDouble());
+        }
+        settle();
+        const QString key = QString("springDrawer_") + kind;
+        snapshot(key.toUtf8().constData());
+        auto row = results[key].toObject();
+        row["peak"] = peak;
+        row["minimumOpacity"] = minimumOpacity;
+        row["maximumOpacity"] = maximumOpacity;
+        results[key] = row;
+        auto closeButton = w->findChild<QQuickItem*>("connectivityClose");
+        if (!closeButton) return 6;
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier,
+            closeButton->mapToScene(QPointF(closeButton->width() / 2,
+                                           closeButton->height() / 2)).toPoint());
+        settle();
+        snapshot((QString("closedSpringDrawer_") + kind).toUtf8().constData());
+    }
     if (!QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("wifi")))) return 4;
     QTest::qWait(280); snapshot("drawerOpened");
     QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("bluetooth")));
     QTest::qWait(210); snapshot("bluetoothDrawerOpened");
     QMetaObject::invokeMethod(w, "toggleSideDrawer", Q_ARG(QString, QString("wifi")));
     QTest::qWait(210); snapshot("wifiDrawerRestored");
-    w->setWidth(1280); QTest::qWait(360); snapshot("drawer1280Viewport");
-    w->setWidth(1080); QTest::qWait(360); snapshot("drawer1080Viewport");
-    w->setWidth(960); QTest::qWait(360); snapshot("drawer960Viewport");
-    w->setWidth(768); QTest::qWait(360); snapshot("drawer768Viewport");
-    w->setWidth(640); QTest::qWait(360); snapshot("drawer640Viewport");
-    w->setHeight(360); QTest::qWait(360); snapshot("drawer640x360Viewport");
-    w->setWidth(1920); w->setHeight(1080); QTest::qWait(360);
+    w->setWidth(1280); settle(); snapshot("drawer1280Viewport");
+    w->setWidth(1080); settle(); snapshot("drawer1080Viewport");
+    w->setWidth(960); settle(); snapshot("drawer960Viewport");
+    w->setWidth(768); settle(); snapshot("drawer768Viewport");
+    w->setWidth(640); settle(); snapshot("drawer640Viewport");
+    w->setHeight(360); settle(); snapshot("drawer640x360Viewport");
+    w->setWidth(1920); w->setHeight(1080); settle();
     QMetaObject::invokeMethod(w, "toggle", Q_ARG(QVariant, QVariant("System")));
     QTest::qWait(30); snapshot("systemTabEntering");
     QTest::qWaitFor([&] { return !w->property("drawerVisible").toBool()
@@ -424,24 +471,24 @@ int main(int argc, char **argv) {
     QTest::qWait(30); snapshot("drawerEscape");
     QTest::keyClick(w, Qt::Key_Escape);
     QTest::qWait(30); snapshot("dashboardEscape");
-    QTest::qWait(230); snapshot("drawerUnloadedAfterClose");
-    dismiss(); QTest::qWait(370);
+    settle(); snapshot("drawerUnloadedAfterClose");
+    dismiss(); settle();
     toggle(); dismiss(); QTest::qWait(50); snapshot("earlyDismiss");
-    dismiss(); QTest::qWait(370);
-    toggle(); toggle(); QTest::qWait(370); snapshot("doubleToggle");
+    dismiss(); settle();
+    toggle(); toggle(); settle(); snapshot("doubleToggle");
     QMetaObject::invokeMethod(w, "simulateMedia");
-    QTest::qWait(400); snapshot("mediaRest");
-    toggle(); QTest::qWait(400); snapshot("mediaDashboard");
+    settle(); snapshot("mediaRest");
+    toggle(); settle(); snapshot("mediaDashboard");
     dismiss();
     QTest::qWaitFor([&] { return w->property("panelHeight").toDouble() == 32
         && w->property("panelWidth").toDouble() == 232; }, 1000);
     snapshot("mediaShapeSettled");
     QTest::qWait(400); snapshot("mediaReturn");
-    QMetaObject::invokeMethod(w, "pin"); QTest::qWait(370);
+    QMetaObject::invokeMethod(w, "pin"); settle();
     QMetaObject::invokeMethod(w, "unpin"); QTest::qWait(45);
     snapshot("beforeOsdInterruptsShrink");
     QMetaObject::invokeMethod(w, "osd"); snapshot("osdInterruptsShrink");
-    QMetaObject::invokeMethod(w, "clearAlert"); QTest::qWait(370);
+    QMetaObject::invokeMethod(w, "clearAlert"); settle();
     QMetaObject::invokeMethod(w, "osd"); snapshot("osdFromMedia");
     QMetaObject::invokeMethod(w, "osdVolume125"); snapshot("osdVolume125");
     QMetaObject::invokeMethod(w, "osdVolume150"); snapshot("osdVolume150");
@@ -457,12 +504,12 @@ int main(int argc, char **argv) {
     dismiss(); QTest::qWait(30); snapshot("dashboardClosingInput");
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("During closing")));
     snapshot("notificationWhileClosing");
-    QTest::qWait(370); snapshot("dashboardClosedWithoutStaleAlert");
+    settle(); snapshot("dashboardClosedWithoutStaleAlert");
     QMetaObject::invokeMethod(w, "pin");
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("During pin")));
     QMetaObject::invokeMethod(w, "osd"); snapshot("pinnedSuppressesAlerts");
     QMetaObject::invokeMethod(w, "unpin"); snapshot("unpinnedRestoresMedia");
-    QTest::qWait(370);
+    settle();
     QTest::mouseMove(w, QPoint(100, 500));
     QTest::mouseMove(w, QPoint(960, 16));
     QTest::qWait(70); snapshot("hoverBeforeDwell");
@@ -474,7 +521,7 @@ int main(int argc, char **argv) {
     QTest::mouseMove(w, QPoint(100, 500));
     QTest::qWait(270); snapshot("hoverAfterGrace");
     QTest::mouseMove(w, QPoint(960, 16));
-    QTest::qWait(550);
+    QTest::qWait(200); settle();
     snapshot("hoverSettledBeforePin");
     auto pinButton = w->findChild<QQuickItem*>("mediaPinButton");
     if (!pinButton) return 6;
@@ -516,15 +563,15 @@ int main(int argc, char **argv) {
     QTest::mouseMove(w, QPoint(100, 500));
     QTest::qWait(320);
     QMetaObject::invokeMethod(w, "simulatePausedUntitledMedia");
-    QTest::qWait(320); snapshot("pausedUntitledMedia");
+    settle(); snapshot("pausedUntitledMedia");
     QMetaObject::invokeMethod(w, "simulateMedia");
     QMetaObject::invokeMethod(w, "pin");
-    QTest::qWait(380); snapshot("spotifyExpanded");
+    settle(); snapshot("spotifyExpanded");
     QMetaObject::invokeMethod(w, "unpin");
-    QTest::qWait(360);
+    settle();
     QMetaObject::invokeMethod(w, "simulateYoutubeMedia");
     QMetaObject::invokeMethod(w, "pin");
-    QTest::qWait(380); snapshot("youtubeExpanded");
+    settle(); snapshot("youtubeExpanded");
     if (auto back = w->findChild<QQuickItem *>("mediaPreviousButton")) {
         auto center = back->mapToScene(QPointF(back->width() / 2, back->height() / 2));
         QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, center.toPoint());
@@ -556,7 +603,7 @@ int main(int argc, char **argv) {
         if os.environ.get('DASHBOARD_MOTION_SCREENSHOT_DIR'):
             args.append(os.environ['DASHBOARD_MOTION_SCREENSHOT_DIR'])
         result = subprocess.run(args,
-                                env=environment(base), capture_output=True, text=True, timeout=40)
+                                env=environment(base), capture_output=True, text=True, timeout=60)
         if result.returncode:
             raise AssertionError(f'Qt harness exit {result.returncode}: {result.stdout}{result.stderr}')
         cls.rows = json.loads(result.stdout)
@@ -565,6 +612,22 @@ int main(int argc, char **argv) {
         if os.environ.get('DASHBOARD_MOTION_EVIDENCE'):
             Path(os.environ['DASHBOARD_MOTION_EVIDENCE']).write_text(
                 json.dumps(cls.rows, indent=2) + '\n')
+
+    def test_connectivity_menus_bounce_gently_and_unload_after_closing(self):
+        for kind in ('wifi', 'bluetooth', 'hotspot'):
+            with self.subTest(menu=kind):
+                opened = self.rows['springDrawer_' + kind]
+                self.assertGreater(opened['peak'], 1.005, opened)
+                self.assertLess(opened['peak'], 1.08, opened)
+                self.assertEqual(opened['drawerProgressValue'], 1, opened)
+                self.assertGreaterEqual(opened['minimumOpacity'], 0, opened)
+                self.assertLessEqual(opened['maximumOpacity'], 1, opened)
+                self.assertTrue(opened['drawerHitTest'], opened)
+                closed = self.rows['closedSpringDrawer_' + kind]
+                self.assertTrue(closed['expanded'], closed)
+                self.assertEqual(closed['drawerProgressValue'], 0, closed)
+                self.assertFalse(closed['drawerVisible'], closed)
+                self.assertFalse(closed['wifiLoaded'] or closed['bluetoothLoaded'], closed)
 
     def test_content_size_stays_fixed_during_motion(self):
         for name in ('opening45', 'opening100', 'opening200', 'closing45'):
@@ -604,30 +667,49 @@ int main(int argc, char **argv) {
         self.assertLess(first['contentY'], middle['contentY'])
         self.assertLess(first['contentOpacity'], middle['contentOpacity'])
         self.assertEqual((opened['panelWidth'], opened['panelHeight'], opened['panelY']),
-                         (900, 520, 6))
+                         (900, 520, 18))
         self.assertEqual((opened['contentY'], opened['contentOpacity']), (0, 1))
         self.assertNotIn('ReferenceError', self.stderr)
         self.assertNotIn('TypeError', self.stderr)
         self.assertNotIn('Binding loop', self.stderr)
 
-    def test_close_finishes_faster_than_open(self):
+    def test_close_keeps_modal_visible_until_spring_settles(self):
         self.assertTrue(self.rows['closing45']['dashboardVisible'])
-        self.assertLess(self.rows['closing45']['heightDuration'],
-                        self.rows['opening45']['heightDuration'])
+        self.assertTrue(self.rows['closing45']['contracting'])
+        self.assertTrue(self.rows['closing45']['shapeAnimating'])
+        self.assertFalse(self.rows['opening45']['contracting'])
         self.assertLess(self.rows['closed230']['panelHeight'],
                         self.rows['closing45']['panelHeight'])
-        # Software-rendered Qt tests can miss frames under CPU load.
-        # Check the nominal close duration above, and the settled state with slack.
-        self.assertFalse(self.rows['closed400']['dashboardVisible'], self.rows['closed400'])
-        self.assertEqual(self.rows['closed400']['panelHeight'], 32)
-        self.assertEqual(self.rows['closed400']['panelWidth'], 138)
+        self.assertFalse(self.rows['closedSettled']['dashboardVisible'], self.rows['closedSettled'])
+        self.assertEqual(self.rows['closedSettled']['panelHeight'], 32)
+        self.assertEqual(self.rows['closedSettled']['panelWidth'], 138)
 
     def test_close_does_not_collapse_most_of_the_surface_in_the_first_frames(self):
         opened = self.rows['opened']['panelHeight']
-        target = self.rows['closed400']['panelHeight']
+        target = self.rows['closedSettled']['panelHeight']
         midway = (opened - self.rows['closing100']['panelHeight']) / (opened - target)
         self.assertLess(midway, 0.7,
                         'closing rushes to the target then spends its remaining time creeping')
+
+    def test_collapse_retracts_visibly_then_returns_to_rest(self):
+        self.assertEqual(self.rows['opened']['panelY'], 18)
+        for frame in ('closing45', 'closing100', 'closed230'):
+            with self.subTest(frame=frame):
+                row = self.rows[frame]
+                self.assertGreaterEqual(row['panelY'], 0)
+                self.assertLess(row['panelY'], 18)
+                self.assertGreaterEqual(row['layerHeightBudget'], row['panelY'] + row['panelHeight'])
+                expected_y = 6 + 12 * (row['panelHeight'] - 32) / (520 - 32)
+                self.assertAlmostEqual(row['panelY'], expected_y, delta=0.15)
+        self.assertLess(self.rows['closed230']['panelY'], 8)
+        self.assertEqual(self.rows['closedSettled']['panelY'], 6)
+        self.assertAlmostEqual(self.rows['beforeReopen']['panelY'],
+                               self.rows['afterReopen']['panelY'], delta=0.1)
+        self.assertEqual(self.rows['reopened']['panelY'], 18)
+        for frame in ('youtubeExpanded', 'spotifyExpanded'):
+            row = self.rows[frame]
+            self.assertEqual(row['panelY'], 18)
+            self.assertGreaterEqual(row['layerHeightBudget'], row['panelY'] + row['panelHeight'])
 
     def test_compact_media_is_ready_when_the_surface_finishes_contracting(self):
         self.assertEqual(self.rows['mediaShapeSettled']['compactMediaOpacity'], 1,
@@ -638,7 +720,7 @@ int main(int argc, char **argv) {
         interrupted = self.rows['osdInterruptsShrink']
         self.assertGreater(before['panelHeight'], 48)
         self.assertTrue(interrupted['contracting'], interrupted)
-        self.assertEqual(interrupted['heightDuration'], self.rows['closing45']['heightDuration'])
+        self.assertTrue(interrupted['shapeAnimating'])
 
     def test_reopening_during_close_reverses_without_reset(self):
         self.assertAlmostEqual(self.rows['beforeReopen']['panelHeight'],
@@ -753,6 +835,9 @@ int main(int argc, char **argv) {
             self.assertEqual(row['drawerOverlay'], overlay, row)
             self.assertGreaterEqual(row['drawerX'], 0, row)
             self.assertLessEqual(row['drawerX'] + row['drawerWidth'], screen_width, row)
+            self.assertGreaterEqual(row['panelY'], 0, row)
+            self.assertLessEqual(row['panelY'] + row['panelHeight'],
+                                 360 if name == 'drawer640x360Viewport' else 1080, row)
 
         normal = self.rows['drawer1280Viewport']
         self.assertEqual(normal['homeLayoutColumns'], 3, normal)
@@ -767,7 +852,7 @@ int main(int argc, char **argv) {
     def test_home_content_unloads_when_dashboard_closes(self):
         self.assertTrue(self.rows['opening45']['homeLoaded'])
         self.assertTrue(self.rows['closing45']['homeLoaded'])
-        self.assertFalse(self.rows['closed400']['homeLoaded'])
+        self.assertFalse(self.rows['closedSettled']['homeLoaded'])
         self.assertTrue(self.rows['reopened']['homeLoaded'])
         self.assertFalse(self.rows['mediaReturn']['homeLoaded'])
 

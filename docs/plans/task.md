@@ -5,9 +5,9 @@
 | Balanced spring 2026-11-16: Present design and obtain approval | done | User selected Lò xo cân bằng (Recommended). |
 | Balanced spring 2026-11-16: Record design and implementation plan | done | 2026-11-16-control-center-spring-design.md and 2026-11-16-control-center-spring.md. |
 | Balanced spring 2026-11-16: Preserve baseline in isolated worktree | done | Six hashes match both backup and untouched original checkout; isolated baseline 412 tests OK, no skips, 107.157s; no dependencies installed. |
-| Balanced spring 2026-11-16: Action-menu native spring regression and implementation | in progress | Real popup scale/opacity, exit contraction, interrupted reopen and focus lifecycle. |
-| Balanced spring 2026-11-16: Specification then quality review | pending | Review connected popup caller and inherited lifecycle, without unrelated changes. |
-| Balanced spring 2026-11-16: Full verification and live preview | pending | Full suite, validator, diff check, Quickshell-only installer preview, IPC/logs and live captures. |
+| Balanced spring 2026-11-16: Action-menu native spring regression and implementation | done | Red: 3 assertion failures (overshoot, contraction, dropped reopen); green: 5 native Qt tests OK in 5.424s, including Escape/Return and immediate dismissal. Qt Menu completes its 140ms exit before queued reopening. |
+| Balanced spring 2026-11-16: Specification then quality review | done | Checklist-based single-thread spec review then connected-code quality review; sole Wi-Fi caller updated; no dependencies, content resizing, theme/service changes or custom lifecycle timer. Native reopen limitation documented. |
+| Balanced spring 2026-11-16: Full verification and live preview | done | Final repeat after Island retract correction: 418 tests OK/no skips; validator/diff exit 0; Quickshell-only install/reload, health OK, no new QML errors, compositor errors empty; 307 live frames/11s, four old Alerts preserved; rollback and native menu limits in 2026-11-16-control-center-spring-verification.md. |
 | Task 1: Installer & env safety (install.sh, wt-prep.sh, env-hyprland) | done | tests/test_installer.py: 3 tests pass |
 | Task 2: Systemd user unit portability & relative symlinks | done | %h used, relative symlinks in .wants |
 | Task 3: IPC exception handling, snapshot retention & GTK sync | done | generate-theme.py updated, snapshot retention active |

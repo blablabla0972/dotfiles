@@ -104,6 +104,7 @@ ShellRoot {
     Item {
         id: islandWindow
         width: 1000; height: 700
+        readonly property real topGap: 6
         property bool isPinned: false
         readonly property bool dashboardShowing: dashboard.expanded || dashboard.closing
         readonly property bool modalOpen: isPinned || dashboard.expanded
@@ -136,6 +137,7 @@ ShellRoot {
                 showing: dashboardShowing,
                 fullscreen: maskRegion.item === scrim,
                 x: maskRegion.x,
+                y: maskRegion.y,
                 width: maskRegion.width,
                 height: maskRegion.height,
                 bottomRadius: maskRegion.bottomLeftRadius
@@ -153,7 +155,9 @@ ShellRoot {
             const closing = sample();
             dashboard.closing = false;
             const closed = sample();
-            console.log("NATIVE_MASK:" + JSON.stringify({idle, pinned, expanded, closing, closed}));
+            islandContainer.y = 18;
+            const shifted = sample();
+            console.log("NATIVE_MASK:" + JSON.stringify({idle, pinned, expanded, closing, closed, shifted}));
             Qt.quit();
         }
     }
@@ -173,6 +177,94 @@ ShellRoot {
                 self.assertEqual(values[state]["bottomRadius"], 0)
         self.assertTrue(values["closing"]["showing"])
         self.assertFalse(values["closing"]["modal"])
+        self.assertEqual(values["shifted"]["y"], 6)
+        self.assertEqual(values["shifted"]["height"], 102)
+
+    def test_native_morph_bounces_gently_and_retargets_without_jumping(self):
+        qml = """
+import QtQuick
+import Quickshell
+import "@@ISLAND_DIR@@" as Island
+import "@@STATE_URL@@" as IslandState
+
+ShellRoot {
+    Item {
+        id: probe
+        property real started: Date.now()
+        property int phase: 0
+        property real peakWidth: 138
+        property real peakHeight: 32
+        property var settled: []
+        property real jump: 0
+        property string activeMode: "notification"
+        property bool contracting: false
+        property string dashboardOriginMode: "idle"
+        property var islandShape: pill
+        property real lowestOpacity: 1
+        property real originOpacity: 1
+        QtObject { id: dashboard; property bool expanded: false }
+        @@REVEAL@@
+        Island.IslandShape {
+            id: pill
+            pillWidth: 138; pillHeight: 32
+            showAntiCorners: false
+        }
+        Timer {
+            interval: 16; repeat: true; running: true
+            onTriggered: {
+                const elapsed = Date.now() - probe.started;
+                if (probe.phase === 0 && elapsed >= 100) {
+                    probe.phase = 1;
+                    pill.pillWidth = 390; pill.pillHeight = 88;
+                } else if (probe.phase === 1) {
+                    probe.peakWidth = Math.max(probe.peakWidth, pill.pillWidth);
+                    probe.peakHeight = Math.max(probe.peakHeight, pill.pillHeight);
+                    if (pill.pillWidth >= 390 && pill.pillHeight >= 88)
+                        probe.lowestOpacity = Math.min(probe.lowestOpacity, probe.reveal("notification"));
+                    if (elapsed >= 1100) {
+                        probe.settled = [pill.pillWidth, pill.pillHeight];
+                        probe.activeMode = "dashboard";
+                        dashboard.expanded = true;
+                        probe.originOpacity = probe.reveal("idle");
+                        dashboard.expanded = false;
+                        probe.activeMode = "volume";
+                        probe.contracting = true;
+                        pill.contracting = true;
+                        probe.phase = 2;
+                        pill.pillWidth = 138; pill.pillHeight = 32;
+                    }
+                } else if (probe.phase === 2 && elapsed >= 1180) {
+                    const width = pill.pillWidth, height = pill.pillHeight;
+                    pill.pillWidth = 244; pill.pillHeight = 48;
+                    probe.jump = Math.max(Math.abs(pill.pillWidth - width),
+                                          Math.abs(pill.pillHeight - height));
+                    probe.phase = 3;
+                } else if (probe.phase === 3 && elapsed >= 2200) {
+                    console.log("NATIVE_MASK:" + JSON.stringify({
+                        peakWidth: probe.peakWidth, peakHeight: probe.peakHeight,
+                        settled: probe.settled, jump: probe.jump,
+                        lowestOpacity: probe.lowestOpacity, originOpacity: probe.originOpacity,
+                        final: [pill.pillWidth, pill.pillHeight]
+                    }));
+                    Qt.quit();
+                }
+            }
+        }
+    }
+}
+""".replace("@@ISLAND_DIR@@", SHAPE.parent.as_uri()).replace(
+            "@@STATE_URL@@", (SHAPE.parent / "IslandState.js").as_uri()
+        ).replace("@@REVEAL@@", qml_block(self.island, "function reveal(mode): real {"))
+        values = self.run_native(qml)
+        self.assertGreater(values["peakWidth"], 390.5, values)
+        self.assertLess(values["peakWidth"], 390 + (390 - 138) * 0.08, values)
+        self.assertGreater(values["peakHeight"], 88.1, values)
+        self.assertLess(values["peakHeight"], 88 + (88 - 32) * 0.08, values)
+        self.assertEqual(values["settled"], [390, 88], values)
+        self.assertEqual(values["jump"], 0, values)
+        self.assertEqual(values["lowestOpacity"], 1, values)
+        self.assertEqual(values["originOpacity"], 0, values)
+        self.assertEqual(values["final"], [244, 48], values)
 
     def test_native_outside_tap_logic_dismisses_modal_only(self):
         scrim = self.island.index("id: scrim")

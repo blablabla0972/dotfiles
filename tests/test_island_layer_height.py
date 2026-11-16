@@ -90,7 +90,8 @@ class IslandLayerHeightTest(unittest.TestCase):
                 self.assertEqual(released["effective"], 40)
 
     def test_geometry_and_input_contract(self):
-        self.assertIn("Math.max(currentDims.height, islandShape.pillHeight) + topGap + 8", self.source)
+        self.assertIn("Math.max(currentDims.height, islandShape.pillHeight)", self.source)
+        self.assertIn("Math.max(targetTopGap, islandContainer.y) + 8", self.source)
         self.assertIn("implicitHeight: Math.max(requestedLayerHeight, retainedLayerHeight)", self.source)
         self.assertIn("onRequestedLayerHeightChanged: reconcileLayerHeight()", self.source)
         self.assertIn("onDashboardShowingChanged: {\n        reconcileLayerHeight();", self.source)

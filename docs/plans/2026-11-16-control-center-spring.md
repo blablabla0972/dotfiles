@@ -40,6 +40,10 @@
    alongside the existing 90ms fade.
 4. Run the focused test again and inspect native warnings. Adjust only if actual
    motion/lifecycle evidence identifies a problem.
+   Verified deviation: Qt Menu's own `setVisible` guard drops mid-exit open
+   requests. Preserve native cleanup and queue one reopen using `closed` plus
+   `Qt.callLater`; update the sole Wi-Fi caller to `requestOpen()`. The small
+   menu finishes its short exit rather than physically reversing mid-flight.
 5. Review specification first, then code quality; fix any findings before Task 3.
 
 ### Task 3: Verify and preview (@verification-before-completion)

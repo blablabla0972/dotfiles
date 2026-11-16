@@ -14,11 +14,8 @@ Item {
     property color borderColor: "#43474e"
     property bool showAntiCorners: true
 
-    property int animDurationWidth: 240
-    property int animDurationHeight: 220
-    property real overshoot: 0.25
-    property int easingTypeWidth: overshoot > 0 ? Easing.OutBack : Easing.OutCubic
-    property int easingTypeHeight: Easing.OutCubic
+    property bool contracting: false
+    readonly property bool morphing: widthSpring.running || heightSpring.running
 
     // Budgeted radii to prevent self-intersecting arcs
     readonly property real r: Math.max(0, Math.min(root.bottomRadius, root.pillHeight / 2, root.pillWidth / 2))
@@ -29,18 +26,21 @@ Item {
     width: pillWidth + (showAntiCorners ? a * 2 : 0)
     height: pillHeight
 
-    // Smooth geometry morphing transitions
+    // Native springs retain momentum when a morph reverses mid-flight.
     Behavior on pillWidth {
-        NumberAnimation {
-            duration: root.animDurationWidth
-            easing.type: root.easingTypeWidth
-            easing.overshoot: root.overshoot
+        SpringAnimation {
+            id: widthSpring
+            spring: 4.0
+            damping: root.contracting ? 0.4 : 0.34
+            epsilon: 0.25
         }
     }
     Behavior on pillHeight {
-        NumberAnimation {
-            duration: root.animDurationHeight
-            easing.type: root.easingTypeHeight
+        SpringAnimation {
+            id: heightSpring
+            spring: 4.0
+            damping: root.contracting ? 0.4 : 0.34
+            epsilon: 0.25
         }
     }
 

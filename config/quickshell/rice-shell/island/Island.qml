@@ -19,8 +19,12 @@ PanelWindow {
     color: "transparent"
     visible: true
     readonly property real topGap: 6
+    readonly property real targetTopGap: topGap
+        + (activeMode === IslandState.State.EXPANDED || activeMode === IslandState.State.DASHBOARD
+            ? Math.min(12, Math.max(0, targetScreen.height - currentDims.height - topGap - 8)) : 0)
     // Grow ahead of the pill animation; delay shrinking until the morph settles.
-    readonly property real requestedLayerHeight: Math.ceil(Math.max(currentDims.height, islandShape.pillHeight) + topGap + 8)
+    readonly property real requestedLayerHeight: Math.ceil(Math.max(currentDims.height, islandShape.pillHeight)
+        + Math.max(targetTopGap, islandContainer.y) + 8)
     property real retainedLayerHeight: IslandState.targetDimensions(IslandState.State.IDLE).height + topGap + 8
     implicitHeight: Math.max(requestedLayerHeight, retainedLayerHeight)
 
@@ -67,13 +71,13 @@ PanelWindow {
     WlrLayershell.keyboardFocus: dashboard.expanded ? WlrKeyboardFocus.Exclusive
         : (isPinned ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
 
-    // Match the floating surface, including its rounded top corners.
+    // Follow the surface and keep the hover path back to its resting position.
     mask: Region {
         item: islandWindow.modalOpen ? scrim : null
         x: islandContainer.x + islandShape.a
-        y: islandContainer.y
+        y: Math.min(islandWindow.topGap, islandContainer.y)
         width: islandShape.pillWidth
-        height: islandShape.pillHeight
+        height: islandShape.pillHeight + Math.max(0, islandContainer.y - islandWindow.topGap)
         topLeftRadius: islandWindow.modalOpen ? 0 : islandShape.r
         topRightRadius: islandWindow.modalOpen ? 0 : islandShape.r
         bottomLeftRadius: islandWindow.modalOpen ? 0 : islandShape.r
@@ -116,6 +120,7 @@ PanelWindow {
 
     function finishDashboardClose(): void {
         if (dashboard.closing
+            && !islandShape.morphing
             && Math.abs(islandShape.pillWidth - currentDims.width) < 0.01
             && Math.abs(islandShape.pillHeight - currentDims.height) < 0.01)
             dashboard.closing = false;
@@ -140,8 +145,10 @@ PanelWindow {
     function reveal(mode): real {
         if (activeMode !== mode && !(dashboard.expanded && dashboardOriginMode === mode)) return 0;
         const dims = IslandState.targetDimensions(mode);
-        const delta = Math.max(Math.abs(islandShape.pillWidth - dims.width) / dims.width,
-                               Math.abs(islandShape.pillHeight - dims.height) / dims.height);
+        // Keep incoming content opaque through overshoot; fade the Dashboard origin out.
+        const direction = activeMode === mode ? (contracting ? -1 : 1) : -1;
+        const delta = Math.max(0, direction * (dims.width - islandShape.pillWidth) / dims.width,
+                                 direction * (dims.height - islandShape.pillHeight) / dims.height);
         return Math.max(0, Math.min(1, 1 - delta * 2.5));
     }
 
@@ -164,7 +171,7 @@ PanelWindow {
         if (nextMode === activeMode) return;
         const nextDims = nextMode === IslandState.State.DASHBOARD
             ? dashboardDimensions : IslandState.targetDimensions(nextMode);
-        // Latch direction before retargeting; keep timing stable through the final frame.
+        // Latch damping before retargeting, including interrupted spring motion.
         const fromHeight = islandShape ? islandShape.pillHeight : currentDims.height;
         const fromWidth = islandShape ? islandShape.pillWidth : currentDims.width;
         contracting = nextDims.height < fromHeight
@@ -280,7 +287,14 @@ PanelWindow {
         Item {
             id: islandContainer
             anchors.top: parent.top
-            anchors.topMargin: islandWindow.topGap
+            anchors.topMargin: islandWindow.targetTopGap
+            Behavior on anchors.topMargin {
+                SpringAnimation {
+                    spring: 4.0
+                    damping: islandWindow.contracting ? 0.4 : 0.34
+                    epsilon: 0.05
+                }
+            }
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.horizontalCenterOffset: -dashboard.drawerOffset
             width: islandShape.width
@@ -293,24 +307,19 @@ PanelWindow {
                 pillHeight: islandWindow.currentDims.height
                 bottomRadius: islandWindow.currentDims.radius
                 antiCornerRadius: 0
-                animDurationWidth: islandWindow.contracting ? 220
-                    : dashboard.expanded || islandWindow.activeMode === IslandState.State.EXPANDED ? 320 : 260
-                animDurationHeight: islandShape.animDurationWidth
-                easingTypeWidth: islandWindow.contracting ? Easing.InOutQuad : Easing.OutQuint
-                easingTypeHeight: islandShape.easingTypeWidth
-                onPillWidthChanged: islandWindow.finishDashboardClose()
-                onPillHeightChanged: islandWindow.finishDashboardClose()
-                overshoot: 0
+                contracting: islandWindow.contracting
+                onMorphingChanged: islandWindow.finishDashboardClose()
                 fillColor: islandWindow.islandColor
                 borderColor: Tokens.outline
                 showAntiCorners: false
                 Behavior on bottomRadius {
-                    NumberAnimation { duration: islandShape.animDurationHeight; easing.type: islandShape.easingTypeHeight }
+                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
                 }
             }
 
             HoverHandler {
                 id: hoverHandler
+                margin: Math.max(0, islandContainer.y - islandWindow.topGap)
                 onHoveredChanged: {
                     if (hovered) {
                         hoverGrace.stop();

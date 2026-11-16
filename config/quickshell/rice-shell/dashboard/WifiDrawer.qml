@@ -1162,7 +1162,7 @@ Item {
                         implicitHeight: 28
                         text: "⋯"
                         Accessible.name: "More actions for " + (networkRow.network.name || "network")
-                        onClicked: rowMenu.open()
+                        onClicked: rowMenu.requestOpen()
                         contentItem: Text {
                             text: "⋯"
                             font.pixelSize: 13
