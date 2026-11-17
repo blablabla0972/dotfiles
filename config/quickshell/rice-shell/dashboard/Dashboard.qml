@@ -401,6 +401,7 @@ Item {
                 active: sideDrawerContainer.visible
                 sourceComponent: ConnectivityCenter {
                     currentPage: dashboardWindow.renderedSideDrawer
+                    drawerOpen: dashboardWindow.sideDrawerOpen
                     onPageSelected: (page) => dashboardWindow.selectSideDrawer(page)
                     onCloseRequested: dashboardWindow.activeSideDrawer = ""
                 }
