@@ -239,6 +239,9 @@ QtObject {
     function toggle(tab) { toggleDashboard(tab); }
     function dismiss() { dismissDashboard(); }
     function notify(summary) { triggerNotification(summary, "Body", "Test", ""); }
+    function notifyWithActions(summary) {
+        triggerNotification(summary, "Body", "Test", "", 1, [{text: "Open", id: "open"}]);
+    }
     function osd() { triggerOsd("vol", 0.5); }
     function osdVolume125() { triggerOsd("vol", 1.25); }
     function osdVolume150() { triggerOsd("vol", 1.5); }
@@ -548,6 +551,13 @@ int main(int argc, char **argv) {
     snapshot("notificationRefreshed");
     QTest::qWait(3300); snapshot("notificationBeforeExpiry");
     QTest::qWait(1000); snapshot("notificationAfterExpiry");
+    QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Notification 88")));
+    settle(); snapshot("notification88");
+    QMetaObject::invokeMethod(w, "notifyWithActions", Q_ARG(QVariant, QVariant("Notification 120")));
+    settle(); snapshot("notification120");
+    QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Notification 88 again")));
+    settle(); snapshot("notification88Again");
+    QMetaObject::invokeMethod(w, "clearAlert"); settle();
     QMetaObject::invokeMethod(w, "osd"); snapshot("osdClockStart");
     QTest::qWait(2500); snapshot("osdAfterExpiry");
     QTest::mouseMove(w, QPoint(100, 500));
@@ -903,6 +913,11 @@ int main(int argc, char **argv) {
         self.assertTrue(self.rows['osdClockStart']['alertTimerRunning'])
         self.assertFalse(self.rows['osdAfterExpiry']['alertTimerRunning'])
         self.assertEqual(self.rows['osdAfterExpiry']['mode'], 'media')
+
+    def test_notification_action_height_retargets_without_stale_mode_geometry(self):
+        self.assertEqual(self.rows['notification88']['panelHeight'], 88)
+        self.assertEqual(self.rows['notification120']['panelHeight'], 120)
+        self.assertEqual(self.rows['notification88Again']['panelHeight'], 88)
 
     def test_notifications_do_not_resurface_after_modal_close(self):
         for name in ('dashboardClearsAlert', 'notificationWhileDashboard',

@@ -115,5 +115,38 @@ console.log(JSON.stringify(c.targetDimensions(c.State.EXPANDED)));
         result = subprocess.run(["node", "-e", script, str(STATE)], capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(result.stdout), {"width": 420, "height": 160, "radius": 26})
 
+    def test_normalized_progress_handles_reverse_and_zero_delta(self):
+        script = """
+const fs = require("node:fs");
+const vm = require("node:vm");
+const c = vm.createContext({});
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), c);
+console.log(JSON.stringify([
+  c.normalizedProgress(32, 32, 520),
+  c.normalizedProgress(276, 32, 520),
+  c.normalizedProgress(32, 520, 32),
+  c.normalizedProgress(276, 520, 32),
+  c.normalizedProgress(520, 520, 520),
+  c.normalizedProgress(NaN, 32, 520)
+]));
+"""
+        result = subprocess.run(["node", "-e", script, str(STATE)], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), [0, 0.5, 1, 0.5, 1, 0])
+
+    def test_top_gap_refactor_matches_original_clamp(self):
+        script = """
+const values = [32, 48, 88, 120, 160, 520, 700, -10];
+const idle = 32, tracking = 160, top = 6, screen = 1080, dashboard = 520;
+const extra = Math.max(0, Math.min(12, screen - Math.max(tracking, dashboard) - top - 8));
+const oldGap = height => top + Math.max(0, Math.min(12,
+  screen - Math.max(tracking, dashboard) - top - 8))
+  * Math.max(0, Math.min(1, (height - idle) / Math.max(1, tracking - idle)));
+const newGap = height => top + extra
+  * Math.max(0, Math.min(1, (height - idle) / Math.max(1, tracking - idle)));
+console.log(JSON.stringify(values.map(value => [oldGap(value), newGap(value)])));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertTrue(all(old == new for old, new in json.loads(result.stdout)))
+
 if __name__ == "__main__":
     unittest.main()

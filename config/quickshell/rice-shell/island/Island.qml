@@ -19,13 +19,33 @@ PanelWindow {
     color: "transparent"
     visible: true
     readonly property real topGap: 6
-    readonly property real targetTopGap: topGap
-        + (activeMode === IslandState.State.EXPANDED || activeMode === IslandState.State.DASHBOARD
-            ? Math.min(12, Math.max(0, targetScreen.height - currentDims.height - topGap - 8)) : 0)
+    readonly property real idleHeight: IslandState.targetDimensions(IslandState.State.IDLE).height
+    readonly property real trackingHeight: IslandState.targetDimensions(IslandState.State.EXPANDED).height
+    readonly property real dashboardHeight: Math.min(520, Math.max(1, targetScreen.height - 16))
+    readonly property real extraTopGap: Math.max(0, Math.min(12,
+        targetScreen.height - Math.max(trackingHeight, dashboardHeight) - topGap - 8))
+    property real targetTopGap: topGap
+
+    Behavior on targetTopGap {
+        SpringAnimation {
+            spring: islandWindow.contracting ? 3.7 : 3.8
+            damping: islandWindow.contracting ? 0.43 : 0.36
+            epsilon: 0.05
+        }
+    }
+
+    function topGapForHeight(height: real): real {
+        const heightProgress = Math.max(0, Math.min(1,
+            (height - idleHeight) / Math.max(1, trackingHeight - idleHeight)));
+        return topGap + extraTopGap * heightProgress;
+    }
+    function updateTopGapTarget(): void {
+        targetTopGap = topGapForHeight(currentDims.height);
+    }
     // Grow ahead of the pill animation; delay shrinking until the morph settles.
     readonly property real requestedLayerHeight: Math.ceil(Math.max(currentDims.height, islandShape.pillHeight)
         + Math.max(targetTopGap, islandContainer.y) + 8)
-    property real retainedLayerHeight: IslandState.targetDimensions(IslandState.State.IDLE).height + topGap + 8
+    property real retainedLayerHeight: idleHeight + topGap + 8
     implicitHeight: Math.max(requestedLayerHeight, retainedLayerHeight)
 
     function reconcileLayerHeight(): void {
@@ -47,7 +67,15 @@ PanelWindow {
         if (!dashboardShowing && hoverHandler.hovered && hasMedia && !activeAlert && !modalOpen)
             hoverDwell.restart();
     }
-    Component.onCompleted: reconcileLayerHeight()
+    Component.onCompleted: {
+        updateTopGapTarget();
+        reconcileLayerHeight();
+    }
+
+    Connections {
+        target: islandWindow.targetScreen
+        function onHeightChanged(): void { islandWindow.updateTopGapTarget(); }
+    }
 
     Timer {
         id: layerShrinkTimer
@@ -142,14 +170,21 @@ PanelWindow {
     readonly property var currentDims: activeMode === IslandState.State.DASHBOARD
         ? dashboardDimensions : IslandState.targetDimensions(activeMode, activeAlert)
     readonly property color islandColor: Tokens.mode === "dark" ? Qt.darker(Tokens.surface, 1.65) : Tokens.surface
+    property real lastTargetWidth: IslandState.targetDimensions(IslandState.State.IDLE).width
+    property real lastTargetHeight: IslandState.targetDimensions(IslandState.State.IDLE).height
     function reveal(mode): real {
         if (activeMode !== mode && !(dashboard.expanded && dashboardOriginMode === mode)) return 0;
-        const dims = IslandState.targetDimensions(mode);
+        const notification = typeof activeAlert !== "undefined" ? activeAlert : null;
+        const dims = mode === IslandState.State.DASHBOARD
+            ? dashboardDimensions
+            : IslandState.targetDimensions(mode,
+                mode === IslandState.State.NOTIFICATION ? notification : null);
         // Keep incoming content opaque through overshoot; fade the Dashboard origin out.
         const direction = activeMode === mode ? (contracting ? -1 : 1) : -1;
-        const delta = Math.max(0, direction * (dims.width - islandShape.pillWidth) / dims.width,
-                                 direction * (dims.height - islandShape.pillHeight) / dims.height);
-        return Math.max(0, Math.min(1, 1 - delta * 2.5));
+        const delta = Math.max(0,
+            direction * (dims.width - islandShape.pillWidth) / Math.max(1, dims.width),
+            direction * (dims.height - islandShape.pillHeight) / Math.max(1, dims.height));
+        return Math.max(0, 1 - delta * 2.5);
     }
 
     function collapse(): void {
@@ -168,15 +203,23 @@ PanelWindow {
 
     function updateMode(): void {
         const nextMode = IslandState.resolveState(activeAlert, hasMedia, hoverPreview, isPinned, dashboard.expanded);
-        if (nextMode === activeMode) return;
         const nextDims = nextMode === IslandState.State.DASHBOARD
-            ? dashboardDimensions : IslandState.targetDimensions(nextMode);
+            ? dashboardDimensions
+            : IslandState.targetDimensions(nextMode,
+                nextMode === IslandState.State.NOTIFICATION ? activeAlert : null);
+        const modeChanged = nextMode !== activeMode;
+        const sizeChanged = Math.abs(nextDims.width - lastTargetWidth) >= 0.01
+            || Math.abs(nextDims.height - lastTargetHeight) >= 0.01;
+        if (!modeChanged && !sizeChanged) return;
         // Latch damping before retargeting, including interrupted spring motion.
         const fromHeight = islandShape ? islandShape.pillHeight : currentDims.height;
         const fromWidth = islandShape ? islandShape.pillWidth : currentDims.width;
         contracting = nextDims.height < fromHeight
             || (nextDims.height === fromHeight && nextDims.width < fromWidth);
-        activeMode = nextMode;
+        lastTargetWidth = nextDims.width;
+        lastTargetHeight = nextDims.height;
+        targetTopGap = topGapForHeight(nextDims.height);
+        if (modeChanged) activeMode = nextMode;
     }
 
     onHoverPreviewChanged: updateMode()
@@ -193,6 +236,7 @@ PanelWindow {
             activeAlert = null;
         }
         updateMode();
+        updateTopGapTarget();
         reconcileLayerHeight();
     }
     onActiveAlertChanged: {
@@ -202,9 +246,14 @@ PanelWindow {
             hoverPreview = false;
         }
         updateMode();
+        updateTopGapTarget();
         if (!activeAlert && hoverHandler.hovered && hasMedia && !hoverPreview
             && !modalOpen && !dashboardShowing)
             hoverDwell.restart();
+    }
+    onDashboardDimensionsChanged: {
+        updateMode();
+        updateTopGapTarget();
     }
 
     Timer {
@@ -291,13 +340,6 @@ PanelWindow {
             id: islandContainer
             anchors.top: parent.top
             anchors.topMargin: islandWindow.targetTopGap
-            Behavior on anchors.topMargin {
-                SpringAnimation {
-                    spring: 4.0
-                    damping: islandWindow.contracting ? 0.4 : 0.34
-                    epsilon: 0.05
-                }
-            }
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.horizontalCenterOffset: -dashboard.drawerOffset
             width: islandShape.width
@@ -315,9 +357,6 @@ PanelWindow {
                 fillColor: islandWindow.islandColor
                 borderColor: Tokens.outline
                 showAntiCorners: false
-                Behavior on bottomRadius {
-                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-                }
             }
 
             HoverHandler {
@@ -1070,9 +1109,9 @@ PanelWindow {
             revealProgress: {
                 const base = expanded ? islandWindow.dashboardOriginDims : islandWindow.currentDims;
                 const target = islandWindow.dashboardDimensions;
-                return Math.max(0, Math.min(1,
-                    (islandShape.pillHeight - base.height) / Math.max(1, target.height - base.height),
-                    (islandShape.pillWidth - base.width) / Math.max(1, target.width - base.width)));
+                return Math.min(
+                    IslandState.normalizedProgress(islandShape.pillHeight, base.height, target.height),
+                    IslandState.normalizedProgress(islandShape.pillWidth, base.width, target.width));
             }
             onExpandedChanged: {
                 if (expanded) {

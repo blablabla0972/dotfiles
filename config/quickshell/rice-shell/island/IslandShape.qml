@@ -15,7 +15,7 @@ Item {
     property bool showAntiCorners: true
 
     property bool contracting: false
-    readonly property bool morphing: widthSpring.running || heightSpring.running
+    readonly property bool morphing: widthSpring.running || heightSpring.running || radiusSpring.running
 
     // Budgeted radii to prevent self-intersecting arcs
     readonly property real r: Math.max(0, Math.min(root.bottomRadius, root.pillHeight / 2, root.pillWidth / 2))
@@ -30,16 +30,25 @@ Item {
     Behavior on pillWidth {
         SpringAnimation {
             id: widthSpring
-            spring: 4.0
-            damping: root.contracting ? 0.4 : 0.34
+            spring: root.contracting ? 3.7 : 3.8
+            damping: root.contracting ? 0.43 : 0.36
             epsilon: 0.25
         }
     }
     Behavior on pillHeight {
         SpringAnimation {
             id: heightSpring
-            spring: 4.0
-            damping: root.contracting ? 0.4 : 0.34
+            spring: root.contracting ? 3.7 : 3.8
+            damping: root.contracting ? 0.43 : 0.36
+            epsilon: 0.25
+        }
+    }
+
+    Behavior on bottomRadius {
+        SpringAnimation {
+            id: radiusSpring
+            spring: root.contracting ? 3.7 : 3.8
+            damping: root.contracting ? 0.43 : 0.36
             epsilon: 0.25
         }
     }
@@ -49,7 +58,7 @@ Item {
         id: roundedRect
         anchors.fill: parent
         visible: !root.showAntiCorners
-        radius: root.bottomRadius
+        radius: root.r
         color: root.fillColor
         border.color: Qt.rgba(root.borderColor.r, root.borderColor.g, root.borderColor.b, 0.4)
         border.width: 1
