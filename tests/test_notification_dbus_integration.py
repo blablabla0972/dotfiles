@@ -31,8 +31,7 @@ def _make_config(directory):
 
     source = SOURCE.read_text()
     tracked = "notif.tracked = true;"
-    expiry = """if (expiration.notification && expiration.notification.tracked)
-                        expiration.notification.expire();"""
+    expiry = "expiration.notification.expire();"
     if source.count(tracked) != 1 or source.count(expiry) != 1:
         raise AssertionError("Notifications.qml lifecycle hooks changed; update integration probes")
     source = source.replace(
@@ -42,14 +41,13 @@ def _make_config(directory):
         1,
     ).replace(
         expiry,
-        """if (expiration.notification && expiration.notification.tracked) {
-                        console.log("DBUS_PROBE_EXPIRE", expiration.notification.summary);
-                        expiration.notification.expire();
-                    }""",
+        """console.log("DBUS_PROBE_EXPIRE", expiration.notification.summary);
+                        expiration.notification.expire();""",
         1,
     )
     record_call = '''DesktopControls.recordNotification(notif.id, DesktopControls.lastSummary,
-            DesktopControls.lastBody, notif.appName || "", notif.appIcon || "", notif.lastGeneration);'''
+            DesktopControls.lastBody, notif.appName || "", notif.appIcon || "",
+            notif.lastGeneration, root.actionMetadata(notif));'''
     if source.count(record_call) != 1:
         raise AssertionError("Notification history call changed; update D-Bus probe")
     source = source.replace(
@@ -98,7 +96,8 @@ ShellRoot {
     function instanceOnScreen(instances: var, requestedScreen: var): var { return instances.length ? instances[0] : null; }
     Item {
         id: mockIsland
-        function triggerNotification(summary: string, body: string, app: string, icon: string): void {
+        function triggerNotification(summary: string, body: string, app: string, icon: string,
+                                     notificationId: int, actions): void {
             console.log("DBUS_PROBE_FORWARD", summary);
         }
     }
@@ -108,6 +107,9 @@ ShellRoot {
         target: "notification_regression"
         function reloadShell(): void { Quickshell.reload(false); }
         function setDnd(enabled: bool): void { DesktopControls.doNotDisturb = enabled; }
+        function invokeAction(notificationId: int, actionId: string): void {
+            DesktopControls.requestNotificationAction(notificationId, actionId);
+        }
 """ + island_dispatch + "\n    }\n\n" + notification_loader + "\n" + """
 
     Component.onCompleted: {
@@ -164,12 +166,12 @@ def _call(env, *args):
     return result.stdout.strip()
 
 
-def _notify(env, summary, timeout_ms, replaces_id=0, body="body"):
+def _notify(env, summary, timeout_ms, replaces_id=0, body="body", actions="[]"):
     output = _call(
         env, "gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
         "--object-path", "/org/freedesktop/Notifications", "--method",
         "org.freedesktop.Notifications.Notify", "RegressionTest", str(replaces_id), "", summary,
-        body, "[]", "{}", f"int32 {timeout_ms}",
+        body, actions, "{}", f"int32 {timeout_ms}",
     )
     match = re.fullmatch(r"\(uint32 (\d+),\)", output)
     if not match:
@@ -283,6 +285,38 @@ def _integration_child():
                                   f"uint32 {never_expiry_id}, uint32 3" in line for line in lines),
                 3, "manual close of a non-expiring notification", shell, monitor,
             )
+
+            action_id = _notify(
+                env, "action-probe", 8000,
+                actions="['default', 'Open', 'mark-read', 'Mark read']",
+            )
+            capture.until(
+                lambda lines: any(
+                    item.get("id") == action_id
+                    and [action.get("id") for action in item.get("actions", [])]
+                    == ["default", "mark-read"]
+                    for item in _history(lines)
+                ),
+                3, "notification actions enter retained history", shell,
+            )
+            action_call = ["quickshell", "--path", str(shell_path), "ipc", "--pid", str(shell.pid),
+                           "call", "notification_regression", "invokeAction", str(action_id), "mark-read"]
+            _call(env, *action_call)
+            _call(env, *action_call)
+            capture.until(
+                lambda lines: sum(
+                    "ActionInvoked" in line and f"uint32 {action_id}" in line
+                    and ("'mark-read'" in line or 'string "mark-read"' in line)
+                    for line in lines
+                ) == 1,
+                3, "one D-Bus action invocation", shell, monitor,
+            )
+            if sum(
+                "ActionInvoked" in line and f"uint32 {action_id}" in line
+                and ("'mark-read'" in line or 'string "mark-read"' in line)
+                for line in capture.lines
+            ) != 1:
+                raise AssertionError("Repeated action clicks must invoke the D-Bus action once")
 
             replacement_id = _notify(env, "replacement-before", 8000, body="<b>before</b>")
             capture.until(

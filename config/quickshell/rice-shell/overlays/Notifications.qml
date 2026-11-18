@@ -11,16 +11,67 @@ import "../services"
 Item {
     id: root
 
-    signal notificationReceived(string summary, string body, string appName, string appIcon)
+    property var liveNotifications: ({})
+    signal notificationReceived(int notificationId, string summary, string body,
+                                string appName, string appIcon, string actionsJson)
+
+    function actionMetadata(notification): var {
+        var result = [];
+        var actions = notification.actions || [];
+        for (var i = 0; i < actions.length; i++) {
+            var action = actions[i];
+            if (!action || !action.identifier || !action.text) continue;
+            result.push({
+                id: action.identifier,
+                text: action.text,
+                isDefault: action.identifier === "default"
+            });
+        }
+        return result;
+    }
+
+    function registerNotification(notification): void {
+        liveNotifications[notification.id] = {
+            notification: notification,
+            invokedActions: ({})
+        };
+    }
+
+    function unregisterNotification(notificationId: int): void {
+        delete liveNotifications[notificationId];
+    }
+
+    function invokeNotificationAction(notificationId: int, actionId: string): void {
+        var live = liveNotifications[notificationId];
+        if (!live || !live.notification || !live.notification.tracked
+                || live.invokedActions[actionId]) return;
+        var actions = live.notification.actions || [];
+        for (var i = 0; i < actions.length; i++) {
+            var action = actions[i];
+            if (!action || action.identifier !== actionId) continue;
+            live.invokedActions[actionId] = true;
+            action.invoke();
+            return;
+        }
+    }
+
+    Connections {
+        target: DesktopControls
+        function onNotificationActionRequested(notificationId, actionId) {
+            root.invokeNotificationAction(notificationId, actionId);
+        }
+    }
 
     function publishNotification(notif): void {
         DesktopControls.lastSummary = notif.summary || "Notification";
         DesktopControls.lastBody = notif.body || "";
         DesktopControls.recordNotification(notif.id, DesktopControls.lastSummary,
-            DesktopControls.lastBody, notif.appName || "", notif.appIcon || "", notif.lastGeneration);
+            DesktopControls.lastBody, notif.appName || "", notif.appIcon || "",
+            notif.lastGeneration, root.actionMetadata(notif));
         if (!notif.lastGeneration && !DesktopControls.doNotDisturb)
-            root.notificationReceived(DesktopControls.lastSummary,
-                DesktopControls.lastBody, notif.appName || "", notif.appIcon || "");
+            root.notificationReceived(notif.id, DesktopControls.lastSummary,
+                DesktopControls.lastBody, notif.appName || "", notif.appIcon || "",
+                JSON.stringify(root.actionMetadata(notif)));
     }
 
     Component {
@@ -29,6 +80,7 @@ Item {
         Item {
             id: expiration
             required property var notification
+            property int notificationId: -1
             property bool disposed: false
             property bool updateQueued: false
 
@@ -59,10 +111,15 @@ Item {
                 disposed = true;
                 timer.stop();
                 updateTimer.stop();
+                if (notificationId >= 0)
+                    root.unregisterNotification(notificationId);
                 expiration.destroy();
             }
 
-            Component.onCompleted: restartTimer()
+            Component.onCompleted: {
+                notificationId = notification.id;
+                restartTimer();
+            }
 
             Timer {
                 id: timer
@@ -72,8 +129,10 @@ Item {
                     if (expiration.disposed)
                         return;
                     timer.stop();
-                    if (expiration.notification && expiration.notification.tracked)
+                    if (expiration.notification && expiration.notification.tracked) {
+                        root.unregisterNotification(expiration.notification.id);
                         expiration.notification.expire();
+                    }
                     expiration.dispose();
                 }
             }
@@ -106,10 +165,13 @@ Item {
         bodyMarkupSupported: false
         bodyImagesSupported: false
         bodyHyperlinksSupported: false
-        actionsSupported: false
+        actionIconsSupported: false
+        inlineReplySupported: false
+        actionsSupported: true
 
         onNotification: (notif) => {
             notif.tracked = true;
+            root.registerNotification(notif);
             expirationTimer.createObject(root, { notification: notif });
             root.publishNotification(notif);
         }

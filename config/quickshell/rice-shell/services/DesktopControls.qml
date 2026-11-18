@@ -22,11 +22,12 @@ QtObject {
     property bool brightnessOsdPending: false
     signal errorOccurred(string message)
     signal brightnessRefreshed(real level, bool showOsd)
+    signal notificationActionRequested(int notificationId, string actionId)
     readonly property bool brightnessPending: brightnessWriter.running
         || brightnessWriteTimer.running || pendingBrightnessPercent >= 0
 
     function recordNotification(notificationId: int, summary: string, body: string,
-                                appName: string, appIcon: string, lastGeneration: bool): void {
+                                appName: string, appIcon: string, lastGeneration: bool, actions): void {
         var existingIndex = -1;
         for (var i = 0; i < notificationHistory.length; i++) {
             if (notificationHistory[i].id === notificationId) {
@@ -39,6 +40,7 @@ QtObject {
         var entry = {
             id: notificationId,
             summary: summary, body: body, appName: appName, appIcon: appIcon,
+            actions: Array.isArray(actions) ? actions : [],
             time: Qt.formatTime(new Date(), "hh:mm")
         };
         var history = notificationHistory.slice();
@@ -51,6 +53,10 @@ QtObject {
     }
 
     function clearNotificationHistory(): void { notificationHistory = []; }
+
+    function requestNotificationAction(notificationId: int, actionId: string): void {
+        notificationActionRequested(notificationId, actionId);
+    }
 
     function refreshBrightness(showOsd: bool): void {
         if (showOsd) brightnessOsdPending = true;

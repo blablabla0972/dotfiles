@@ -232,14 +232,17 @@ PanelWindow {
         dismissTimer.restart();
     }
 
-    function triggerNotification(summary: string, body: string, appName: string, appIcon: string): void {
+    function triggerNotification(summary: string, body: string, appName: string, appIcon: string,
+                                 notificationId: int, actions): void {
         if (modalOpen || dashboardShowing) return;
         activeAlert = {
             type: IslandState.State.NOTIFICATION,
+            notificationId: notificationId,
             summary: summary,
             body: body,
             appName: appName || "",
-            appIcon: appIcon || ""
+            appIcon: appIcon || "",
+            actions: actions || []
         };
         dismissTimer.interval = 4000;
         dismissTimer.restart();
@@ -529,7 +532,8 @@ PanelWindow {
                 enabled: opacity > 0.9
                 anchors.centerIn: parent
                 width: IslandState.targetDimensions(IslandState.State.NOTIFICATION).width - 32
-                height: 64
+                height: IslandState.targetDimensions(IslandState.State.NOTIFICATION,
+                    islandWindow.activeAlert).height - 24
                 spacing: 12
 
                 Rectangle {
@@ -599,6 +603,47 @@ PanelWindow {
                         wrapMode: Text.Wrap
                         elide: Text.ElideRight
                         maximumLineCount: 2
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: islandWindow.activeAlert && islandWindow.activeAlert.actions
+                            && islandWindow.activeAlert.actions.length > 0
+                        spacing: 6
+
+                        Repeater {
+                            model: islandWindow.activeAlert ? islandWindow.activeAlert.actions : []
+                            delegate: Rectangle {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 24
+                                radius: 8
+                                color: actionHover.hovered ? Tokens.surface_high : Tokens.surface
+                                border.width: 1
+                                border.color: Tokens.outline
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.text
+                                    font.pixelSize: 10
+                                    color: Tokens.text_primary
+                                    elide: Text.ElideRight
+                                }
+
+                                HoverHandler {
+                                    id: actionHover
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                TapHandler {
+                                    onTapped: {
+                                        DesktopControls.requestNotificationAction(
+                                            islandWindow.activeAlert.notificationId, modelData.id);
+                                        islandWindow.activeAlert = null;
+                                        dismissTimer.stop();
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

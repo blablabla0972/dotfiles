@@ -67,7 +67,11 @@ function targetDimensions(state, details) {
         case State.OSD:
             return { width: 244, height: 48, radius: 24 };
         case State.NOTIFICATION:
-            return { width: 390, height: 88, radius: 20 };
+            return {
+                width: 390,
+                height: details && details.actions && details.actions.length > 0 ? 120 : 88,
+                radius: 20
+            };
         case State.DASHBOARD:
             return { width: Dashboard.width, height: Dashboard.height, radius: Dashboard.radius };
         case State.EXPANDED:

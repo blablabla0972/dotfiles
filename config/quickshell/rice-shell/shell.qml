@@ -200,9 +200,14 @@ ShellRoot {
             if (island) island.triggerNotification(summary, body, "", "");
         }
 
-        function islandNotification(summary: string, body: string, appName: string, appIcon: string): void {
+        function islandNotification(notificationId: int, summary: string, body: string,
+                                     appName: string, appIcon: string, actionsJson: string): void {
             var island = root.instanceOnScreen(islandInstances, null);
-            if (island) island.triggerNotification(summary, body, appName, appIcon);
+            var actions = [];
+            try { actions = JSON.parse(actionsJson || "[]"); }
+            catch (error) { console.warn("Discarding invalid notification actions"); }
+            if (island) island.triggerNotification(summary, body, appName, appIcon,
+                notificationId, actions);
         }
 
         function toggleLauncher(): void {

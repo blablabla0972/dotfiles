@@ -227,6 +227,42 @@ Item {
                                         entry.expanded ? null : entry.modelData.id
                                 }
                             }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                visible: entry.modelData.actions && entry.modelData.actions.length > 0
+                                spacing: 6
+
+                                Repeater {
+                                    model: entry.modelData.actions || []
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 26
+                                        radius: 8
+                                        color: actionHover.hovered ? Tokens.surface_high : Tokens.surface
+                                        border.width: 1
+                                        border.color: Tokens.outline
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: modelData.text
+                                            font.pixelSize: 10
+                                            color: Tokens.text_primary
+                                            elide: Text.ElideRight
+                                        }
+
+                                        HoverHandler {
+                                            id: actionHover
+                                            cursorShape: Qt.PointingHandCursor
+                                        }
+                                        TapHandler {
+                                            onTapped: DesktopControls.requestNotificationAction(
+                                                entry.modelData.id, modelData.id)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
