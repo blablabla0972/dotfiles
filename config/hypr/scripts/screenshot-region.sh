@@ -5,10 +5,14 @@ set -euo pipefail
 exec 9>"${XDG_RUNTIME_DIR:?}/hypr-screenshot-region.lock"
 flock -n 9 || exit 0
 
-if ! command -v satty >/dev/null; then
-    notify-send "Screenshot" "Install Satty to edit screenshots before saving."
+fail() {
+    notify-send "Screenshot" "$1" 2>/dev/null || true
     exit 1
-fi
+}
+
+for command in hyprpicker hyprctl jq slurp grim satty xdg-user-dir; do
+    command -v "$command" >/dev/null || fail "Missing required command: $command"
+done
 
 tmp=$(mktemp -d "${XDG_RUNTIME_DIR}/hypr-screenshot.XXXXXX")
 picker=
@@ -33,7 +37,7 @@ hyprpicker -r -z -d >/dev/null 2>&1 &
 picker=$!
 ready=false
 for ((i = 0; i < 40; i++)); do
-    kill -0 "$picker" 2>/dev/null || exit 1
+    kill -0 "$picker" 2>/dev/null || fail "hyprpicker stopped before the screen was frozen."
     if hyprctl -j layers | jq -e --argjson pid "$picker" \
         'length > 0 and all(.[]; any(.levels[][]; .pid == $pid and .namespace == "hyprpicker" and .alpha >= 0.99))' >/dev/null; then
         ready=true
@@ -41,7 +45,7 @@ for ((i = 0; i < 40; i++)); do
     fi
     sleep 0.025
 done
-[[ $ready == true ]] || exit 1
+[[ $ready == true ]] || fail "Timed out waiting for the frozen screen."
 # A mapped layer can precede its first committed image buffer.
 sleep 0.08
 
@@ -56,16 +60,16 @@ read -r geometry < "$tmp/geometry" || exit 0
 sleep 0.03
 
 # Capture the frozen layer, not the live desktop or the selection overlay.
-kill -0 "$picker" 2>/dev/null || exit 1
-grim -g "$geometry" "$tmp/region.png"
-kill -0 "$picker" 2>/dev/null || exit 1
+kill -0 "$picker" 2>/dev/null || fail "The frozen screen ended before capture."
+grim -g "$geometry" "$tmp/region.png" || fail "Could not capture the selected region."
+kill -0 "$picker" 2>/dev/null || fail "The frozen screen ended during capture."
 kill "$picker" 2>/dev/null || true
 wait "$picker" 2>/dev/null || true
 picker=
 
 # Keep the clipboard unchanged until Copy; Escape discards the temporary image.
-pictures=$(xdg-user-dir PICTURES)
-mkdir -p -- "$pictures/Screenshots"
+pictures=$(xdg-user-dir PICTURES) || fail "Could not locate the Pictures folder."
+mkdir -p -- "$pictures/Screenshots" || fail "Could not create the Screenshots folder."
 satty --config /dev/null --filename "$tmp/region.png" \
     --output-filename "$pictures/Screenshots/Screenshot-%Y-%m-%d_%H-%M-%S-%f.png" \
     --app-id local.screenshot.Editor --initial-tool arrow --early-exit all \

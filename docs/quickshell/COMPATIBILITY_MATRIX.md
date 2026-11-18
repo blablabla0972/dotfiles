@@ -49,7 +49,7 @@
 | `XF86AudioPrev` | `noctalia msg media previous` | `playerctl previous` |
 | `XF86MonBrightnessUp` | `noctalia msg brightness-up` | `brightnessctl set +5% && qs ipc -p ~/.config/quickshell/rice-shell call rice brightnessChanged` |
 | `XF86MonBrightnessDown` | `noctalia msg brightness-down` | `brightnessctl set 5%- && qs ipc -p ~/.config/quickshell/rice-shell call rice brightnessChanged` |
-| `Print` | `noctalia msg screenshot-region` | `grim -g "$(slurp)" - \| wl-copy` (or native portal) |
+| `Print` | `~/.config/hypr/scripts/screenshot-region.sh` | Freeze with `hyprpicker`, select with `slurp`, edit with Satty |
 | `SUPER + Print` | `noctalia msg screenshot-fullscreen` | `grim - \| wl-copy` |
 | `SUPER + W` | `quickshell -p ~/.config/quickshell/wallpaper-switcher` | *Retained completely unchanged* |
 | `SUPER + M` | `~/.local/bin/toggle-desktop` | *Retained completely unchanged* |
