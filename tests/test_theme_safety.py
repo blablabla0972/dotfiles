@@ -274,7 +274,7 @@ class MatugenSafetyTest(unittest.TestCase):
         outside = self.root / 'unprotected.conf'
         outside.write_bytes(b'PRESERVE')
         config_file.write_text(config_file.read_text().replace('~/.config/hypr/colors.conf', str(outside)))
-        with self.assertRaisesRegex(RuntimeError, 'backup paths'):
+        with self.assertRaisesRegex(RuntimeError, 'must stay inside the managed config directory'):
             theme.palette_for(self.image, self.config)
         self.assertEqual(outside.read_bytes(), b'PRESERVE')
         self.assertFalse((self.config / 'noctalia/palettes/matugen.json').exists())

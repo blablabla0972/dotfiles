@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -26,6 +27,7 @@ def _write_harness(directory):
     assert source.count("expiration.destroy();") == 1
     source = source.replace("NotificationServer {", "MockNotificationServer {", 1)
     source = source.replace("DesktopControls.", "root.mockControls.")
+    source = source.replace("target: DesktopControls", "target: root.mockControls")
     # Observe the actual destruction call, including reentrancy via onClosed.
     source = source.replace("expiration.destroy();", "root.destroyCalls++; expiration.destroy();")
     source = source.replace(
@@ -40,7 +42,8 @@ def _write_harness(directory):
         property string lastBody: ""
         property bool doNotDisturb: false
         property var notificationHistory: []
-        function recordNotification(id, summary, body, appName, appIcon, lastGeneration) {
+        signal notificationActionRequested(int notificationId, string actionId)
+        function recordNotification(id, summary, body, appName, appIcon, lastGeneration, actions) {
             notificationHistory = [{ id: id, summary: summary, body: body, appName: appName }].concat(notificationHistory);
         }
     }
@@ -60,6 +63,8 @@ QtObject {
     property bool bodyMarkupSupported: false
     property bool bodyImagesSupported: false
     property bool bodyHyperlinksSupported: false
+    property bool actionIconsSupported: false
+    property bool inlineReplySupported: false
     property bool actionsSupported: false
     function deliver(n) { State.lastNotification = n; notification(n); }
     Component.onCompleted: {
@@ -92,6 +97,7 @@ QtObject {
     )
 
 
+@unittest.skipUnless(shutil.which("qml6"), "qml6 required")
 class NotificationLifecycleTest(unittest.TestCase):
     def _run_qml(self, scenario):
         with tempfile.TemporaryDirectory(prefix="notification-qml-") as tmp:
