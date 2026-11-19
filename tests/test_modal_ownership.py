@@ -18,7 +18,8 @@ class ModalOwnershipTest(unittest.TestCase):
     def test_one_interactive_modal_and_explicit_same_target_toggle(self):
         source = SHELL.read_text()
         names = ("instanceOnScreen", "hasInteractiveModal", "dismissOtherModals",
-                 "toggleLauncher", "toggleDashboard", "togglePowerMenu", "toggleSideDrawer")
+                 "toggleLauncher", "toggleDashboard", "togglePowerMenu", "toggleSideDrawer",
+                 "stepWindowSwitcher")
         functions = []
         for name in names:
             marker = f"    function {name}("
@@ -36,9 +37,25 @@ Item {
     property var islandInstances: [left, right]
     property var launcherInstances: [launcher]
     property var powerMenuInstances: [power]
+    property var switcherInstances: [switcherA, switcherB]
     QtObject { id: fakeHyprland; property var focusedMonitor: screenA }
     QtObject { id: screenA; property string name: "A" }
     QtObject { id: screenB; property string name: "B" }
+    QtObject {
+        id: switcherA
+        property var targetScreen: screenA
+        property bool visible: false
+        property int steps: 0
+        function open(direction) { visible = true; steps = direction; }
+        function step(direction) { steps += direction; }
+        function dismiss() { visible = false; }
+    }
+    QtObject {
+        id: switcherB
+        property var targetScreen: screenB
+        property bool visible: false
+        function dismiss() { visible = false; }
+    }
     QtObject {
         id: left
         property var targetScreen: screenA
@@ -119,6 +136,18 @@ Item {
             root.toggleSideDrawer("wifi", screenB);
             if (right.dashboardCurrentTab !== "Home" || right.drawer !== "wifi")
                 throw new Error("drawer from System did not route through Home");
+            root.stepWindowSwitcher(1);
+            if (!switcherA.visible || switcherB.visible || right.dashboardExpanded
+                    || !root.hasInteractiveModal())
+                throw new Error("Switcher did not take modal ownership on focused screen");
+            fakeHyprland.focusedMonitor = screenB;
+            root.stepWindowSwitcher(1);
+            root.stepWindowSwitcher(-1);
+            if (switcherA.steps !== 1 || switcherB.visible)
+                throw new Error("Repeated hotkeys did not step on original screen");
+            root.toggleLauncher(screenA);
+            if (switcherA.visible || !launcher.visible)
+                throw new Error("Launcher did not dismiss switcher");
             Qt.exit(73);
         }
     }

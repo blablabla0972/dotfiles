@@ -20,7 +20,6 @@ hl.config({
 ---------------------------
 
 -- Window manipulation
-hl.bind(mainMod .. " + Escape",      hl.dsp.exec_cmd("hyprctl kill"))
 hl.bind(mainMod .. " + Q",           hl.dsp.window.close())
 -- Toggle float window, resize to 70% and center
 hl.bind(mainMod .. " + ALT + Space", function()
@@ -62,7 +61,6 @@ hl.bind(mainMod .. " + Right", hl.dsp.focus({ direction = "right" }))
 hl.bind(mainMod .. " + Up",    hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + Down",  hl.dsp.focus({ direction = "down" }))
 hl.bind("ALT + Tab",           hl.dsp.window.cycle_next())
-hl.bind(mainMod .. " + Tab",   hl.dsp.exec_cmd(noctCall .. "window-switcher"))
 
 -- Move active window around workspaces & monitors
 hl.bind(mainMod .. " + SHIFT + Up",                   hl.dsp.window.move({ direction = "u" }))
@@ -116,6 +114,20 @@ hl.bind(mainMod .. " + code:86", function() zoomfunction(0.3) end, { repeating =
 ------------------
 
 local qsRice = "qs ipc -p ~/.config/quickshell/rice-shell call rice "
+hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd(
+    'test "$(' .. qsRice .. 'cancelWindowSwitcher 2>/dev/null)" = true || hyprctl kill'))
+local switchFallback = hl.dsp.exec_cmd("qs ipc -p ~/.config/quickshell/rice-shell prop get rice windowSwitcherShortcuts >/dev/null 2>&1 || " .. noctCall .. "window-switcher")
+local function switchWindow(shortcut)
+    return function()
+        hl.dispatch(hl.dsp.global("rice:" .. shortcut))
+        hl.dispatch(switchFallback)
+    end
+end
+hl.bind(mainMod .. " + Tab",         switchWindow("window-switcher-next"))
+hl.bind(mainMod .. " + SHIFT + Tab", switchWindow("window-switcher-prev"))
+-- XKB codes for both Super keys. Keep modifier events available to other shortcuts.
+hl.bind("code:133", hl.dsp.global("rice:window-switcher-super-left"), { ignore_mods = true, non_consuming = true })
+hl.bind("code:134", hl.dsp.global("rice:window-switcher-super-right"), { ignore_mods = true, non_consuming = true })
 
 hl.bind(mainMod .. " + Return",     hl.dsp.exec_cmd(launchPrefix .. TERMINAL))
 hl.bind(mainMod .. " + E",          hl.dsp.exec_cmd(launchPrefix .. FILE_MANAGER))

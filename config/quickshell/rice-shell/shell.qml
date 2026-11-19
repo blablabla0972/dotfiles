@@ -12,6 +12,7 @@ import "island"
 import "island/IslandState.js" as IslandState
 import "dashboard"
 import "launcher"
+import "overlays"
 
 ShellRoot {
     id: root
@@ -44,6 +45,7 @@ ShellRoot {
     property list<Island> islandInstances: []
     property list<Launcher> launcherInstances: []
     property list<PowerMenu> powerMenuInstances: []
+    property list<WindowSwitcher> switcherInstances: []
 
     // Expose IPC handler reference and convenience dispatchers for child components
     property alias ipcHandler: riceIpc
@@ -83,6 +85,7 @@ ShellRoot {
         for (var k = 0; k < powerMenuInstances.length; k++) {
             if (powerMenuInstances[k] && powerMenuInstances[k].visible) return true;
         }
+        if (switcherInstances.some(switcher => switcher && switcher.visible)) return true;
         return false;
     }
 
@@ -101,6 +104,53 @@ ShellRoot {
             var powerMenu = powerMenuInstances[k];
             if (powerMenu && powerMenu !== target) powerMenu.dismissMenu();
         }
+        for (var switcher of switcherInstances) {
+            if (switcher && switcher !== target) switcher.dismiss();
+        }
+    }
+
+    function stepWindowSwitcher(direction: int): void {
+        var active = switcherInstances.find(switcher => switcher && switcher.visible);
+        if (active) {
+            active.step(direction);
+            return;
+        }
+        var inst = instanceOnScreen(switcherInstances, null);
+        if (!inst) return;
+        dismissOtherModals(inst);
+        inst.open(direction);
+    }
+
+    function commitWindowSwitcher(): void {
+        if (switcherSuperLeft.pressed || switcherSuperRight.pressed) return;
+        var active = switcherInstances.find(switcher => switcher && switcher.visible);
+        if (active) active.accept(active.selectedAddress);
+    }
+
+    GlobalShortcut {
+        appid: "rice"
+        name: "window-switcher-next"
+        onPressed: root.stepWindowSwitcher(1)
+    }
+
+    GlobalShortcut {
+        appid: "rice"
+        name: "window-switcher-prev"
+        onPressed: root.stepWindowSwitcher(-1)
+    }
+
+    GlobalShortcut {
+        id: switcherSuperLeft
+        appid: "rice"
+        name: "window-switcher-super-left"
+        onReleased: root.commitWindowSwitcher()
+    }
+
+    GlobalShortcut {
+        id: switcherSuperRight
+        appid: "rice"
+        name: "window-switcher-super-right"
+        onReleased: root.commitWindowSwitcher()
     }
 
     function toggleLauncher(screen: var): void {
@@ -157,6 +207,7 @@ ShellRoot {
     IpcHandler {
         id: riceIpc
         target: "rice"
+        readonly property bool windowSwitcherShortcuts: true
 
         readonly property string status: "ok"
         readonly property string version: "1.0.0"
@@ -212,6 +263,17 @@ ShellRoot {
 
         function toggleLauncher(): void {
             root.toggleLauncher(null);
+        }
+
+        function stepWindowSwitcher(direction: int): void {
+            root.stepWindowSwitcher(direction);
+        }
+
+        function cancelWindowSwitcher(): bool {
+            var active = root.switcherInstances.find(switcher => switcher && switcher.visible);
+            if (!active) return false;
+            active.dismiss();
+            return true;
         }
 
         function toggleDashboard(tab: string): void {
@@ -344,6 +406,24 @@ ShellRoot {
                 Component.onDestruction: {
                     var idx = root.launcherInstances.indexOf(screenLauncher);
                     if (idx >= 0) root.launcherInstances.splice(idx, 1);
+                }
+            }
+        }
+    }
+
+    Variants {
+        model: Quickshell.screens
+
+        delegate: Component {
+            WindowSwitcher {
+                id: switcher
+                required property ShellScreen modelData
+                targetScreen: modelData
+
+                Component.onCompleted: root.switcherInstances.push(switcher)
+                Component.onDestruction: {
+                    var idx = root.switcherInstances.indexOf(switcher);
+                    if (idx >= 0) root.switcherInstances.splice(idx, 1);
                 }
             }
         }

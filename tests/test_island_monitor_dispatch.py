@@ -29,8 +29,8 @@ def extract_qml_block(source, marker):
 class IslandMonitorDispatchTest(unittest.TestCase):
     def test_feedback_only_appears_on_focused_monitor(self):
         source = SHELL.read_text()
-        instance_fn = source[source.index("    function instanceOnScreen("):
-                             source.index("    function toggleLauncher(")]
+        instance_fn = extract_qml_block(source, "    function instanceOnScreen(")
+        instance_fn += "\n" + extract_qml_block(source, "    function dispatchOsd(")
         feedback_fns = source[source.index("        function islandOsd("):
                               source.index("        function toggleLauncher()")]
         audio_connection = extract_qml_block(source, "Connections {\n        target: Audio")
