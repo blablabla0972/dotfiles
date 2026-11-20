@@ -17,14 +17,14 @@ vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), c);
 console.log(JSON.stringify({
   tabs: ["Home", "System", "Notifications", "Config", "bogus", null]
     .map(value => c.normalizeDashboardTab(value)),
-  drawers: ["wifi", "Bluetooth", "hotspot", "bogus", null]
+  drawers: ["wifi", "Bluetooth", "hotspot", " Audio ", "bogus", null]
     .map(value => c.normalizeSideDrawer(value))
 }));
 """
         result = subprocess.run(["node", "-e", script, str(STATE)], capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
         self.assertEqual(data["tabs"], ["Home", "System", "Notifications", "Config", "Home", "Home"])
-        self.assertEqual(data["drawers"], ["wifi", "bluetooth", "hotspot", "", ""])
+        self.assertEqual(data["drawers"], ["wifi", "bluetooth", "hotspot", "audio", "", ""])
 
     def test_osd_values_keep_volume_amplification_separate_from_fill(self):
         script = """
@@ -35,6 +35,7 @@ vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), c);
 console.log(JSON.stringify({
   volume: [0, 0.45, 1, 1.25, 1.5, -0.1, 2].map(v => c.normalizeOsdProgress(v, "volume")),
   brightness: [0, 0.45, 1, 1.25, -0.1].map(v => c.normalizeOsdProgress(v, "brightness")),
+  microphone: [0, 0.8, 1.5].map(v => c.normalizeOsdProgress(v, "microphone")),
   nonFinite: c.normalizeOsdProgress(NaN, "volume") === 0
     && c.normalizeOsdProgress(Infinity, "brightness") === 0,
   fill: [0, 0.45, 1, 1.25, 1.5].map(v => c.osdFill(v))
@@ -44,6 +45,7 @@ console.log(JSON.stringify({
         data = json.loads(result.stdout)
         self.assertEqual(data["volume"], [0, 0.45, 1, 1.25, 1.5, 0, 1.5])
         self.assertEqual(data["brightness"], [0, 0.45, 1, 1, 0])
+        self.assertEqual(data["microphone"], [0, 0.8, 1])
         self.assertTrue(data["nonFinite"])
         self.assertEqual(data["fill"], [0, 0.45, 1, 1, 1])
 

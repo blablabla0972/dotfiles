@@ -23,7 +23,7 @@ function normalizeDashboardTab(tab) {
 function normalizeSideDrawer(type) {
     if (typeof type !== "string") return "";
     var drawer = type.trim().toLowerCase();
-    return drawer === "wifi" || drawer === "bluetooth" || drawer === "hotspot" ? drawer : "";
+    return drawer === "wifi" || drawer === "bluetooth" || drawer === "hotspot" || drawer === "audio" ? drawer : "";
 }
 
 function resolveState(currentAlert, hasMedia, isHovered, isPinned, dashboardOpen) {

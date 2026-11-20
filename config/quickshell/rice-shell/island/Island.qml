@@ -274,10 +274,10 @@ PanelWindow {
     function triggerOsd(icon: string, progress: real, kind): void {
         if (modalOpen || dashboardShowing || (activeAlert && activeAlert.type === IslandState.State.NOTIFICATION)) return;
         osdIcon = icon;
-        osdKind = kind === "brightness" ? "brightness" : "volume";
+        osdKind = kind === "brightness" || kind === "microphone" ? kind : "volume";
         osdProgress = IslandState.normalizeOsdProgress(progress, osdKind);
         activeAlert = { type: IslandState.State.OSD };
-        dismissTimer.interval = 2200;
+        dismissTimer.interval = osdKind === "microphone" ? 1400 : 2200;
         dismissTimer.restart();
     }
 
@@ -512,13 +512,16 @@ PanelWindow {
                     spacing: 0
                     Text {
                         text: islandWindow.osdKind === "brightness" ? qsTr("Brightness")
+                            : islandWindow.osdKind === "microphone" ? qsTr("Microphone")
                             : islandWindow.osdProgress > 1 ? qsTr("Volume · Boost") : qsTr("Volume")
                         font.pixelSize: 10
                         color: Tokens.text_secondary
                     }
                     Text {
                         objectName: "feedbackOsdReadout"
-                        text: Math.round(islandWindow.osdProgress * 100) + "%"
+                        text: islandWindow.osdKind === "microphone"
+                            ? (islandWindow.osdProgress === 0 ? qsTr("Muted") : qsTr("On"))
+                            : Math.round(islandWindow.osdProgress * 100) + "%"
                         font.pixelSize: 18
                         font.weight: Font.DemiBold
                         font.features: { "tnum": 1 }
@@ -529,6 +532,7 @@ PanelWindow {
                 Shape {
                     id: osdRing
                     objectName: "feedbackOsdRing"
+                    visible: islandWindow.osdKind !== "microphone"
                     Layout.preferredWidth: 30
                     Layout.preferredHeight: 30
                     preferredRendererType: Shape.CurveRenderer

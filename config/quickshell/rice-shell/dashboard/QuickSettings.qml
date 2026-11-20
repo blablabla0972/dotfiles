@@ -212,6 +212,7 @@ Rectangle {
                 value: Audio.volume
                 maximum: 1.5
                 step: 0.05
+                device: Audio.sink
                 available: Audio.available
                 valueText: !Audio.available ? qsTr("Unavailable")
                     : (Audio.muted ? qsTr("Muted") : Math.round(Audio.volume * 100) + "%")
@@ -312,11 +313,14 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 42
                         icon: Audio.muted ? "󰝟" : "󰕾"
-                        label: qsTr("Mute")
-                        sublabel: Audio.muted ? qsTr("On") : qsTr("Off")
+                        label: qsTr("Sound")
+                        sublabel: !Audio.available ? qsTr("Unavailable")
+                            : Audio.muted ? qsTr("Muted") : qsTr("On")
                         active: Audio.muted
                         available: Audio.available
+                        hasDetails: true
                         onActivated: Audio.toggleMute()
+                        onDetailsRequested: root.requestSideDrawer("audio")
                     }
 
                     QuickSettingTile {

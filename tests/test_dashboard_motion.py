@@ -31,7 +31,7 @@ class DashboardMotionTests(unittest.TestCase):
         for name in ('IslandShape.qml', 'IslandState.js'):
             shutil.copy2(SHELL / 'island' / name, base / 'island' / name)
         # Only hardware-backed bodies and palette loading are replaced.
-        for name in ('System', 'Config', 'NotificationCenter', 'WifiDrawer', 'BluetoothDrawer', 'HotspotDrawer'):
+        for name in ('System', 'Config', 'NotificationCenter', 'AudioDrawer', 'WifiDrawer', 'BluetoothDrawer', 'HotspotDrawer'):
             body = ('import QtQuick\nItem { property string currentPage: ""; signal requestSideDrawer(string type); '
                     'signal closeRequested(); signal pageSelected(string page); function handleEscape() { return false; } '
                     'property bool wifiLoaded: currentPage === "wifi" || currentPage === ""; '
@@ -246,6 +246,8 @@ QtObject {
     function osdVolume125() { triggerOsd("vol", 1.25); }
     function osdVolume150() { triggerOsd("vol", 1.5); }
     function osdBrightnessOverflow() { triggerOsd("brightness", 1.25, "brightness"); }
+    function osdMicMuted() { triggerOsd("mic-muted", 0, "microphone"); }
+    function osdMicOn() { triggerOsd("mic-on", 1, "microphone"); }
     function osdInvalid() { triggerOsd("vol", NaN); }
     function pin() { isPinned = true; }
     function unpin() { collapse(); }
@@ -497,9 +499,11 @@ int main(int argc, char **argv) {
     QMetaObject::invokeMethod(w, "osdVolume150"); snapshot("osdVolume150");
     QMetaObject::invokeMethod(w, "osdBrightnessOverflow"); snapshot("osdBrightnessOverflow");
     QMetaObject::invokeMethod(w, "osdInvalid"); snapshot("osdInvalid");
+    QMetaObject::invokeMethod(w, "osdMicMuted"); snapshot("osdMicMuted");
+    QMetaObject::invokeMethod(w, "osdMicOn"); snapshot("osdMicOn");
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Before dashboard")));
     snapshot("notificationReplacesOsd");
-    QMetaObject::invokeMethod(w, "osd"); snapshot("notificationWinsOverOsd");
+    QMetaObject::invokeMethod(w, "osdMicMuted"); snapshot("notificationWinsOverOsd");
     toggle(); snapshot("dashboardClearsAlert");
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("During dashboard")));
     snapshot("notificationWhileDashboard");
@@ -894,6 +898,13 @@ int main(int argc, char **argv) {
         self.assertEqual(self.rows['osdBrightnessOverflow']['osdReadout'], '100%')
         self.assertEqual(self.rows['osdInvalid']['osdValue'], 0)
         self.assertEqual(self.rows['osdInvalid']['osdFillValue'], 0)
+
+    def test_microphone_osd_label_and_timeout(self):
+        muted = self.rows['osdMicMuted']
+        self.assertEqual(muted['osdType'], 'microphone')
+        self.assertEqual(muted['osdReadout'], 'Muted')
+        self.assertEqual(muted['alertTimeout'], 1400)
+        self.assertEqual(self.rows['osdMicOn']['osdReadout'], 'On')
 
     def test_transient_priority_and_lifetimes(self):
         self.assertEqual(self.rows['osdFromMedia']['alertType'], 'volume')

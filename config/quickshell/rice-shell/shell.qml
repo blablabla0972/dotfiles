@@ -1,4 +1,5 @@
 //@ pragma UseQApplication
+//@ pragma DefaultEnv QS_PIPEWIRE_IMMEDIATE_RECONNECT = 1
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -431,6 +432,9 @@ ShellRoot {
 
     Connections {
         target: Audio
+        function onMicMuteChangedByBackend(muted: bool): void {
+            root.dispatchOsd(muted ? "󰍭" : "󰍬", muted ? 0 : 1, "microphone");
+        }
         function onOsdRequested(icon: string, progress: real): void {
             root.dispatchOsd(icon, progress, "volume");
         }

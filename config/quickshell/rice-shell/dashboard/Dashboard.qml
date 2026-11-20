@@ -396,9 +396,17 @@ Item {
             anchors.fill: parent
 
             Loader {
+                anchors.fill: parent
+                active: sideDrawerContainer.visible && dashboardWindow.renderedSideDrawer === "audio"
+                sourceComponent: AudioDrawer {
+                    onCloseRequested: dashboardWindow.activeSideDrawer = ""
+                }
+            }
+
+            Loader {
                 id: connectivityLoader
                 anchors.fill: parent
-                active: sideDrawerContainer.visible
+                active: sideDrawerContainer.visible && dashboardWindow.renderedSideDrawer !== "audio"
                 sourceComponent: ConnectivityCenter {
                     currentPage: dashboardWindow.renderedSideDrawer
                     onPageSelected: (page) => dashboardWindow.selectSideDrawer(page)

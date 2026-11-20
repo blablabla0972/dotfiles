@@ -11,6 +11,8 @@ FocusScope {
     property string valueText: ""
     property real value: 0
     property real maximum: 1
+    property var device: null
+    property bool commitOnRelease: false
     property bool available: true
     property real step: 0.05
 
@@ -137,15 +139,29 @@ FocusScope {
             hoverEnabled: true
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             property real dragValue: 0
+            property var pressedDevice: null
+
+            Connections {
+                target: root
+                function onDeviceChanged(): void { pointer.pressedDevice = undefined; }
+            }
 
             function setFromX(x) {
                 dragValue = Math.max(0, Math.min(1, (x - 12) / Math.max(1, width - 24)));
-                root.valueRequested(dragValue * root.maximum);
+                if (!root.commitOnRelease && pressedDevice === root.device)
+                    root.valueRequested(dragValue * root.maximum);
             }
 
             onPressed: (mouse) => {
+                pressedDevice = root.device;
                 root.forceActiveFocus();
                 setFromX(mouse.x);
+            }
+            onReleased: (mouse) => {
+                if (root.commitOnRelease && pressedDevice === root.device) {
+                    setFromX(mouse.x);
+                    root.valueRequested(dragValue * root.maximum);
+                }
             }
             onPositionChanged: (mouse) => {
                 if (pressed) setFromX(mouse.x);
