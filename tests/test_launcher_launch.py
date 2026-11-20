@@ -89,6 +89,7 @@ class LauncherLaunchTests(unittest.TestCase):
 const LaunchCommand = {launchContext};
 let visible = true, closing = false, count = 0, timerStarts = 0;
 let searchText = "kitty", selectedIndex = 0;
+const calculatorMode = false, actionsMode = false;
 const filteredApps = [{command:["kitty"], execute() {count++;}}];
 const Quickshell = {env:() => "/tmp", execDetached:() => {count++;}};
 const closeTimer = {restart:() => {timerStarts++;}};

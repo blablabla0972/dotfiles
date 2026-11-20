@@ -27,6 +27,7 @@ class LauncherInputTests(unittest.TestCase):
         (base / 'launcher').mkdir()
         (base / 'theme').mkdir()
         shutil.copy2(LAUNCHER / 'LaunchCommand.js', base / 'launcher/LaunchCommand.js')
+        shutil.copy2(LAUNCHER / 'QuickActions.js', base / 'launcher/QuickActions.js')
         (base / 'theme/qmldir').write_text('singleton Tokens 1.0 Tokens.qml\n')
         roles = ('background', 'surface', 'surface_high', 'outline', 'accent', 'on_accent',
                  'text_primary', 'text_secondary')
@@ -48,6 +49,12 @@ class LauncherInputTests(unittest.TestCase):
     width: 900; height: 760
     property int launches: 0
     property int resultCount: filteredApps.length
+    property int copies: 0
+    property string copied: ""
+    property int actions: 0
+    property string firedAction: ""
+    onCopyResultRequested: (result) => { copies++; copied = result; }
+    onQuickActionRequested: (action) => { actions++; firedAction = action; }
     property var testEntries: [
         {id:"Alacritty", name:"Alacritty", command:["alacritty"], execute:function(){}},
         {id:"kitty", name:"kitty", command:["kitty"], execute:function(){}}
@@ -100,6 +107,24 @@ int main(int argc, char **argv) {
  rows["outsideCloses"]=!w->isVisible();
  open();QTest::keyClick(w,Qt::Key_Escape);QTest::qWait(140);
  rows["escapeCloses"]=!w->isVisible();
+ open();
+ search->setProperty("text", "= 1/0");
+ QTest::keyClick(w,Qt::Key_Return);
+ rows["invalidCopies"]=w->property("copies").toInt();
+ search->setProperty("text", "= (1+2)*-3");
+ rows["copiesBeforeEnter"]=w->property("copies").toInt();
+ QTest::keyClick(w,Qt::Key_Enter);QTest::keyClick(w,Qt::Key_Return);
+ rows["copies"]=w->property("copies").toInt();
+ rows["copied"]=w->property("copied").toString();
+ QTest::qWait(525);
+ search->setProperty("text", ":volume");
+ rows["actionsBeforeEnter"]=w->property("actions").toInt();
+ QTest::keyClick(w,Qt::Key_Down);
+ QTest::keyClick(w,Qt::Key_Return);QTest::keyClick(w,Qt::Key_Return);
+ rows["actions"]=w->property("actions").toInt();
+ rows["action"]=w->property("firedAction").toString();
+ QTest::keyClick(w,Qt::Key_Escape);QTest::qWait(140);
+ rows["quickEscapeCloses"]=!w->isVisible();
  puts(QJsonDocument(rows).toJson(QJsonDocument::Compact).constData());
 }
 '''
@@ -130,3 +155,13 @@ int main(int argc, char **argv) {
         self.assertTrue(self.rows['escapeCloses'])
         for error in ('ReferenceError', 'TypeError', 'Binding loop'):
             self.assertNotIn(error, self.stderr)
+
+    def test_quick_modes_require_explicit_activation(self):
+        self.assertEqual(self.rows['invalidCopies'], 0)
+        self.assertEqual(self.rows['copiesBeforeEnter'], 0)
+        self.assertEqual(self.rows['copies'], 1)
+        self.assertEqual(self.rows['copied'], '-9')
+        self.assertEqual(self.rows['actionsBeforeEnter'], 0)
+        self.assertEqual(self.rows['actions'], 1)
+        self.assertEqual(self.rows['action'], 'volume-down')
+        self.assertTrue(self.rows['quickEscapeCloses'])

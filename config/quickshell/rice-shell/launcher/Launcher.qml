@@ -7,6 +7,7 @@ import Quickshell
 import Quickshell.Wayland
 import "../theme"
 import "LaunchCommand.js" as LaunchCommand
+import "QuickActions.js" as QuickActions
 
 PanelWindow {
     id: launcherWindow
@@ -41,6 +42,16 @@ PanelWindow {
     property string searchText: ""
     property int selectedIndex: 0
     property string selectedCategory: "All"
+    readonly property bool calculatorMode: searchText.trim().startsWith("=")
+    readonly property bool actionsMode: searchText.trim().startsWith(":")
+    property string feedback: ""
+    signal quickActionRequested(string action)
+    signal copyResultRequested(string result)
+
+    Timer {
+        id: activationGuard
+        interval: 500
+    }
 
     readonly property var categories: ["All", "Internet", "Development", "Multimedia", "System", "Settings"]
 
@@ -139,6 +150,16 @@ PanelWindow {
     }
     readonly property var filteredApps: {
         var query = searchText.trim();
+
+        if (calculatorMode) {
+            const result = QuickActions.calculate(query.slice(1));
+            return [{
+                name: result.value ?? result.error,
+                comment: result.value !== undefined ? "Calculator result" : "Calculator",
+                copyValue: result.value
+            }];
+        }
+        if (actionsMode) return QuickActions.findActions(query.slice(1));
 
         // 1. Terminal Command Runner mode (starts with >)
         if (query.startsWith(">")) {
@@ -249,6 +270,15 @@ PanelWindow {
         if (filteredApps.length === 0 || selectedIndex < 0 || selectedIndex >= filteredApps.length) return;
 
         var item = filteredApps[selectedIndex];
+        if (calculatorMode || actionsMode) {
+            if (!item || activationGuard.running
+                    || (calculatorMode && item.copyValue === undefined)) return;
+            activationGuard.restart();
+            if (calculatorMode) copyResultRequested(item.copyValue);
+            else quickActionRequested(item.action);
+            return;
+        }
+
         if (item) {
             if (item.isCommand) {
                 executeCommand(item.command);
@@ -277,6 +307,7 @@ PanelWindow {
         closing = false;
         if (visible) {
             searchText = "";
+            feedback = "";
             selectedCategory = "All";
             searchInput.text = "";
             selectedIndex = filteredApps.length > 0 ? 0 : -1;
@@ -307,7 +338,8 @@ PanelWindow {
             id: launcherCard
             anchors.centerIn: parent
             width: Math.min(620, parent.width - 32)
-            height: Math.min(570, parent.height - 48)
+            height: Math.min(launcherWindow.calculatorMode ? 270 : 570, parent.height - 48)
+            Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
             radius: 26
             color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Math.max(0.97, Tokens.panelOpacity))
             border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
@@ -337,14 +369,19 @@ PanelWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        text: "Applications"
+                        text: launcherWindow.calculatorMode ? "Calculator"
+                            : launcherWindow.actionsMode ? "Quick Actions" : "Applications"
                         font.pixelSize: 16
                         font.weight: Font.DemiBold
                         color: Tokens.text_primary
                     }
                     Item { Layout.fillWidth: true }
                     Text {
-                        text: launcherWindow.filteredApps.length + " results"
+                        text: launcherWindow.feedback || (launcherWindow.calculatorMode ? ""
+                            : launcherWindow.filteredApps.length + " results")
+                        Layout.maximumWidth: launcherCard.width * 0.56
+                        elide: Text.ElideRight
+                        Accessible.name: text
                         font.pixelSize: 11
                         color: Tokens.text_secondary
                     }
@@ -366,7 +403,8 @@ PanelWindow {
                         spacing: 10
 
                         Text {
-                            text: launcherWindow.searchText.trim().startsWith(">") ? "󰞷" : "󰍉"
+                            text: launcherWindow.calculatorMode ? "=" : launcherWindow.actionsMode ? ":"
+                                : launcherWindow.searchText.trim().startsWith(">") ? "󰞷" : "󰍉"
                             font.pixelSize: 21
                             color: Tokens.accent
                         }
@@ -384,13 +422,15 @@ PanelWindow {
                             Text {
                                 anchors.fill: parent
                                 visible: searchInput.text.length === 0
-                                text: "Search applications…"
+                                text: "Search apps   ·   = Calculator   ·   : Quick Actions"
+                                elide: Text.ElideRight
                                 color: Tokens.text_secondary
                                 font: searchInput.font
                                 verticalAlignment: Text.AlignVCenter
                             }
 
                             onTextChanged: {
+                                launcherWindow.feedback = "";
                                 launcherWindow.searchText = text;
                                 launcherWindow.selectedIndex = launcherWindow.filteredApps.length > 0 ? 0 : -1;
                                 if (appList) appList.positionViewAtBeginning();
@@ -402,7 +442,11 @@ PanelWindow {
                             }
 
                             Keys.onReturnPressed: (event) => {
-                                launcherWindow.launchSelected();
+                                if (!event.isAutoRepeat) launcherWindow.launchSelected();
+                                event.accepted = true;
+                            }
+                            Keys.onEnterPressed: (event) => {
+                                if (!event.isAutoRepeat) launcherWindow.launchSelected();
                                 event.accepted = true;
                             }
 
@@ -423,21 +467,25 @@ PanelWindow {
                             }
 
                             Keys.onTabPressed: (event) => {
-                                launcherWindow.cycleCategory(1);
+                                if (!launcherWindow.calculatorMode && !launcherWindow.actionsMode)
+                                    launcherWindow.cycleCategory(1);
                                 event.accepted = true;
                             }
 
                             Keys.onBacktabPressed: (event) => {
-                                launcherWindow.cycleCategory(-1);
+                                if (!launcherWindow.calculatorMode && !launcherWindow.actionsMode)
+                                    launcherWindow.cycleCategory(-1);
                                 event.accepted = true;
                             }
 
                             Keys.onPressed: (event) => {
                                 if (event.key === Qt.Key_Tab) {
-                                    launcherWindow.cycleCategory(event.modifiers & Qt.ShiftModifier ? -1 : 1);
+                                    if (!launcherWindow.calculatorMode && !launcherWindow.actionsMode)
+                                        launcherWindow.cycleCategory(event.modifiers & Qt.ShiftModifier ? -1 : 1);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Backtab) {
-                                    launcherWindow.cycleCategory(-1);
+                                    if (!launcherWindow.calculatorMode && !launcherWindow.actionsMode)
+                                        launcherWindow.cycleCategory(-1);
                                     event.accepted = true;
                                 }
                             }
@@ -472,6 +520,7 @@ PanelWindow {
                 // Category Selector Pills
                 ListView {
                     id: categoryList
+                    visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
                     Layout.fillWidth: true
                     Layout.preferredHeight: 32
                     orientation: ListView.Horizontal
@@ -569,8 +618,10 @@ PanelWindow {
                             readonly property bool isSelected: launcherWindow.selectedIndex === appDelegate.index
                             readonly property bool isCommand: appDelegate.modelData && appDelegate.modelData.isCommand === true
 
+                            readonly property bool isQuick: launcherWindow.actionsMode || launcherWindow.calculatorMode
+
                             width: appList.width
-                            height: 56
+                            height: launcherWindow.calculatorMode ? 78 : 56
                             radius: 16
 
                             color: isSelected
@@ -599,14 +650,14 @@ PanelWindow {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: 8
-                                        visible: appDelegate.isCommand
+                                        visible: appDelegate.isCommand || appDelegate.isQuick
                                         color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
                                         border.color: Tokens.accent
                                         border.width: 1
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "󰞷"
+                                            text: launcherWindow.calculatorMode ? "=" : launcherWindow.actionsMode ? "›" : "󰞷"
                                             font.pixelSize: 16
                                             color: Tokens.accent
                                         }
@@ -628,7 +679,7 @@ PanelWindow {
                                     // Fallback icon if desktop icon is missing/loading
                                     Text {
                                         anchors.centerIn: parent
-                                        visible: !appDelegate.isCommand && appIcon.status !== Image.Ready
+                                        visible: !appDelegate.isQuick && !appDelegate.isCommand && appIcon.status !== Image.Ready
                                         text: "󰀻"
                                         font.pixelSize: 20
                                         color: appDelegate.isSelected ? Tokens.accent : Tokens.text_secondary
@@ -643,7 +694,7 @@ PanelWindow {
                                     Text {
                                         Layout.fillWidth: true
                                         text: (appDelegate.modelData && appDelegate.modelData.name) ? appDelegate.modelData.name : ""
-                                        font.pixelSize: 14
+                                        font.pixelSize: launcherWindow.calculatorMode ? 21 : 14
                                         font.weight: appDelegate.isSelected ? Font.DemiBold : Font.Normal
                                         color: Tokens.text_primary
                                         elide: Text.ElideRight
@@ -665,7 +716,8 @@ PanelWindow {
 
                                 // The selected row states the Enter action.
                                 Rectangle {
-                                    visible: appDelegate.isCommand || appDelegate.isSelected
+                                    visible: (appDelegate.isCommand || appDelegate.isSelected)
+                                        && (!launcherWindow.calculatorMode || appDelegate.modelData.copyValue !== undefined)
                                     Layout.preferredHeight: 20
                                     radius: 10
                                     color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
@@ -679,7 +731,8 @@ PanelWindow {
                                         spacing: 4
 
                                         Text {
-                                            text: appDelegate.isCommand ? "↵ Run" : "↵ Open"
+                                            text: launcherWindow.calculatorMode ? "↵ Copy"
+                                                : appDelegate.isCommand || launcherWindow.actionsMode ? "↵ Run" : "↵ Open"
                                             font.pixelSize: 10
                                             font.bold: true
                                             color: Tokens.accent
@@ -721,7 +774,7 @@ PanelWindow {
 
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: "No applications found"
+                                text: launcherWindow.actionsMode ? "No matching actions" : "No applications found"
                                 font.pixelSize: 13
                                 font.bold: true
                                 color: Tokens.text_primary
@@ -729,7 +782,8 @@ PanelWindow {
 
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: launcherWindow.selectedCategory !== "All"
+                                text: launcherWindow.actionsMode ? "Try DND, volume, brightness, System, Power or reload."
+                                    : launcherWindow.selectedCategory !== "All"
                                     ? ("No apps match in '" + launcherWindow.selectedCategory + "'. Press Tab to cycle categories.")
                                     : "Type '> command' to run a command in the terminal."
                                 font.pixelSize: 11
@@ -782,19 +836,21 @@ PanelWindow {
                                 color: Tokens.accent
                             }
                             Text {
-                                text: "Launch"
+                                text: launcherWindow.calculatorMode ? "Copy result" : launcherWindow.actionsMode ? "Run action" : "Launch"
                                 font.pixelSize: 10
                                 color: Tokens.text_secondary
                             }
                         }
 
                         Text {
+                            visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
                             text: "•"
                             font.pixelSize: 8
                             color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4)
                         }
 
                         RowLayout {
+                            visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
                             spacing: 4
                             Text {
                                 text: "Tab"
@@ -810,12 +866,14 @@ PanelWindow {
                         }
 
                         Text {
+                            visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
                             text: "•"
                             font.pixelSize: 8
                             color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4)
                         }
 
                         RowLayout {
+                            visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
                             spacing: 4
                             Text {
                                 text: ">"

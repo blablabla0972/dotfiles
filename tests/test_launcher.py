@@ -146,6 +146,7 @@ class QuickshellAppLauncherTest(unittest.TestCase):
             (root / "stubs").mkdir()
             (root / "launcher").mkdir()
             shutil.copy2(LAUNCHER_QML.parent / "LaunchCommand.js", root / "launcher/LaunchCommand.js")
+            shutil.copy2(LAUNCHER_QML.parent / "QuickActions.js", root / "launcher/QuickActions.js")
             stubs = {
                 "qmldir": """\
                     module LauncherTestStubs

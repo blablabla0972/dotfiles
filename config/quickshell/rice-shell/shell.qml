@@ -165,6 +165,84 @@ ShellRoot {
         inst.toggle();
     }
 
+    property Launcher brightnessRequester: null
+    property Launcher clipboardRequester: null
+
+    Timer {
+        id: brightnessFeedbackTimeout
+        interval: 2500
+        onTriggered: {
+            if (root.brightnessRequester)
+                root.brightnessRequester.feedback = DesktopControls.brightnessError || "Could not confirm brightness";
+            root.brightnessRequester = null;
+        }
+    }
+
+    Process {
+        id: copyResult
+        function finish(message: string): void {
+            if (root.clipboardRequester)
+                root.clipboardRequester.feedback = message;
+            root.clipboardRequester = null;
+        }
+        onExited: (code) => finish(code === 0 ? "Copied to clipboard" : "Could not copy result")
+        onRunningChanged: {
+            if (!running) Qt.callLater(() => {
+                if (!copyResult.running && root.clipboardRequester)
+                    copyResult.finish("Could not copy result");
+            });
+        }
+    }
+
+    function runLauncherAction(launcher: Launcher, action: string): void {
+        switch (action) {
+        case "dnd":
+            riceIpc.toggleDnd();
+            launcher.feedback = DesktopControls.doNotDisturb ? "Do Not Disturb on" : "Do Not Disturb off";
+            break;
+        case "volume-up":
+        case "volume-down":
+            if (!Audio.available) {
+                launcher.feedback = "Audio output unavailable";
+                break;
+            }
+            if (action === "volume-up") riceIpc.volumeUp();
+            else riceIpc.volumeDown();
+            launcher.feedback = "Volume: " + Math.round(Audio.volume * 100) + "%";
+            break;
+        case "brightness-up":
+        case "brightness-down":
+            if (brightnessRequester || DesktopControls.brightnessPending) {
+                launcher.feedback = "Brightness adjustment in progress";
+                break;
+            }
+            if (!DesktopControls.brightnessAvailable) {
+                launcher.feedback = DesktopControls.brightnessError || "Backlight unavailable";
+                DesktopControls.refreshBrightness(false);
+                break;
+            }
+            brightnessRequester = launcher;
+            launcher.feedback = "Adjusting brightness…";
+            brightnessFeedbackTimeout.restart();
+            DesktopControls.setBrightness(DesktopControls.brightnessLevel + (action === "brightness-up" ? 0.1 : -0.1));
+            break;
+        case "system":
+        case "power":
+            if (!instanceOnScreen(islandInstances, launcher.targetScreen)) {
+                launcher.feedback = "Control Center unavailable";
+                break;
+            }
+            launcher.dismiss();
+            root.toggleDashboard(action === "system" ? "System" : "Power", launcher.targetScreen);
+            break;
+        case "reload":
+            launcher.dismiss();
+            riceIpc.islandNotify("Rice Shell", "Shell reload requested");
+            riceIpc.reloadShell();
+            break;
+        }
+    }
+
     function toggleDashboard(tab: string, screen: var): void {
         var inst = instanceOnScreen(islandInstances, screen);
         if (!inst) return;
@@ -400,6 +478,21 @@ ShellRoot {
                 id: screenLauncher
                 required property var modelData
                 targetScreen: modelData
+                onActionsModeChanged: {
+                    if (actionsMode && !DesktopControls.brightnessAvailable)
+                        DesktopControls.refreshBrightness(false);
+                }
+                onQuickActionRequested: (action) => root.runLauncherAction(screenLauncher, action)
+                onCopyResultRequested: (result) => {
+                    if (copyResult.running) {
+                        feedback = "Clipboard copy in progress";
+                        return;
+                    }
+                    feedback = "Copying…";
+                    root.clipboardRequester = screenLauncher;
+                    copyResult.command = ["wl-copy", "--", result];
+                    copyResult.running = true;
+                }
 
                 Component.onCompleted: {
                     root.launcherInstances.push(screenLauncher);
@@ -442,8 +535,20 @@ ShellRoot {
 
     Connections {
         target: DesktopControls
-        function onErrorOccurred(message: string): void { riceIpc.islandNotify("Control Center", message); }
+        function onErrorOccurred(message: string): void {
+            if (message === "Failed to set brightness" && root.brightnessRequester) {
+                root.brightnessRequester.feedback = message;
+                root.brightnessRequester = null;
+                brightnessFeedbackTimeout.stop();
+            }
+            riceIpc.islandNotify("Control Center", message);
+        }
         function onBrightnessRefreshed(level: real, showOsd: bool): void {
+            if (root.brightnessRequester && !DesktopControls.brightnessPending) {
+                root.brightnessRequester.feedback = "Brightness: " + Math.round(level * 100) + "%";
+                root.brightnessRequester = null;
+                brightnessFeedbackTimeout.stop();
+            }
             if (showOsd) root.dispatchOsd("󰃠", level, "brightness");
         }
     }
