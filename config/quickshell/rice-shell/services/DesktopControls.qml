@@ -150,17 +150,30 @@ QtObject {
         }
     }
 
-    function toggleNightLight(): void { nightLight.running = !nightLight.running; }
-    function toggleCaffeine(): void { caffeine.running = !caffeine.running; }
+    property bool nightLightRequested: false
+    property bool caffeineRequested: false
+
+    function toggleNightLight(): void { nightLightRequested = !nightLightRequested; }
+    function toggleCaffeine(): void { caffeineRequested = !caffeineRequested; }
 
     property Process nightLight: Process {
         command: ["gammastep", "-m", "wayland", "-l", "0:0", "-t", "4000:4000", "-r"]
-        onExited: (code) => { if (code !== 0) root.errorOccurred("Night Light could not start."); }
+        running: root.nightLightRequested
+        onRunningChanged: {
+            if (running || !root.nightLightRequested) return;
+            root.nightLightRequested = false;
+            root.errorOccurred(qsTr("Night Light could not start."));
+        }
     }
 
     property Process caffeine: Process {
         command: ["systemd-inhibit", "--what=idle:sleep", "--mode=block",
                   "--who=Rice Awake", "--why=Awake enabled in Control Center", "sleep", "infinity"]
-        onExited: (code) => { if (code !== 0) root.errorOccurred("Awake could not start."); }
+        running: root.caffeineRequested
+        onRunningChanged: {
+            if (running || !root.caffeineRequested) return;
+            root.caffeineRequested = false;
+            root.errorOccurred(qsTr("Awake could not start."));
+        }
     }
 }

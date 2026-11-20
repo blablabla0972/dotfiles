@@ -650,8 +650,7 @@ PanelWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        visible: islandWindow.activeAlert && islandWindow.activeAlert.actions
-                            && islandWindow.activeAlert.actions.length > 0
+                        visible: (islandWindow.activeAlert?.actions?.length ?? 0) > 0
                         spacing: 6
 
                         Repeater {

@@ -17,7 +17,9 @@ Rectangle {
     readonly property PwNode profileSink: switchingProfile ? Audio.devices.find(node =>
         node.isSink && Number(node.properties["device.id"]) === switchingProfile.card
         && switchingProfile.devices.includes(Number(node.properties["card.profile.device"]))) ?? null : null
-    onProfileSinkChanged: {
+    onProfileSinkChanged: Qt.callLater(root.finishProfileSwitch)
+
+    function finishProfileSwitch(): void {
         if (!profileSink || !switchingProfile) return;
         const node = profileSink;
         profileTimeout.stop();
