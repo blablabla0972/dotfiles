@@ -13,11 +13,15 @@ import "island"
 import "island/IslandState.js" as IslandState
 import "dashboard"
 import "launcher"
+import "launcher/LauncherSearch.js" as LauncherSearch
 import "overlays"
 
 ShellRoot {
     id: root
     reloadableId: "riceShellRoot"
+
+    LauncherStore { id: launcherStore }
+    readonly property var launcherIndex: LauncherSearch.indexApps(DesktopEntries.applications.values)
 
     PersistentProperties {
         id: retainedNotificationHistory
@@ -157,7 +161,7 @@ ShellRoot {
     function toggleLauncher(screen: var): void {
         var inst = instanceOnScreen(launcherInstances, screen);
         if (!inst) return;
-        if (inst.visible) {
+        if (inst.visible && !inst.closing) {
             inst.dismiss();
             return;
         }
@@ -166,52 +170,170 @@ ShellRoot {
     }
 
     property Launcher brightnessRequester: null
-    property Launcher clipboardRequester: null
+    property int brightnessSession: -1
+
+    function launcherFeedback(launcher: Launcher, session: int, message: string): void {
+        if (launcher && launcher.visible && !launcher.closing && launcher.session === session)
+            launcher.feedback = message;
+    }
+
+    function finishLauncherBrightness(message: string): void {
+        launcherFeedback(brightnessRequester, brightnessSession, message);
+        brightnessRequester = null;
+        brightnessFeedbackTimeout.stop();
+    }
 
     Timer {
         id: brightnessFeedbackTimeout
         interval: 2500
-        onTriggered: {
-            if (root.brightnessRequester)
-                root.brightnessRequester.feedback = DesktopControls.brightnessError || "Could not confirm brightness";
-            root.brightnessRequester = null;
+        onTriggered: root.finishLauncherBrightness(DesktopControls.brightnessError || "Could not confirm brightness")
+    }
+
+    Process {
+        id: launcherVolume
+        property Launcher requester: null
+        property int session: -1
+        property int sinkId: -1
+        property real target: -1
+
+        function finish(message: string): void {
+            root.launcherFeedback(requester, session, message);
+            requester = null;
+            volumeTimeout.stop();
         }
+
+        function acknowledge(): void {
+            if (requester && !running && Audio.available && Audio.sink.id === sinkId
+                    && Math.abs(Audio.volume - target) < 0.005)
+                finish("Volume " + Math.round(Audio.volume * 100) + "%");
+        }
+
+        function request(launcher: Launcher, percent: real): void {
+            if (requester || running) {
+                launcher.feedback = "Volume adjustment in progress";
+                return;
+            }
+            requester = launcher;
+            session = launcher.session;
+            target = percent / 100;
+            sinkId = Audio.sink.id;
+            launcher.feedback = "Adjusting volume…";
+            volumeTimeout.restart();
+            exec(["wpctl", "set-volume", "--limit", "1.5", String(sinkId), String(target)]);
+        }
+
+        onExited: (code, status) => {
+            if (code !== 0 || status !== 0) finish("Could not set volume");
+            else Qt.callLater(acknowledge);
+        }
+    }
+    Timer {
+        id: volumeTimeout
+        interval: 2000
+        onTriggered: launcherVolume.finish("Could not confirm volume")
     }
 
     Process {
         id: copyResult
-        function finish(message: string): void {
-            if (root.clipboardRequester)
-                root.clipboardRequester.feedback = message;
-            root.clipboardRequester = null;
+        property Launcher requester: null
+        property int session: -1
+        property string expression: ""
+        property string value: ""
+
+        function request(launcher: Launcher, result: string, input: string): void {
+            if (running || value) {
+                launcher.feedback = "Clipboard copy in progress";
+                return;
+            }
+            requester = launcher;
+            session = launcher.session;
+            expression = input;
+            value = result;
+            launcher.feedback = "Copying…";
+            command = ["wl-copy", "--", result];
+            running = true;
+            Qt.callLater(checkStart);
         }
-        onExited: (code) => finish(code === 0 ? "Copied to clipboard" : "Could not copy result")
-        onRunningChanged: {
-            if (!running) Qt.callLater(() => {
-                if (!copyResult.running && root.clipboardRequester)
-                    copyResult.finish("Could not copy result");
-            });
+
+        function checkStart(): void {
+            if (!running && value) finish(false);
         }
+
+        function finish(success: bool): void {
+            if (!value) return;
+            if (success) launcherStore.recordCalculation(expression, value);
+            root.launcherFeedback(requester, session, success ? "Copied to clipboard" : "Could not copy result");
+            requester = null;
+            value = "";
+            expression = "";
+        }
+        onExited: (code, status) => finish(code === 0 && status === 0)
+        onRunningChanged: if (!running) Qt.callLater(checkStart)
     }
 
-    function runLauncherAction(launcher: Launcher, action: string): void {
+    readonly property var launcherActionStatuses: {
+        const output = !Audio.available ? "Output unavailable"
+            : Audio.muted ? "Muted" : Math.round(Audio.volume * 100) + "%";
+        const backlight = DesktopControls.brightnessPending ? "Adjusting brightness…"
+            : DesktopControls.brightnessAvailable
+            ? Math.round(DesktopControls.brightnessLevel * 100) + "%" : "Backlight unavailable";
+        return {
+            "dnd": DesktopControls.doNotDisturb ? "On" : "Off",
+            "volume-up": output, "volume-down": output, "volume-mute": output,
+            "mic-mute": !Audio.micAvailable ? "Microphone unavailable" : Audio.micMuted ? "Muted" : "On",
+            "brightness-up": backlight, "brightness-down": backlight,
+            "night-light": DesktopControls.nightLightActive ? "On" : "Off",
+            "awake": DesktopControls.caffeineActive ? "On" : "Off"
+        };
+    }
+
+    function runLauncherAction(launcher: Launcher, action: string, argument: real): void {
+        if (!launcher || !launcher.visible || launcher.closing) return;
         switch (action) {
         case "dnd":
-            riceIpc.toggleDnd();
+        case "dnd-on":
+        case "dnd-off":
+            if (action === "dnd") riceIpc.toggleDnd();
+            else DesktopControls.doNotDisturb = action === "dnd-on";
             launcher.feedback = DesktopControls.doNotDisturb ? "Do Not Disturb on" : "Do Not Disturb off";
             break;
         case "volume-up":
         case "volume-down":
+        case "volume-set":
+        case "volume-mute":
             if (!Audio.available) {
                 launcher.feedback = "Audio output unavailable";
                 break;
             }
             if (action === "volume-up") riceIpc.volumeUp();
-            else riceIpc.volumeDown();
-            launcher.feedback = "Volume: " + Math.round(Audio.volume * 100) + "%";
+            else if (action === "volume-down") riceIpc.volumeDown();
+            else if (action === "volume-mute") riceIpc.volumeMute();
+            else if (Number.isFinite(argument) && argument >= 0 && argument <= 150) {
+                launcherVolume.request(launcher, argument);
+                break;
+            }
+            launcher.feedback = "";
+            break;
+        case "mic-mute":
+            if (Audio.micAvailable) Audio.toggleMicMute();
+            else launcher.feedback = "Microphone unavailable";
+            break;
+        case "night-light":
+        case "night-light-on":
+        case "night-light-off":
+            if (action === "night-light") DesktopControls.toggleNightLight();
+            else DesktopControls.nightLightRequested = action === "night-light-on";
+            break;
+        case "awake":
+        case "awake-on":
+        case "awake-off":
+            if (action === "awake") DesktopControls.toggleCaffeine();
+            else DesktopControls.caffeineRequested = action === "awake-on";
             break;
         case "brightness-up":
         case "brightness-down":
+        case "brightness-set":
+            if (action === "brightness-set" && (!Number.isFinite(argument) || argument < 5 || argument > 100)) break;
             if (brightnessRequester || DesktopControls.brightnessPending) {
                 launcher.feedback = "Brightness adjustment in progress";
                 break;
@@ -222,18 +344,52 @@ ShellRoot {
                 break;
             }
             brightnessRequester = launcher;
+            brightnessSession = launcher.session;
             launcher.feedback = "Adjusting brightness…";
             brightnessFeedbackTimeout.restart();
-            DesktopControls.setBrightness(DesktopControls.brightnessLevel + (action === "brightness-up" ? 0.1 : -0.1));
+            DesktopControls.setBrightness(action === "brightness-set" ? argument / 100
+                : DesktopControls.brightnessLevel + (action === "brightness-up" ? 0.1 : -0.1));
             break;
         case "system":
         case "power":
+        case "notifications":
+        case "home":
+        case "config":
+        case "audio":
             if (!instanceOnScreen(islandInstances, launcher.targetScreen)) {
                 launcher.feedback = "Control Center unavailable";
                 break;
             }
             launcher.dismiss();
-            root.toggleDashboard(action === "system" ? "System" : "Power", launcher.targetScreen);
+            if (action === "audio") root.toggleSideDrawer("audio", launcher.targetScreen);
+            else root.toggleDashboard(action[0].toUpperCase() + action.slice(1), launcher.targetScreen);
+            break;
+        case "windows": {
+            const switcher = instanceOnScreen(switcherInstances, launcher.targetScreen);
+            if (!switcher) {
+                launcher.feedback = "Window switcher unavailable";
+                break;
+            }
+            dismissOtherModals(switcher);
+            switcher.open(1);
+            break;
+        }
+        case "clipboard":
+        case "screenshot":
+        case "wallpaper": {
+            const home = Quickshell.env("HOME");
+            const command = action === "clipboard" ? ["qs", "-c", "clipboard-history", "-n"]
+                : action === "screenshot" ? [home + "/.config/hypr/scripts/screenshot-region.sh"]
+                : ["quickshell", "-p", home + "/.config/quickshell/wallpaper-switcher"];
+            launcher.dismiss();
+            utilityDelay.command = command;
+            utilityDelay.restart();
+            break;
+        }
+        case "clear-recents":
+        case "clear-calculations":
+            launcherStore.clearHistory(action === "clear-calculations");
+            launcher.feedback = "History cleared";
             break;
         case "reload":
             launcher.dismiss();
@@ -241,6 +397,13 @@ ShellRoot {
             riceIpc.reloadShell();
             break;
         }
+    }
+
+    Timer {
+        id: utilityDelay
+        property var command: []
+        interval: 130
+        onTriggered: Quickshell.execDetached(command)
     }
 
     function toggleDashboard(tab: string, screen: var): void {
@@ -478,21 +641,21 @@ ShellRoot {
                 id: screenLauncher
                 required property var modelData
                 targetScreen: modelData
+                store: launcherStore
+                sharedIndex: root.launcherIndex
+                actionStatuses: root.launcherActionStatuses
+                actionAvailability: ({
+                    "volume-up": Audio.available, "volume-down": Audio.available,
+                    "volume-mute": Audio.available, "mic-mute": Audio.micAvailable,
+                    "brightness-up": DesktopControls.brightnessAvailable,
+                    "brightness-down": DesktopControls.brightnessAvailable
+                })
                 onActionsModeChanged: {
                     if (actionsMode && !DesktopControls.brightnessAvailable)
                         DesktopControls.refreshBrightness(false);
                 }
-                onQuickActionRequested: (action) => root.runLauncherAction(screenLauncher, action)
-                onCopyResultRequested: (result) => {
-                    if (copyResult.running) {
-                        feedback = "Clipboard copy in progress";
-                        return;
-                    }
-                    feedback = "Copying…";
-                    root.clipboardRequester = screenLauncher;
-                    copyResult.command = ["wl-copy", "--", result];
-                    copyResult.running = true;
-                }
+                onQuickActionRequested: (action, argument) => root.runLauncherAction(screenLauncher, action, argument)
+                onCopyResultRequested: (result, expression) => copyResult.request(screenLauncher, result, expression)
 
                 Component.onCompleted: {
                     root.launcherInstances.push(screenLauncher);
@@ -525,6 +688,7 @@ ShellRoot {
 
     Connections {
         target: Audio
+        function onVolumeChanged(): void { launcherVolume.acknowledge(); }
         function onMicMuteChangedByBackend(muted: bool): void {
             root.dispatchOsd(muted ? "󰍭" : "󰍬", muted ? 0 : 1, "microphone");
         }
@@ -536,19 +700,13 @@ ShellRoot {
     Connections {
         target: DesktopControls
         function onErrorOccurred(message: string): void {
-            if (message === "Failed to set brightness" && root.brightnessRequester) {
-                root.brightnessRequester.feedback = message;
-                root.brightnessRequester = null;
-                brightnessFeedbackTimeout.stop();
-            }
+            if (message === "Failed to set brightness" && root.brightnessRequester)
+                root.finishLauncherBrightness(message);
             riceIpc.islandNotify("Control Center", message);
         }
         function onBrightnessRefreshed(level: real, showOsd: bool): void {
-            if (root.brightnessRequester && !DesktopControls.brightnessPending) {
-                root.brightnessRequester.feedback = "Brightness: " + Math.round(level * 100) + "%";
-                root.brightnessRequester = null;
-                brightnessFeedbackTimeout.stop();
-            }
+            if (root.brightnessRequester && !DesktopControls.brightnessPending)
+                root.finishLauncherBrightness("Brightness: " + Math.round(level * 100) + "%");
             if (showOsd) root.dispatchOsd("󰃠", level, "brightness");
         }
     }

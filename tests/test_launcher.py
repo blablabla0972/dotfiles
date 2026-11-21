@@ -62,18 +62,6 @@ class QuickshellAppLauncherTest(unittest.TestCase):
             self.assertTrue(reset in visible_changed, f"visible transition must restore {reset}")
         self.assertIn("selectedIndex = filteredApps.length > 0 ? 0 : -1;", visible_changed)
 
-    def test_launcher_zero_state_comment_matches_sorted_apps(self):
-        content = LAUNCHER_QML.read_text()
-
-        self.assertTrue(
-            "// 2. Zero-state: valid apps in the selected category, sorted alphabetically" in content,
-            "zero-state comment must describe the alphabetical app list",
-        )
-        self.assertFalse(
-            "pinned essentials followed by curated list" in content,
-            "misleading pinned-curated comment remains",
-        )
-
     def test_launcher_uses_one_detached_execution_path_with_failure_handling(self):
         content = LAUNCHER_QML.read_text()
         execute_command = content.split("function executeCommand(cmd: string): void {", 1)[1].split("function launchSelected()", 1)[0]
@@ -94,10 +82,9 @@ class QuickshellAppLauncherTest(unittest.TestCase):
         content = LAUNCHER_QML.read_text()
         launch_selected = content.split("function launchSelected(): void {", 1)[1].split("onSelectedIndexChanged:", 1)[0]
 
-        self.assertTrue(
-            'if (query.startsWith(">")) {\n            executeCommand(query);' in launch_selected,
-            "shell execution must remain behind explicit > command mode",
-        )
+        command_branch = launch_selected.split('if (query.startsWith(">")) {', 1)[1]
+        self.assertLess(command_branch.index("pendingConfirmation"), command_branch.index("executeCommand(query)"))
+        self.assertLess(command_branch.index("executeCommand(query)"), command_branch.index("var item"))
         self.assertTrue(
             'else if (typeof item.execute === "function") {' in launch_selected,
             "app results must use DesktopEntry.execute",
@@ -145,8 +132,17 @@ class QuickshellAppLauncherTest(unittest.TestCase):
             root = Path(tmp)
             (root / "stubs").mkdir()
             (root / "launcher").mkdir()
-            shutil.copy2(LAUNCHER_QML.parent / "LaunchCommand.js", root / "launcher/LaunchCommand.js")
-            shutil.copy2(LAUNCHER_QML.parent / "QuickActions.js", root / "launcher/QuickActions.js")
+            for script in LAUNCHER_QML.parent.glob("*.js"):
+                shutil.copy2(script, root / "launcher")
+            (root / "launcher/LauncherCalculator.qml").write_text("""
+                import QtQuick
+                import "QuickActions.js" as QuickActions
+                Item {
+                    property bool active
+                    property string expression
+                    readonly property var result: QuickActions.calculate(expression)
+                }
+            """)
             stubs = {
                 "qmldir": """\
                     module LauncherTestStubs
@@ -363,7 +359,7 @@ class QuickshellAppLauncherTest(unittest.TestCase):
 
         # Prevent fullscreen click trapping when closed
         self.assertIn("mask: Region", content)
-        self.assertIn("launcherWindow.visible ? scrim : null", content)
+        self.assertIn("launcherWindow.visible && !launcherWindow.closing ? scrim : null", content)
 
     def test_bar_launcher_wiring(self):
         self.assertTrue(BAR_QML.exists(), "Bar.qml must exist")
@@ -379,6 +375,9 @@ class QuickshellAppLauncherTest(unittest.TestCase):
         self.assertIn("onRequestLauncher", shell_content)
         self.assertIn("root.toggleLauncher(modelData)", shell_content)
         self.assertIn("root.instanceOnScreen(launcherInstances, screen)", shell_content.replace("instanceOnScreen(launcherInstances, screen)", "root.instanceOnScreen(launcherInstances, screen)"))
+        launcher_delegate = shell_content.split("id: screenLauncher", 1)[1].split("Component.onCompleted", 1)[0]
+        for binding in ("store: launcherStore", "sharedIndex: root.launcherIndex", "actionStatuses: root.launcherActionStatuses"):
+            self.assertIn(binding, launcher_delegate)
 
     def test_hyprland_binds_hotkeys(self):
         self.assertTrue(BINDS_LUA.exists(), "binds.lua must exist")

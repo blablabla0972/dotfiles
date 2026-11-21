@@ -7,6 +7,7 @@ import Quickshell
 import Quickshell.Wayland
 import "../theme"
 import "LaunchCommand.js" as LaunchCommand
+import "LauncherSearch.js" as LauncherSearch
 import "QuickActions.js" as QuickActions
 
 PanelWindow {
@@ -20,7 +21,7 @@ PanelWindow {
 
     Timer {
         id: closeTimer
-        interval: 110
+        interval: launcherWindow.reducedMotion ? 0 : 110
         onTriggered: launcherWindow.visible = false
     }
 
@@ -36,7 +37,7 @@ PanelWindow {
     WlrLayershell.keyboardFocus: visible && !closing ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     mask: Region {
-        item: launcherWindow.visible ? scrim : null
+        item: launcherWindow.visible && !launcherWindow.closing ? scrim : null
     }
 
     property string searchText: ""
@@ -44,9 +45,28 @@ PanelWindow {
     property string selectedCategory: "All"
     readonly property bool calculatorMode: searchText.trim().startsWith("=")
     readonly property bool actionsMode: searchText.trim().startsWith(":")
+    readonly property bool commandMode: searchText.trim().startsWith(">")
+    readonly property bool appMode: !calculatorMode && !actionsMode && !commandMode && !contextApp
+    property bool browseAll: false
+    readonly property bool homeMode: appMode && !searchText.trim() && !browseAll && selectedCategory === "All"
+    readonly property bool reducedMotion: Quickshell.env("RICE_LAUNCHER_REDUCED_MOTION") === "1"
+    property string pendingConfirmation: ""
+    property var store: null
+    property var sharedIndex: null
+    property var actionStatuses: ({})
+    property var actionAvailability: ({})
+    property var contextApp: null
+    property int returnIndex: 0
+    property int session: 0
     property string feedback: ""
-    signal quickActionRequested(string action)
-    signal copyResultRequested(string result)
+    signal quickActionRequested(string action, real argument)
+    signal copyResultRequested(string result, string expression)
+
+    LauncherCalculator {
+        id: calculator
+        active: launcherWindow.visible && !launcherWindow.closing && launcherWindow.calculatorMode
+        expression: launcherWindow.calculatorMode ? launcherWindow.searchText.trim().slice(1) : ""
+    }
 
     Timer {
         id: activationGuard
@@ -67,50 +87,7 @@ PanelWindow {
     }
 
     function matchesCategory(app, category: string): bool {
-        if (!category || category === "All") return true;
-        if (!app) return false;
-
-        var tokens = [];
-        if (app.categories) {
-            for (var i = 0; i < app.categories.length; i++) {
-                if (app.categories[i]) tokens.push(app.categories[i].toLowerCase());
-            }
-        }
-        if (app.keywords) {
-            for (var k = 0; k < app.keywords.length; k++) {
-                if (app.keywords[k]) tokens.push(app.keywords[k].toLowerCase());
-            }
-        }
-        var tokenStr = tokens.join(" ");
-        var meta = (tokenStr + " " + (app.name || "") + " " + (app.genericName || "") + " " + (app.comment || "")).toLowerCase();
-
-        switch (category) {
-        case "Internet":
-            return meta.includes("network") || meta.includes("web") || meta.includes("browser")
-                || meta.includes("internet") || meta.includes("email") || meta.includes("chat")
-                || meta.includes("feed") || meta.includes("download") || meta.includes("irc")
-                || meta.includes("discord") || meta.includes("instantmessaging");
-        case "Development":
-            return meta.includes("development") || meta.includes("programming") || meta.includes("ide")
-                || meta.includes("code") || meta.includes("editor") || meta.includes("debugger")
-                || meta.includes("git") || meta.includes("texteditor") || meta.includes("terminal");
-        case "Multimedia":
-            return meta.includes("audiovideo") || meta.includes("audio") || meta.includes("video")
-                || meta.includes("media") || meta.includes("player") || meta.includes("music")
-                || meta.includes("recorder") || meta.includes("graphics") || meta.includes("image")
-                || meta.includes("photo") || meta.includes("mpv") || meta.includes("sound");
-        case "System":
-            return meta.includes("system") || meta.includes("filetools") || meta.includes("filemanager")
-                || meta.includes("terminalemulator") || meta.includes("monitor") || meta.includes("security")
-                || meta.includes("utility") || meta.includes("core") || meta.includes("disk")
-                || meta.includes("archive") || meta.includes("package");
-        case "Settings":
-            return meta.includes("settings") || meta.includes("preference") || meta.includes("hardware")
-                || meta.includes("config") || meta.includes("desktopsettings") || meta.includes("control")
-                || meta.includes("setup");
-        default:
-            return true;
-        }
+        return LauncherSearch.matchesCategory(app, category);
     }
 
     function getZeroStateApps(): var {
@@ -119,53 +96,69 @@ PanelWindow {
 
     // Filter desktop entries based on search query and category
     readonly property var allApps: DesktopEntries.applications ? DesktopEntries.applications.values : []
-    readonly property var indexedApps: {
-        var records = [];
-        for (var i = 0; i < allApps.length; i++) {
-            var app = allApps[i];
-            if (!app || !app.name || app.noDisplay) continue;
-            var keywords = [];
-            if (app.keywords) {
-                for (var k = 0; k < app.keywords.length; k++) {
-                    if (app.keywords[k]) keywords.push(app.keywords[k].toLowerCase());
-                }
-            }
-            records.push({
-                app: app,
-                name: app.name.toLowerCase(),
-                generic: (app.genericName || "").toLowerCase(),
-                comment: (app.comment || "").toLowerCase(),
-                keywords: keywords
-            });
-        }
-        return records;
-    }
+    readonly property var indexedApps: sharedIndex ?? LauncherSearch.indexApps(allApps)
     readonly property var categoryApps: indexedApps.filter(function(record) {
         return launcherWindow.matchesCategory(record.app, launcherWindow.selectedCategory);
     })
     readonly property var zeroStateApps: {
         var apps = categoryApps.map(function(record) { return record.app; });
-        apps.sort(function(x, y) { return x.name.localeCompare(y.name); });
-        return apps;
+        const favorites = store?.favorites || [];
+        const recents = store?.recents || [];
+        const byId = new Map(apps.map(app => [app.id, app]));
+        const ordered = [];
+        const recent = recents.filter(id => !favorites.includes(id) && byId.has(id))
+            .sort((a, b) => (store?.frequency?.[b] || 0) - (store?.frequency?.[a] || 0));
+        for (const id of favorites.concat(recent)) {
+            if (!byId.has(id)) continue;
+            ordered.push(byId.get(id));
+            byId.delete(id);
+        }
+        if (!ordered.length && selectedCategory === "All") {
+            for (const id of ["firefox", "org.mozilla.firefox", "org.kde.dolphin", "thunar",
+                              "kitty", "Alacritty", "org.gnome.Nautilus", "code"]) {
+                if (!byId.has(id)) continue;
+                ordered.push(byId.get(id));
+                byId.delete(id);
+            }
+        }
+        apps.sort((x, y) => x.name.localeCompare(y.name));
+        return ordered.concat(apps.filter(app => byId.has(app.id)));
     }
     readonly property var filteredApps: {
         var query = searchText.trim();
 
+        if (contextApp) {
+            return [{kind: "desktop-action", name: "Open " + contextApp.name, contextOpen: true},
+                {name: isFavorite(contextApp) ? "Remove from favorites" : "Add to favorites",
+                 kind: "desktop-action", contextFavorite: true, disabled: !store?.ready}]
+                .concat(Array.from(contextApp.actions || [], action => ({
+                    kind: "desktop-action", name: action.name, icon: action.icon, desktopAction: action
+                })));
+        }
         if (calculatorMode) {
-            const result = QuickActions.calculate(query.slice(1));
+            const expression = query.slice(1).trim();
+            const history = store?.calculations || [];
+            if (!expression && history.length) return history.map(entry => ({
+                kind: "history", name: entry.value, comment: entry.expression, expression: entry.expression
+            }));
+            const result = calculator.result;
             return [{
-                name: result.value ?? result.error,
-                comment: result.value !== undefined ? "Calculator result" : "Calculator",
-                copyValue: result.value
+                kind: result.value === undefined ? "message" : "calculation",
+                name: result.display ?? result.value ?? result.error,
+                comment: expression || "Calculator",
+                copyValue: result.value,
+                expression: expression,
+                disabled: result.value === undefined
             }];
         }
-        if (actionsMode) return QuickActions.findActions(query.slice(1));
+        if (actionsMode) return QuickActions.findActions(query.slice(1), actionStatuses, actionAvailability);
 
         // 1. Terminal Command Runner mode (starts with >)
         if (query.startsWith(">")) {
             var rawCmd = query.substring(1).trim();
             return [{
                 isCommand: true,
+                kind: "command",
                 id: "cmd-runner",
                 name: rawCmd.length > 0 ? ("Run: " + rawCmd) : "Run command in terminal...",
                 comment: rawCmd.length > 0 ? ("Execute '" + rawCmd + "' in terminal") : "Type a shell command after '>'",
@@ -174,53 +167,26 @@ PanelWindow {
             }];
         }
 
-        // 2. Zero-state: valid apps in the selected category, sorted alphabetically
+        // 2. Zero-state: favorites, recent apps, then remaining apps alphabetically
         if (query.length === 0) {
-            return getZeroStateApps();
+            const apps = getZeroStateApps();
+            if (!homeMode || !apps.length) return apps;
+            return apps.slice(0, 9).concat(QuickActions.findActions("system", actionStatuses, actionAvailability)
+                .filter(item => item.action === "system"));
         }
 
-        // 3. Search query filtering
-        var lower = query.toLowerCase();
-        var startsMatches = [];
-        var nameMatches = [];
-        var otherMatches = [];
-
-        var apps = categoryApps;
-        for (var i = 0; i < apps.length; i++) {
-            var record = apps[i];
-            var app = record.app;
-            var name = record.name;
-            var generic = record.generic;
-            var comment = record.comment;
-
-            if (name.startsWith(lower)) {
-                startsMatches.push(app);
-            } else if (name.includes(lower)) {
-                nameMatches.push(app);
-            } else if (generic.includes(lower) || comment.includes(lower)) {
-                otherMatches.push(app);
-            } else {
-                var matchedKeyword = false;
-                if (record.keywords) {
-                    for (var k = 0; k < record.keywords.length; k++) {
-                        if (record.keywords[k].includes(lower)) {
-                            matchedKeyword = true;
-                            break;
-                        }
-                    }
-                }
-                if (matchedKeyword) {
-                    otherMatches.push(app);
-                }
-            }
-        }
-
-        var combined = startsMatches.concat(nameMatches).concat(otherMatches);
-        return combined.slice(0, 40);
+        return LauncherSearch.searchApps(categoryApps, query, store?.favorites, store?.recents, store?.frequency);
     }
 
     function toggle(): void {
-        if (visible) dismiss();
+        if (closing) {
+            closeTimer.stop();
+            session++;
+            activationGuard.stop();
+            feedback = "";
+            closing = false;
+            searchInput.forceActiveFocus();
+        } else if (visible) dismiss();
         else visible = true;
     }
 
@@ -259,10 +225,57 @@ PanelWindow {
         }
     }
 
+    function isFavorite(app): bool {
+        return !!app && !!store && store.favorites.includes(app.id);
+    }
+
+    function toggleFavorite(app): void {
+        if (!store?.ready || !app?.id) return;
+        const adding = !isFavorite(app);
+        store.toggleFavorite(app.id);
+        feedback = adding ? "Added to favorites" : "Removed from favorites";
+        if (appMode) selectedIndex = filteredApps.indexOf(app);
+    }
+
+    function openContext(app): void {
+        if (!appMode || closing || !app || app.kind) return;
+        returnIndex = selectedIndex;
+        contextApp = app;
+        selectedIndex = 0;
+        appList.positionViewAtBeginning();
+    }
+
+    function closeContext(): void {
+        contextApp = null;
+        selectedIndex = Math.min(returnIndex, filteredApps.length - 1);
+        searchInput.forceActiveFocus();
+    }
+
+    function selectMode(prefix: string): void {
+        if (contextApp) closeContext();
+        searchInput.text = prefix;
+        searchInput.cursorPosition = prefix.length;
+        searchInput.forceActiveFocus();
+    }
+
+    function accept(event): void {
+        if (!event.isAutoRepeat) {
+            if (appMode && (event.modifiers & Qt.AltModifier))
+                openContext(filteredApps[selectedIndex]);
+            else launchSelected();
+        }
+        event.accepted = true;
+    }
+
     function launchSelected(): void {
         if (closing) return;
         var query = searchText.trim();
         if (query.startsWith(">")) {
+            if (query.length > 1 && pendingConfirmation !== query) {
+                pendingConfirmation = query;
+                feedback = "Press Enter again to run in terminal";
+                return;
+            }
             executeCommand(query);
             return;
         }
@@ -270,12 +283,35 @@ PanelWindow {
         if (filteredApps.length === 0 || selectedIndex < 0 || selectedIndex >= filteredApps.length) return;
 
         var item = filteredApps[selectedIndex];
-        if (calculatorMode || actionsMode) {
-            if (!item || activationGuard.running
-                    || (calculatorMode && item.copyValue === undefined)) return;
+        if (!item || item.disabled) return;
+        if (contextApp) {
+            if (item.contextFavorite) {
+                toggleFavorite(contextApp);
+                return;
+            }
+            if (item.desktopAction) {
+                item.desktopAction.execute();
+                if (store) store.recordLaunch(contextApp.id);
+                dismiss();
+                return;
+            }
+            item = contextApp;
+        }
+        if (item.kind === "history") {
+            selectMode("= " + item.expression);
+            return;
+        }
+        if (calculatorMode || actionsMode || item.kind === "quick-action") {
+            if (activationGuard.running) return;
+            if (item.confirm && pendingConfirmation !== item.action) {
+                pendingConfirmation = item.action;
+                feedback = "Press Enter again to confirm " + item.name;
+                return;
+            }
+            pendingConfirmation = "";
             activationGuard.restart();
-            if (calculatorMode) copyResultRequested(item.copyValue);
-            else quickActionRequested(item.action);
+            if (calculatorMode) copyResultRequested(item.copyValue, item.expression);
+            else quickActionRequested(item.action, item.argument ?? 0);
             return;
         }
 
@@ -287,6 +323,7 @@ PanelWindow {
                     Quickshell.env("TERMINAL"), Quickshell.env("HOME"));
                 if (context) Quickshell.execDetached(context);
                 else item.execute();
+                if (store) store.recordLaunch(item.id);
                 dismiss();
             }
         }
@@ -297,6 +334,7 @@ PanelWindow {
     }
 
     onSelectedIndexChanged: {
+        pendingConfirmation = "";
         if (appList && selectedIndex >= 0 && selectedIndex < filteredApps.length) {
             appList.positionViewAtIndex(selectedIndex, ListView.Contain);
         }
@@ -306,6 +344,11 @@ PanelWindow {
         closeTimer.stop();
         closing = false;
         if (visible) {
+            session++;
+            activationGuard.stop();
+            contextApp = null;
+            browseAll = false;
+            pendingConfirmation = "";
             searchText = "";
             feedback = "";
             selectedCategory = "All";
@@ -323,7 +366,7 @@ PanelWindow {
         anchors.fill: parent
         color: Qt.rgba(Tokens.background.r, Tokens.background.g, Tokens.background.b,
                        launcherWindow.visible && !launcherWindow.closing ? 0.22 : 0)
-        Behavior on color { ColorAnimation { duration: 110 } }
+        Behavior on color { ColorAnimation { duration: launcherWindow.reducedMotion ? 0 : 110 } }
 
         TapHandler {
             onTapped: (eventPoint) => {
@@ -337,12 +380,15 @@ PanelWindow {
         Rectangle {
             id: launcherCard
             anchors.centerIn: parent
-            width: Math.min(620, parent.width - 32)
-            height: Math.min(launcherWindow.calculatorMode ? 270 : 570, parent.height - 48)
-            Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-            radius: 26
-            color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Math.max(0.97, Tokens.panelOpacity))
-            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
+            width: Math.max(0, Math.min(660, parent.width - 24))
+            height: Math.max(0, Math.min(
+                launcherWindow.homeMode ? 700 : launcherWindow.commandMode ? 230
+                : launcherWindow.calculatorMode && calculator.expression.trim() ? 230 : 540,
+                parent.height - 24))
+            Behavior on height { NumberAnimation { duration: launcherWindow.reducedMotion ? 0 : 160; easing.type: Easing.OutCubic } }
+            radius: 24
+            color: Tokens.surface
+            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.45)
             border.width: 1
             clip: true
 
@@ -351,10 +397,10 @@ PanelWindow {
             opacity: launcherWindow.visible && !launcherWindow.closing ? 1.0 : 0.0
 
             Behavior on scale {
-                NumberAnimation { duration: launcherWindow.closing ? 110 : 150; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: launcherWindow.reducedMotion ? 0 : launcherWindow.closing ? 110 : 150; easing.type: Easing.OutCubic }
             }
             Behavior on opacity {
-                NumberAnimation { duration: launcherWindow.closing ? 100 : 130; easing.type: Easing.OutQuad }
+                NumberAnimation { duration: launcherWindow.reducedMotion ? 0 : launcherWindow.closing ? 100 : 130; easing.type: Easing.OutQuad }
             }
 
             TapHandler {
@@ -363,22 +409,61 @@ PanelWindow {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 20
-                spacing: 14
+                anchors.margins: launcherCard.width < 440 ? 12 : 20
+                spacing: 10
 
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        text: launcherWindow.calculatorMode ? "Calculator"
-                            : launcherWindow.actionsMode ? "Quick Actions" : "Applications"
-                        font.pixelSize: 16
+                        Layout.fillWidth: true
+                        text: launcherWindow.contextApp ? launcherWindow.contextApp.name
+                            : launcherWindow.calculatorMode ? "Calculator"
+                            : launcherWindow.actionsMode ? "Quick Actions"
+                            : launcherWindow.commandMode ? "Terminal Command" : "Rice Launcher"
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                        font.pixelSize: 17
                         font.weight: Font.DemiBold
                         color: Tokens.text_primary
                     }
-                    Item { Layout.fillWidth: true }
+                    Button {
+                        visible: launcherWindow.homeMode
+                        focusPolicy: Qt.NoFocus
+                        text: "All apps"
+                        background: Rectangle {
+                            radius: 8
+                            color: Tokens.surface_high
+                        }
+                        contentItem: Text {
+                            text: "All apps"
+                            color: Tokens.text_primary
+                            font.pixelSize: 12
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        onClicked: {
+                            launcherWindow.browseAll = true;
+                            searchInput.forceActiveFocus();
+                        }
+                    }
+                    ToolButton {
+                        visible: !launcherWindow.contextApp
+                        focusPolicy: Qt.NoFocus
+                        text: "⋯"
+                        Accessible.name: "Launcher modes"
+                        onClicked: modeMenu.open()
+                        Menu {
+                            id: modeMenu
+                            MenuItem { text: "Apps"; onTriggered: launcherWindow.selectMode("") }
+                            MenuItem { text: "Quick Actions (:)"; onTriggered: launcherWindow.selectMode(":") }
+                            MenuItem { text: "Calculator (=)"; onTriggered: launcherWindow.selectMode("=") }
+                            MenuItem { text: "Terminal command (>)"; onTriggered: launcherWindow.selectMode(">") }
+                        }
+                    }
                     Text {
-                        text: launcherWindow.feedback || (launcherWindow.calculatorMode ? ""
-                            : launcherWindow.filteredApps.length + " results")
+                        text: launcherWindow.feedback
+                        textFormat: Text.PlainText
+                        visible: text.length > 0
                         Layout.maximumWidth: launcherCard.width * 0.56
                         elide: Text.ElideRight
                         Accessible.name: text
@@ -390,8 +475,8 @@ PanelWindow {
                 // Search Input Box
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 52
-                    radius: 18
+                    Layout.preferredHeight: 48
+                    radius: 14
                     color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.8)
                     border.color: searchInput.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                     border.width: searchInput.activeFocus ? 1.5 : 1
@@ -416,13 +501,14 @@ PanelWindow {
                             font.pixelSize: 16
                             verticalAlignment: TextInput.AlignVCenter
                             activeFocusOnPress: true
+                            Accessible.name: "Launcher search"
                             selectByMouse: true
                             clip: true
 
                             Text {
                                 anchors.fill: parent
                                 visible: searchInput.text.length === 0
-                                text: "Search apps   ·   = Calculator   ·   : Quick Actions"
+                                text: "Search applications"
                                 elide: Text.ElideRight
                                 color: Tokens.text_secondary
                                 font: searchInput.font
@@ -430,6 +516,8 @@ PanelWindow {
                             }
 
                             onTextChanged: {
+                                launcherWindow.pendingConfirmation = "";
+                                if (launcherWindow.contextApp) launcherWindow.closeContext();
                                 launcherWindow.feedback = "";
                                 launcherWindow.searchText = text;
                                 launcherWindow.selectedIndex = launcherWindow.filteredApps.length > 0 ? 0 : -1;
@@ -437,18 +525,13 @@ PanelWindow {
                             }
 
                             Keys.onEscapePressed: (event) => {
-                                launcherWindow.dismiss();
+                                if (launcherWindow.contextApp) launcherWindow.closeContext();
+                                else launcherWindow.dismiss();
                                 event.accepted = true;
                             }
 
-                            Keys.onReturnPressed: (event) => {
-                                if (!event.isAutoRepeat) launcherWindow.launchSelected();
-                                event.accepted = true;
-                            }
-                            Keys.onEnterPressed: (event) => {
-                                if (!event.isAutoRepeat) launcherWindow.launchSelected();
-                                event.accepted = true;
-                            }
+                            Keys.onReturnPressed: (event) => launcherWindow.accept(event)
+                            Keys.onEnterPressed: (event) => launcherWindow.accept(event)
 
                             Keys.onDownPressed: (event) => {
                                 if (launcherWindow.filteredApps.length > 0) {
@@ -467,25 +550,24 @@ PanelWindow {
                             }
 
                             Keys.onTabPressed: (event) => {
-                                if (!launcherWindow.calculatorMode && !launcherWindow.actionsMode)
-                                    launcherWindow.cycleCategory(1);
+                                if (launcherWindow.appMode)
+                                    launcherWindow.cycleCategory(event.modifiers & Qt.ShiftModifier ? -1 : 1);
                                 event.accepted = true;
                             }
 
                             Keys.onBacktabPressed: (event) => {
-                                if (!launcherWindow.calculatorMode && !launcherWindow.actionsMode)
+                                if (launcherWindow.appMode)
                                     launcherWindow.cycleCategory(-1);
                                 event.accepted = true;
                             }
 
                             Keys.onPressed: (event) => {
-                                if (event.key === Qt.Key_Tab) {
-                                    if (!launcherWindow.calculatorMode && !launcherWindow.actionsMode)
-                                        launcherWindow.cycleCategory(event.modifiers & Qt.ShiftModifier ? -1 : 1);
+                                if (event.key === Qt.Key_P && (event.modifiers & Qt.ControlModifier) && launcherWindow.appMode) {
+                                    if (!event.isAutoRepeat) launcherWindow.toggleFavorite(
+                                        launcherWindow.filteredApps[launcherWindow.selectedIndex]);
                                     event.accepted = true;
-                                } else if (event.key === Qt.Key_Backtab) {
-                                    if (!launcherWindow.calculatorMode && !launcherWindow.actionsMode)
-                                        launcherWindow.cycleCategory(-1);
+                                } else if (event.key === Qt.Key_A && (event.modifiers & Qt.AltModifier) && launcherWindow.homeMode) {
+                                    launcherWindow.browseAll = true;
                                     event.accepted = true;
                                 }
                             }
@@ -520,7 +602,7 @@ PanelWindow {
                 // Category Selector Pills
                 ListView {
                     id: categoryList
-                    visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
+                    visible: launcherWindow.appMode
                     Layout.fillWidth: true
                     Layout.preferredHeight: 32
                     orientation: ListView.Horizontal
@@ -553,8 +635,8 @@ PanelWindow {
                                 : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2))
                         border.width: isSelected ? 1.5 : 1
 
-                        Behavior on color { ColorAnimation { duration: 150 } }
-                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                        Behavior on color { ColorAnimation { duration: launcherWindow.reducedMotion ? 0 : 150 } }
+                        Behavior on border.color { ColorAnimation { duration: launcherWindow.reducedMotion ? 0 : 150 } }
 
                         RowLayout {
                             id: pillContent
@@ -565,7 +647,7 @@ PanelWindow {
                                 text: launcherWindow.getCategoryIcon(catPill.modelData)
                                 font.pixelSize: 13
                                 color: catPill.isSelected ? Tokens.accent : (pillHover.hovered ? Tokens.text_primary : Tokens.text_secondary)
-                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: launcherWindow.reducedMotion ? 0 : 150 } }
                             }
 
                             Text {
@@ -574,7 +656,7 @@ PanelWindow {
                                 font.bold: catPill.isSelected
                                 color: catPill.isSelected ? Tokens.accent : (pillHover.hovered ? Tokens.text_primary : Tokens.text_secondary)
                                 elide: Text.ElideRight
-                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: launcherWindow.reducedMotion ? 0 : 150 } }
                             }
                         }
 
@@ -593,6 +675,14 @@ PanelWindow {
                             }
                         }
                     }
+                }
+
+                Text {
+                    visible: launcherWindow.homeMode
+                    text: "Pinned / Frequent"
+                    font.pixelSize: 12
+                    color: Tokens.text_secondary
+                    Accessible.role: Accessible.Heading
                 }
 
                 // Application List View
@@ -618,11 +708,25 @@ PanelWindow {
                             readonly property bool isSelected: launcherWindow.selectedIndex === appDelegate.index
                             readonly property bool isCommand: appDelegate.modelData && appDelegate.modelData.isCommand === true
 
-                            readonly property bool isQuick: launcherWindow.actionsMode || launcherWindow.calculatorMode
+                            readonly property string kind: modelData.kind ?? "application"
+                            readonly property bool isQuick: kind === "quick-action" || kind === "history"
+                                || kind === "calculation" || kind === "message"
+                            readonly property bool favorite: launcherWindow.appMode && launcherWindow.isFavorite(modelData)
+                            readonly property bool recent: launcherWindow.appMode && !favorite && !launcherWindow.searchText.trim()
+                                && (launcherWindow.store?.recents.slice(0, 8).includes(modelData.id) ?? false)
 
                             width: appList.width
-                            height: launcherWindow.calculatorMode ? 78 : 56
-                            radius: 16
+                            height: launcherWindow.homeMode ? 44
+                                : launcherWindow.calculatorMode && calculator.expression.trim() ? 66 : 52
+                            radius: 12
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: modelData.name
+                            Accessible.description: modelData.comment || ""
+                            Accessible.selected: isSelected
+                            Accessible.onPressAction: {
+                                launcherWindow.selectedIndex = index;
+                                launcherWindow.launchSelected();
+                            }
 
                             color: isSelected
                                 ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.12)
@@ -632,8 +736,8 @@ PanelWindow {
                                 : (appHover.hovered ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25) : "transparent")
                             border.width: 1
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: launcherWindow.reducedMotion ? 0 : 120 } }
+                            Behavior on border.color { ColorAnimation { duration: launcherWindow.reducedMotion ? 0 : 120 } }
 
                             RowLayout {
                                 anchors.fill: parent
@@ -657,7 +761,7 @@ PanelWindow {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: launcherWindow.calculatorMode ? "=" : launcherWindow.actionsMode ? "›" : "󰞷"
+                                            text: appDelegate.modelData.glyph || (launcherWindow.calculatorMode ? "=" : appDelegate.isCommand ? "󰞷" : "›")
                                             font.pixelSize: 16
                                             color: Tokens.accent
                                         }
@@ -694,6 +798,7 @@ PanelWindow {
                                     Text {
                                         Layout.fillWidth: true
                                         text: (appDelegate.modelData && appDelegate.modelData.name) ? appDelegate.modelData.name : ""
+                                        textFormat: Text.PlainText
                                         font.pixelSize: launcherWindow.calculatorMode ? 21 : 14
                                         font.weight: appDelegate.isSelected ? Font.DemiBold : Font.Normal
                                         color: Tokens.text_primary
@@ -707,6 +812,7 @@ PanelWindow {
                                             if (appDelegate.isCommand) return appDelegate.modelData.comment || "";
                                             return appDelegate.modelData.comment || appDelegate.modelData.genericName || "";
                                         }
+                                        textFormat: Text.PlainText
                                         font.pixelSize: 11
                                         color: Tokens.text_secondary
                                         elide: Text.ElideRight
@@ -714,10 +820,18 @@ PanelWindow {
                                     }
                                 }
 
+                                Text {
+                                    visible: appDelegate.favorite || (appDelegate.recent && launcherCard.width >= 440)
+                                    text: appDelegate.favorite ? "★" : "Recent"
+                                    font.pixelSize: 11
+                                    color: appDelegate.favorite ? Tokens.accent : Tokens.text_secondary
+                                    Accessible.name: appDelegate.favorite ? "Favorite" : "Recent"
+                                }
+
                                 // The selected row states the Enter action.
                                 Rectangle {
-                                    visible: (appDelegate.isCommand || appDelegate.isSelected)
-                                        && (!launcherWindow.calculatorMode || appDelegate.modelData.copyValue !== undefined)
+                                    visible: launcherCard.width >= 420 && !appDelegate.modelData.disabled
+                                        && (appDelegate.isCommand || appDelegate.isSelected)
                                     Layout.preferredHeight: 20
                                     radius: 10
                                     color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
@@ -731,7 +845,7 @@ PanelWindow {
                                         spacing: 4
 
                                         Text {
-                                            text: launcherWindow.calculatorMode ? "↵ Copy"
+                                            text: appDelegate.kind === "history" ? "↵ Reuse" : launcherWindow.calculatorMode ? "↵ Copy"
                                                 : appDelegate.isCommand || launcherWindow.actionsMode ? "↵ Run" : "↵ Open"
                                             font.pixelSize: 10
                                             font.bold: true
@@ -743,13 +857,22 @@ PanelWindow {
 
                             HoverHandler {
                                 id: appHover
-                                cursorShape: Qt.PointingHandCursor
+                                cursorShape: appDelegate.modelData.disabled ? Qt.ArrowCursor : Qt.PointingHandCursor
                             }
 
                             TapHandler {
+                                enabled: !appDelegate.modelData.disabled
                                 onTapped: {
                                     launcherWindow.selectedIndex = appDelegate.index;
                                     launcherWindow.launchSelected();
+                                }
+                            }
+                            TapHandler {
+                                enabled: launcherWindow.appMode
+                                acceptedButtons: Qt.RightButton
+                                onTapped: {
+                                    launcherWindow.selectedIndex = appDelegate.index;
+                                    launcherWindow.openContext(appDelegate.modelData);
                                 }
                             }
                         }
@@ -793,117 +916,24 @@ PanelWindow {
                     }
                 }
 
-                // Footer Bar with navigation shortcuts
-                Rectangle {
+                RowLayout {
                     Layout.fillWidth: true
-                    height: 28
-                    radius: 8
-                    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.3)
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        spacing: 10
-
-                        RowLayout {
-                            spacing: 4
-                            Text {
-                                text: "↑↓"
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: Tokens.accent
-                            }
-                            Text {
-                                text: "Navigate"
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                            }
-                        }
-
-                        Text {
-                            text: "•"
-                            font.pixelSize: 8
-                            color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4)
-                        }
-
-                        RowLayout {
-                            spacing: 4
-                            Text {
-                                text: "↵"
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: Tokens.accent
-                            }
-                            Text {
-                                text: launcherWindow.calculatorMode ? "Copy result" : launcherWindow.actionsMode ? "Run action" : "Launch"
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                            }
-                        }
-
-                        Text {
-                            visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
-                            text: "•"
-                            font.pixelSize: 8
-                            color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4)
-                        }
-
-                        RowLayout {
-                            visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
-                            spacing: 4
-                            Text {
-                                text: "Tab"
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: Tokens.accent
-                            }
-                            Text {
-                                text: "Category"
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                            }
-                        }
-
-                        Text {
-                            visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
-                            text: "•"
-                            font.pixelSize: 8
-                            color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.4)
-                        }
-
-                        RowLayout {
-                            visible: !launcherWindow.calculatorMode && !launcherWindow.actionsMode
-                            spacing: 4
-                            Text {
-                                text: ">"
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: Tokens.accent
-                            }
-                            Text {
-                                text: "Run Cmd"
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                            }
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        RowLayout {
-                            spacing: 4
-                            Text {
-                                text: "Esc"
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: Tokens.text_secondary
-                            }
-                            Text {
-                                text: "Dismiss"
-                                font.pixelSize: 10
-                                color: Tokens.text_secondary
-                            }
-                        }
+                    spacing: 8
+                    Text {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        text: launcherWindow.appMode ? (launcherCard.width < 490
+                            ? "Tab  Category   Alt+↵  Actions   Ctrl+P  Favorite"
+                            : "↑↓  Navigate     Tab  Category     Alt+↵  App actions     Ctrl+P  Favorite")
+                            : launcherWindow.calculatorMode ? (calculator.expression.trim() ? "↵  Copy result" : "↵  Reuse expression")
+                            : launcherWindow.actionsMode ? "↵  Run action" : "↵  Open"
+                        font.pixelSize: 11
+                        color: Tokens.text_secondary
+                    }
+                    Text {
+                        text: launcherWindow.contextApp ? "Esc  Back" : "Esc  Close"
+                        font.pixelSize: 11
+                        color: Tokens.text_secondary
                     }
                 }
             }

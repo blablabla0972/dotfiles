@@ -272,3 +272,32 @@ the previous Git revision can restore the reviewed source files.
 Publication checks: all 410 unittests passed without skips, including updated
 isolated Connectivity menu/Escape coverage and launcher cache/search coverage;
 `python3 tests/validate.py` and `git diff --cached --check` passed.
+
+## Unified launcher
+
+- Search matches Vietnamese names with or without diacritics. Tab cycles
+  desktop categories. Ctrl+P toggles a favorite. Alt+Enter and right-click
+  open app actions. Favorites and frequency lead the compact home list.
+  Choose All apps or Alt+A for the full list.
+- `:volume 37` and `:brightness 60` set levels. `:dnd`, `:mic mute`,
+  `:night light`, and `:awake` use the shell's existing controls. DND, Night
+  Light, and Awake accept explicit `on` and `off`. Terminal commands and
+  shell reload require a second activation.
+- `= sqrt(4) km to m` uses `qalc` when available. Enter copies a result
+  through `wl-copy` and saves it in calculator history. A bare `=` shows
+  history. Enter on a history row restores the expression. The arithmetic
+  fallback runs without `qalc`. Favorites, recent
+  apps and calculation history use `Quickshell.stateDir/launcher.json`.
+  `:clear recents` and `:clear calculator history` clear the respective list.
+  Set `RICE_LAUNCHER_MRU=0` or `RICE_LAUNCHER_CALC_HISTORY=0` before starting
+  Quickshell to disable tracking. Use `RICE_LAUNCHER_REDUCED_MOTION=1` for instant transitions.
+
+Run `python3 -m unittest discover -s tests -p 'test_launcher*.py' -q` for
+launcher checks. Use `qs -p config/quickshell/rice-shell` from an isolated
+Wayland compositor to preview without changing desktop symlinks. Stop
+that instance to roll back the isolated preview.
+
+Upstream source references: [Vicinae](https://github.com/vicinaehq/vicinae/blob/3570314783f49b345af3cba12e7e201be6379396/src/server/src/services/root-item-manager/root-item-manager.cpp),
+[Walker and Elephant](https://github.com/abenz1267/elephant/blob/a35b3b54ae8bfddaa3bae82d1409cf2d6dfebf3b/internal/providers/desktopapplications/query.go),
+[Caelestia](https://github.com/caelestia-dots/shell/blob/0e6da612b9d02bd01b3c95169f0867114f5780b9/plugin/src/Caelestia/qalculator.cpp),
+[Noctalia](https://github.com/noctalia-dev/noctalia/blob/2951c1ab2f5fa3b7069f0d83c50273334f78ffa7/src/launcher/app_provider.cpp).

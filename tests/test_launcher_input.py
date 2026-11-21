@@ -26,8 +26,17 @@ class LauncherInputTests(unittest.TestCase):
         base = Path(cls.temp.name)
         (base / 'launcher').mkdir()
         (base / 'theme').mkdir()
-        shutil.copy2(LAUNCHER / 'LaunchCommand.js', base / 'launcher/LaunchCommand.js')
-        shutil.copy2(LAUNCHER / 'QuickActions.js', base / 'launcher/QuickActions.js')
+        for script in LAUNCHER.glob('*.js'):
+            shutil.copy2(script, base / 'launcher')
+        (base / 'launcher/LauncherCalculator.qml').write_text('''
+            import QtQuick
+            import "QuickActions.js" as QuickActions
+            Item {
+                property bool active
+                property string expression
+                readonly property var result: QuickActions.calculate(expression)
+            }
+        ''')
         (base / 'theme/qmldir').write_text('singleton Tokens 1.0 Tokens.qml\n')
         roles = ('background', 'surface', 'surface_high', 'outline', 'accent', 'on_accent',
                  'text_primary', 'text_secondary')
