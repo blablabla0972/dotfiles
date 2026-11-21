@@ -159,7 +159,7 @@ QtObject {
     }
 
     property Process caffeine: Process {
-        command: ["systemd-inhibit", "--what=idle:sleep", "--mode=block",
+        command: ["systemd-inhibit", "--what=idle", "--mode=block",
                   "--who=Rice Awake", "--why=Awake enabled in Control Center", "sleep", "infinity"]
         onExited: (code) => { if (code !== 0) root.errorOccurred("Awake could not start."); }
     }
