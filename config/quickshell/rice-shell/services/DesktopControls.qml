@@ -167,7 +167,7 @@ QtObject {
     }
 
     property Process caffeine: Process {
-        command: ["systemd-inhibit", "--what=idle:sleep", "--mode=block",
+        command: ["systemd-inhibit", "--what=idle", "--mode=block",
                   "--who=Rice Awake", "--why=Awake enabled in Control Center", "sleep", "infinity"]
         running: root.caffeineRequested
         onRunningChanged: {
