@@ -188,7 +188,7 @@ During Milestone 4 validation waves, adversarial stress testing and concurrency 
 #### Defect C5 (StateMachine Data Race & SIGSEGV — Critical)
 - **Vulnerability**: `IpcServer::serverLoop()` executes on a background worker thread. When handling `REGISTER_BOUNDS`, `CARD_HOVER`, or `CARD_LEAVE`, it directly invoked methods on `StateMachine` (`setWorkspaceCards`, `onWorkspaceCardHover`, `onWorkspaceCardLeave`). Concurrently, Hyprland's main UI thread executed `onPointerMotion`, iterating over `m_workspaceCards` for geometric hit testing. Under ThreadSanitizer, this produced a severe data race and a fatal `heap-use-after-free` SIGSEGV at `top_edge_drag_logic.cpp:188` caused by vector reallocation during iteration.
 - **Root Cause**: Unsynchronized concurrent access across thread boundaries to non-thread-safe `StateMachine` state.
-- **Remediation**: 
+- **Remediation**:
   1. Added `mutable std::mutex m_stateMutex;` to `DragHookAdapter` (`include/cod29/drag_hook_adapter.hpp:62`).
   2. Wrapped all IPC callbacks (`setHoverCallback`, `setLeaveCallback`, `setSetCardsCallback`) in `std::lock_guard<std::mutex> lock(m_stateMutex);`.
   3. Wrapped all compositor entry points (`onDragBegin`, `onPointerMotion`, `onDragEnd`, `onCancel`) and queries (`getState`, `getTargetWorkspaceId`, `getWorkspaceCards`, `setWorkspaceCards`) under `m_stateMutex`.
