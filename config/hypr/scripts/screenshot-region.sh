@@ -66,8 +66,8 @@ picker=
 # Keep the clipboard unchanged until Copy; Escape discards the temporary image.
 pictures=$(xdg-user-dir PICTURES)
 mkdir -p -- "$pictures/Screenshots"
-satty --filename "$tmp/region.png" \
+satty --config /dev/null --filename "$tmp/region.png" \
     --output-filename "$pictures/Screenshots/Screenshot-%Y-%m-%d_%H-%M-%S-%f.png" \
-    --app-id local.screenshot.Editor --initial-tool pointer --early-exit all \
+    --app-id local.screenshot.Editor --initial-tool arrow --early-exit all \
     --copy-command "wl-copy --type image/png" \
     --actions-on-enter save-to-clipboard --actions-on-escape exit 9>&-
