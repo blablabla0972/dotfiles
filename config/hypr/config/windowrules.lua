@@ -169,6 +169,13 @@ hl.layer_rule({
     no_anim = true,
 })
 
+-- Exclude the workspace selector itself from its capture.
+hl.layer_rule({
+    name = "cod29-workspace-capture",
+    match = { namespace = "^cod29-workspace-strip$" },
+    no_screen_share = true,
+})
+
 -- Noctalia layer rule
 hl.layer_rule({
   name = "noctalia",

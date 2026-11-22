@@ -13,15 +13,31 @@ import "island"
 import "island/IslandState.js" as IslandState
 import "dashboard"
 import "launcher"
+<<<<<<< HEAD
 import "launcher/LauncherSearch.js" as LauncherSearch
 import "overlays"
+=======
+import "overlays"
+import "modules/cod29"
+>>>>>>> feat/cod-29-top-edge-workspace-drag
 
 ShellRoot {
     id: root
     reloadableId: "riceShellRoot"
 
+<<<<<<< HEAD
     LauncherStore { id: launcherStore }
     readonly property var launcherIndex: LauncherSearch.indexApps(DesktopEntries.applications.values)
+=======
+    Variants {
+        model: Quickshell.screens
+
+        TopEdgeWorkspaceStrip {
+            required property var modelData
+            targetScreen: modelData
+        }
+    }
+>>>>>>> feat/cod-29-top-edge-workspace-drag
 
     PersistentProperties {
         id: retainedNotificationHistory
