@@ -48,22 +48,18 @@ target_link_libraries(native_spike_check PRIVATE
 )
 
 # -----------------------------------------------------------------------------
-# Future Milestones (Phase C: State Machine & Unit Tests)
+# Milestone 3: Pure C++ State Machine & Deterministic Unit Tests (Phase C)
 # -----------------------------------------------------------------------------
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/cod29/top_edge_drag_logic.cpp")
-    add_library(top_edge_drag_logic STATIC
-        src/cod29/top_edge_drag_logic.cpp
-    )
-    target_include_directories(top_edge_drag_logic PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-endif()
+add_library(top_edge_drag_logic STATIC
+    src/cod29/top_edge_drag_logic.cpp
+)
+target_include_directories(top_edge_drag_logic PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/cod29/top_edge_drag_logic_test.cpp")
-    add_executable(top_edge_drag_logic_test
-        tools/cod29/top_edge_drag_logic_test.cpp
-    )
-    target_link_libraries(top_edge_drag_logic_test PRIVATE
-        top_edge_drag_logic
-    )
-endif()
+add_executable(top_edge_drag_logic_test
+    tools/cod29/top_edge_drag_logic_test.cpp
+)
+target_link_libraries(top_edge_drag_logic_test PRIVATE
+    top_edge_drag_logic
+)
