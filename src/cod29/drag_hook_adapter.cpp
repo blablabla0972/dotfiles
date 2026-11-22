@@ -71,7 +71,9 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
         // Hardening Rule H1: Exception Quarantine
         m_quarantinedExceptions++;
         if (m_delegate) {
-            m_delegate->log("ERROR", std::string("Quarantined exception in onPointerMotion: ") + e.what());
+            try {
+                m_delegate->log("ERROR", std::string("Quarantined exception in onPointerMotion: ") + e.what());
+            } catch (...) {}
         }
         m_stateMachine.onCancel(CancelReason::Unknown);
         m_ipcServer.broadcastHideStrip();
@@ -79,7 +81,9 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
         // Hardening Rule H1: Exception Quarantine
         m_quarantinedExceptions++;
         if (m_delegate) {
-            m_delegate->log("ERROR", "Quarantined unknown exception in onPointerMotion");
+            try {
+                m_delegate->log("ERROR", "Quarantined unknown exception in onPointerMotion");
+            } catch (...) {}
         }
         m_stateMachine.onCancel(CancelReason::Unknown);
         m_ipcServer.broadcastHideStrip();
@@ -133,7 +137,9 @@ bool DragHookAdapter::onDragEnd(void* thisptr, uint64_t windowToken, int sourceW
         // Hardening Rule H1: Exception Quarantine
         m_quarantinedExceptions++;
         if (m_delegate) {
-            m_delegate->log("ERROR", std::string("Quarantined exception in onDragEnd: ") + e.what());
+            try {
+                m_delegate->log("ERROR", std::string("Quarantined exception in onDragEnd: ") + e.what());
+            } catch (...) {}
         }
         m_stateMachine.onCancel(CancelReason::Unknown);
         m_ipcServer.broadcastHideStrip();
@@ -145,7 +151,9 @@ bool DragHookAdapter::onDragEnd(void* thisptr, uint64_t windowToken, int sourceW
         // Hardening Rule H1: Exception Quarantine
         m_quarantinedExceptions++;
         if (m_delegate) {
-            m_delegate->log("ERROR", "Quarantined unknown exception in onDragEnd");
+            try {
+                m_delegate->log("ERROR", "Quarantined unknown exception in onDragEnd");
+            } catch (...) {}
         }
         m_stateMachine.onCancel(CancelReason::Unknown);
         m_ipcServer.broadcastHideStrip();

@@ -513,7 +513,9 @@ bool test_IT10_client_reconnect_resilience() {
         TestIpcClient client1;
         if (!client1.connect(sock)) return false;
         client1.sendLine("STRIP_READY");
-        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        for (int i = 0; i < 20 && server.getConnectedClientCount() != 1; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
         if (server.getConnectedClientCount() != 1) return false;
 
         // Abrupt disconnect
@@ -529,7 +531,9 @@ bool test_IT10_client_reconnect_resilience() {
     TestIpcClient client2;
     if (!client2.connect(sock)) return false;
     client2.sendLine("STRIP_READY");
-    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    for (int i = 0; i < 20 && server.getConnectedClientCount() != 1; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
     server.broadcastShowStrip();
     auto lines = client2.readLines(200);
@@ -544,13 +548,160 @@ bool test_IT10_client_reconnect_resilience() {
     return true;
 }
 
+bool test_IT11_immediate_disconnect_message_retention() {
+    std::string sock = makeTestSocketPath("it11");
+    IpcServer server(sock);
+    if (!server.start()) return false;
+
+    std::atomic<int> receivedCount{0};
+    std::vector<int> receivedIds;
+    std::mutex mtx;
+
+    server.setHoverCallback([&](int wsId) {
+        std::lock_guard<std::mutex> lock(mtx);
+        receivedIds.push_back(wsId);
+        receivedCount++;
+    });
+
+    constexpr int kIterations = 20;
+
+    for (int i = 0; i < kIterations; ++i) {
+        int targetWs = 100 + i;
+        int clientFd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (clientFd < 0) {
+            server.stop();
+            return false;
+        }
+
+        struct sockaddr_un addr{};
+        addr.sun_family = AF_UNIX;
+        std::strncpy(addr.sun_path, sock.c_str(), sizeof(addr.sun_path) - 1);
+
+        if (::connect(clientFd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+            ::close(clientFd);
+            server.stop();
+            return false;
+        }
+
+        std::string msg = "CARD_HOVER " + std::to_string(targetWs) + "\n";
+        ssize_t sent = ::send(clientFd, msg.c_str(), msg.length(), MSG_NOSIGNAL);
+        if (sent != static_cast<ssize_t>(msg.length())) {
+            ::close(clientFd);
+            server.stop();
+            return false;
+        }
+
+        // Immediate disconnect with 0 delay - directly triggers POLLIN | POLLHUP in poll()
+        ::close(clientFd);
+    }
+
+    // Wait up to 1 second for all messages to be drained and processed
+    auto start = std::chrono::steady_clock::now();
+    while (receivedCount.load() < kIterations &&
+           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() < 1000) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    server.stop();
+
+    if (receivedCount.load() != kIterations) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mtx);
+    for (int i = 0; i < kIterations; ++i) {
+        if (receivedIds[i] != 100 + i) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool test_IT12_concurrent_broadcast_disconnect_safety() {
+    std::string sock = makeTestSocketPath("it12");
+    IpcServer server(sock);
+    if (!server.start()) return false;
+
+    std::atomic<bool> stopFlag{false};
+    std::atomic<size_t> broadcastsCompleted{0};
+
+    // Broadcaster thread: Rapidly broadcast events across all clients
+    std::thread broadcaster([&]() {
+        while (!stopFlag.load()) {
+            server.broadcastShowStrip();
+            server.broadcastTargetChanged(2);
+            server.broadcastHideStrip();
+            broadcastsCompleted += 3;
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+    });
+
+    // Client worker threads: Rapidly connect, send, and abruptly disconnect
+    constexpr int kClientThreads = 4;
+    constexpr int kCyclesPerThread = 25;
+    std::vector<std::thread> clientThreads;
+    clientThreads.reserve(kClientThreads);
+
+    for (int t = 0; t < kClientThreads; ++t) {
+        clientThreads.emplace_back([&, t]() {
+            for (int i = 0; i < kCyclesPerThread; ++i) {
+                int clientFd = socket(AF_UNIX, SOCK_STREAM, 0);
+                if (clientFd < 0) continue;
+
+                struct sockaddr_un addr{};
+                addr.sun_family = AF_UNIX;
+                std::strncpy(addr.sun_path, sock.c_str(), sizeof(addr.sun_path) - 1);
+
+                if (::connect(clientFd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == 0) {
+                    std::string msg = "CARD_HOVER " + std::to_string(t * 100 + i) + "\n";
+                    ::send(clientFd, msg.c_str(), msg.length(), MSG_NOSIGNAL);
+                    // Disconnect abruptly during concurrent broadcasts
+                    ::close(clientFd);
+                } else {
+                    ::close(clientFd);
+                }
+                std::this_thread::yield();
+            }
+        });
+    }
+
+    for (auto& ct : clientThreads) {
+        if (ct.joinable()) ct.join();
+    }
+
+    stopFlag.store(true);
+    if (broadcaster.joinable()) broadcaster.join();
+
+    // Verify server remains responsive and can accept a new clean client
+    TestIpcClient finalClient;
+    if (!finalClient.connect(sock)) {
+        server.stop();
+        return false;
+    }
+    finalClient.sendLine("STRIP_READY");
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    server.broadcastShowStrip();
+    auto lines = finalClient.readLines(200);
+    bool sawShow = false;
+    for (const auto& l : lines) {
+        if (l == "SHOW_STRIP") sawShow = true;
+    }
+
+    finalClient.disconnect();
+    server.stop();
+
+    return sawShow && (broadcastsCompleted.load() > 0);
+}
+
 // ----------------------------------------------------------------------------
 // Test Runner
 // ----------------------------------------------------------------------------
 
 int main() {
     std::cout << "====================================================================\n";
-    std::cout << " COD-29 Phase D: Integration & Verification Test Suite (IT01-IT10)  \n";
+    std::cout << " COD-29 Phase D: Integration & Verification Test Suite (IT01-IT12)  \n";
     std::cout << "====================================================================\n\n";
 
     struct TestCase {
@@ -569,7 +720,9 @@ int main() {
         {"IT07", "Hardening Rule H2 (Pre-Release Window Capture)", test_IT07_hardening_h2_prerelease_capture},
         {"IT08", "Hardening Rule H3 (Aborted Release Reset)", test_IT08_hardening_h3_aborted_release_reset},
         {"IT09", "Mode Discrimination Filtering", test_IT09_mode_discrimination_filtering},
-        {"IT10", "IPC Client Disconnect / Reconnect Resilience", test_IT10_client_reconnect_resilience}
+        {"IT10", "IPC Client Disconnect / Reconnect Resilience", test_IT10_client_reconnect_resilience},
+        {"IT11", "Immediate Disconnect Message Retention", test_IT11_immediate_disconnect_message_retention},
+        {"IT12", "Concurrent Broadcast & Disconnect Safety", test_IT12_concurrent_broadcast_disconnect_safety}
     };
 
     int passed = 0;
@@ -603,7 +756,7 @@ int main() {
     std::cout << "--------------------------------------------------------------------\n";
 
     if (failed == 0) {
-        std::cout << " [SUCCESS] ALL 10 INTEGRATION TESTS (IT01-IT10) PASSED DETERMINISTICALLY.\n";
+        std::cout << " [SUCCESS] ALL 12 INTEGRATION TESTS (IT01-IT12) PASSED DETERMINISTICALLY.\n";
         std::cout << "====================================================================\n";
         return 0;
     } else {

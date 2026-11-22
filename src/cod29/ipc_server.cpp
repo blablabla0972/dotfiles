@@ -93,13 +93,13 @@ void IpcServer::stop() noexcept {
     std::lock_guard<std::mutex> lock(m_clientsMutex);
     for (int fd : m_clientFds) {
         if (fd >= 0) {
-            close(fd);
+            ::close(fd);
         }
     }
     m_clientFds.clear();
 
     if (m_serverFd >= 0) {
-        close(m_serverFd);
+        ::close(m_serverFd);
         m_serverFd = -1;
     }
 
@@ -150,16 +150,22 @@ void IpcServer::sendToAllClients(const std::string& line) noexcept {
     }
 
     for (int deadFd : deadFds) {
-        close(deadFd);
-        m_clientFds.erase(std::remove(m_clientFds.begin(), m_clientFds.end(), deadFd), m_clientFds.end());
+        auto it = std::find(m_clientFds.begin(), m_clientFds.end(), deadFd);
+        if (it != m_clientFds.end()) {
+            m_clientFds.erase(it);
+            ::close(deadFd);
+        }
     }
 }
 
 void IpcServer::cleanupClient(int clientFd) noexcept {
-    if (clientFd >= 0) {
-        close(clientFd);
-        std::lock_guard<std::mutex> lock(m_clientsMutex);
-        m_clientFds.erase(std::remove(m_clientFds.begin(), m_clientFds.end(), clientFd), m_clientFds.end());
+    if (clientFd < 0) return;
+
+    std::lock_guard<std::mutex> lock(m_clientsMutex);
+    auto it = std::find(m_clientFds.begin(), m_clientFds.end(), clientFd);
+    if (it != m_clientFds.end()) {
+        m_clientFds.erase(it);
+        ::close(clientFd);
     }
 }
 
@@ -287,7 +293,80 @@ void IpcServer::serverLoop() noexcept {
         }
         if (ret == 0) continue; // Timeout, loop back to check m_running
 
-        // 1. Check for incoming client connection on serverFd
+        // 1. Check existing client FDs
+        std::vector<int> disconnectedClients;
+        for (size_t i = 1; i < pfds.size(); ++i) {
+            int fd = pfds[i].fd;
+            short revents = pfds[i].revents;
+
+            // If client was already pruned and closed by sendToAllClients(), clean buffer and skip
+            {
+                std::lock_guard<std::mutex> lock(m_clientsMutex);
+                if (std::find(m_clientFds.begin(), m_clientFds.end(), fd) == m_clientFds.end()) {
+                    clientBuffers.erase(fd);
+                    continue;
+                }
+            }
+
+            bool clientDisconnected = false;
+
+            // Defect C2: Process POLLIN BEFORE checking POLLHUP/POLLERR to drain pending data
+            if (revents & POLLIN) {
+                char buf[512];
+                while (true) {
+                    ssize_t n = recv(fd, buf, sizeof(buf), 0);
+                    if (n > 0) {
+                        // Defect C3: Binary safe append
+                        clientBuffers[fd].append(buf, static_cast<size_t>(n));
+
+                        // Defect C4: 64KB buffer cap to prevent DoS/memory exhaustion
+                        if (clientBuffers[fd].size() > 65536) {
+                            clientBuffers[fd].clear();
+                            clientDisconnected = true;
+                            break;
+                        }
+
+                        // Parse complete newline-delimited lines
+                        size_t newlinePos;
+                        while ((newlinePos = clientBuffers[fd].find('\n')) != std::string::npos) {
+                            std::string line = clientBuffers[fd].substr(0, newlinePos);
+                            clientBuffers[fd].erase(0, newlinePos + 1);
+
+                            // Trim trailing \r if present
+                            if (!line.empty() && line.back() == '\r') {
+                                line.pop_back();
+                            }
+
+                            handleClientMessage(fd, line);
+                        }
+                    } else if (n == 0) {
+                        // EOF reached (client closed connection)
+                        clientDisconnected = true;
+                        break;
+                    } else {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                            // Drained all currently available data
+                            break;
+                        } else {
+                            clientDisconnected = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Defect C2: Mark disconnected after draining, or on POLLHUP/POLLERR/POLLNVAL
+            if (clientDisconnected || (revents & (POLLHUP | POLLERR | POLLNVAL))) {
+                disconnectedClients.push_back(fd);
+            }
+        }
+
+        for (int discFd : disconnectedClients) {
+            clientBuffers.erase(discFd);
+            cleanupClient(discFd);
+        }
+
+        // 2. Check for incoming client connection on serverFd
         if (pfds[0].revents & POLLIN) {
             struct sockaddr_un clientAddr{};
             socklen_t clientLen = sizeof(clientAddr);
@@ -301,52 +380,6 @@ void IpcServer::serverLoop() noexcept {
                 m_clientFds.push_back(clientFd);
                 clientBuffers[clientFd] = "";
             }
-        }
-
-        // 2. Check client FDs
-        std::vector<int> disconnectedClients;
-        for (size_t i = 1; i < pfds.size(); ++i) {
-            int fd = pfds[i].fd;
-            short revents = pfds[i].revents;
-
-            if (revents & (POLLHUP | POLLERR)) {
-                disconnectedClients.push_back(fd);
-                continue;
-            }
-
-            if (revents & POLLIN) {
-                char buf[512];
-                ssize_t n = recv(fd, buf, sizeof(buf) - 1, 0);
-                if (n > 0) {
-                    buf[n] = '\0';
-                    clientBuffers[fd] += buf;
-
-                    size_t newlinePos;
-                    while ((newlinePos = clientBuffers[fd].find('\n')) != std::string::npos) {
-                        std::string line = clientBuffers[fd].substr(0, newlinePos);
-                        clientBuffers[fd].erase(0, newlinePos + 1);
-
-                        // Trim trailing \r if present
-                        if (!line.empty() && line.back() == '\r') {
-                            line.pop_back();
-                        }
-
-                        handleClientMessage(fd, line);
-                    }
-                } else if (n == 0) {
-                    // Client closed connection cleanly
-                    disconnectedClients.push_back(fd);
-                } else {
-                    if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                        disconnectedClients.push_back(fd);
-                    }
-                }
-            }
-        }
-
-        for (int discFd : disconnectedClients) {
-            clientBuffers.erase(discFd);
-            cleanupClient(discFd);
         }
     }
 }
