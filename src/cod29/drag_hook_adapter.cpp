@@ -9,16 +9,19 @@ DragHookAdapter::DragHookAdapter(StateMachine& sm, IpcServer& ipc, ICompositorDe
     : m_stateMachine(sm), m_ipcServer(ipc), m_delegate(delegate) {
 
     m_ipcServer.setHoverCallback([this](int wsId) {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
         Action act = m_stateMachine.onWorkspaceCardHover(wsId);
         dispatchAction(act);
     });
 
     m_ipcServer.setLeaveCallback([this]() {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
         Action act = m_stateMachine.onWorkspaceCardLeave();
         dispatchAction(act);
     });
 
     m_ipcServer.setSetCardsCallback([this](const std::vector<WorkspaceCard>& cards) {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
         m_stateMachine.setWorkspaceCards(cards);
     });
 }
@@ -43,6 +46,8 @@ void DragHookAdapter::dispatchAction(const Action& action) noexcept {
 }
 
 void DragHookAdapter::onDragBegin(uint64_t windowToken, DragMode mode, bool thresholdReached, int sourceWorkspaceId, uint64_t timestampMs) noexcept {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
+
     if (!m_stateMachine.getConfig().enabled) {
         return;
     }
@@ -60,6 +65,8 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
             throw std::runtime_error("Simulated exception in DragHookAdapter::onPointerMotion");
         }
 
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+
         if (m_stateMachine.getState() == State::Idle) {
             return;
         }
@@ -75,6 +82,7 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
                 m_delegate->log("ERROR", std::string("Quarantined exception in onPointerMotion: ") + e.what());
             } catch (...) {}
         }
+        std::lock_guard<std::mutex> lock(m_stateMutex);
         m_stateMachine.onCancel(CancelReason::Unknown);
         m_ipcServer.broadcastHideStrip();
     } catch (...) {
@@ -85,6 +93,7 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
                 m_delegate->log("ERROR", "Quarantined unknown exception in onPointerMotion");
             } catch (...) {}
         }
+        std::lock_guard<std::mutex> lock(m_stateMutex);
         m_stateMachine.onCancel(CancelReason::Unknown);
         m_ipcServer.broadcastHideStrip();
     }
@@ -92,6 +101,8 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
 
 bool DragHookAdapter::onDragEnd(void* thisptr, uint64_t windowToken, int sourceWorkspaceId, uint64_t timestampMs) noexcept {
     try {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+
         // Hardening Rule H2: Pre-Release Window Reference Capture
         if (m_delegate) {
             m_delegate->capturePreReleaseWindow(thisptr, windowToken);
@@ -141,7 +152,10 @@ bool DragHookAdapter::onDragEnd(void* thisptr, uint64_t windowToken, int sourceW
                 m_delegate->log("ERROR", std::string("Quarantined exception in onDragEnd: ") + e.what());
             } catch (...) {}
         }
-        m_stateMachine.onCancel(CancelReason::Unknown);
+        {
+            std::lock_guard<std::mutex> lock(m_stateMutex);
+            m_stateMachine.onCancel(CancelReason::Unknown);
+        }
         m_ipcServer.broadcastHideStrip();
         if (m_delegate) {
             try { return m_delegate->invokeOriginalDragEnd(thisptr); } catch (...) {}
@@ -155,7 +169,10 @@ bool DragHookAdapter::onDragEnd(void* thisptr, uint64_t windowToken, int sourceW
                 m_delegate->log("ERROR", "Quarantined unknown exception in onDragEnd");
             } catch (...) {}
         }
-        m_stateMachine.onCancel(CancelReason::Unknown);
+        {
+            std::lock_guard<std::mutex> lock(m_stateMutex);
+            m_stateMachine.onCancel(CancelReason::Unknown);
+        }
         m_ipcServer.broadcastHideStrip();
         if (m_delegate) {
             try { return m_delegate->invokeOriginalDragEnd(thisptr); } catch (...) {}
@@ -165,8 +182,34 @@ bool DragHookAdapter::onDragEnd(void* thisptr, uint64_t windowToken, int sourceW
 }
 
 void DragHookAdapter::onCancel(CancelReason reason) noexcept {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
     m_stateMachine.onCancel(reason);
     m_ipcServer.broadcastReset();
+}
+
+State DragHookAdapter::getState() const noexcept {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
+    return m_stateMachine.getState();
+}
+
+int DragHookAdapter::getTargetWorkspaceId() const noexcept {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
+    return m_stateMachine.getTargetWorkspaceId();
+}
+
+int DragHookAdapter::getSourceWorkspaceId() const noexcept {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
+    return m_stateMachine.getSourceWorkspaceId();
+}
+
+std::vector<WorkspaceCard> DragHookAdapter::getWorkspaceCards() const noexcept {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
+    return m_stateMachine.getWorkspaceCards();
+}
+
+void DragHookAdapter::setWorkspaceCards(const std::vector<WorkspaceCard>& cards) noexcept {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
+    m_stateMachine.setWorkspaceCards(cards);
 }
 
 } // namespace Cod29

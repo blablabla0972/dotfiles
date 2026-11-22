@@ -186,16 +186,16 @@ bool test_IT02_e2e_drag_and_drop() {
 
     // Step 1: Drag Begin
     adapter.onDragBegin(0x1001, DragMode::Move, true, 1, 1000);
-    if (sm.getState() != State::Dragging) return false;
+    if (adapter.getState() != State::Dragging) return false;
 
     // Step 2: Pointer touches physical top edge (y <= 4.0)
     OutputRect mon{0, 0, 1920, 1080};
     adapter.onPointerMotion(Vector2D{500, 2}, mon, 1000);
-    if (sm.getState() != State::EdgeArmed) return false;
+    if (adapter.getState() != State::EdgeArmed) return false;
 
     // Step 3: Dwell satisfied (> 80ms)
     adapter.onPointerMotion(Vector2D{500, 2}, mon, 1085);
-    if (sm.getState() != State::StripOpen) return false;
+    if (adapter.getState() != State::StripOpen) return false;
 
     auto lines = client.readLines(200);
     bool sawShow = false;
@@ -207,8 +207,8 @@ bool test_IT02_e2e_drag_and_drop() {
     // Step 4: Hover over target workspace card 2
     client.sendLine("CARD_HOVER 2");
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    if (sm.getState() != State::HoverTarget) return false;
-    if (sm.getTargetWorkspaceId() != 2) return false;
+    if (adapter.getState() != State::HoverTarget) return false;
+    if (adapter.getTargetWorkspaceId() != 2) return false;
 
     // Step 5: Drag End on target workspace 2
     bool ok = adapter.onDragEnd(nullptr, 0x1001, 1, 1150);
@@ -221,7 +221,7 @@ bool test_IT02_e2e_drag_and_drop() {
     if (delegate.moveCalls[0].follow != false) return false;
 
     // Verify state machine reset to Idle
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
 
     client.disconnect();
     server.stop();
@@ -262,7 +262,7 @@ bool test_IT03_same_workspace_noop() {
     if (!delegate.moveCalls.empty()) return false;
     // Original dragEnd must still have been called
     if (delegate.dragEndCount != 1) return false;
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
 
     client.disconnect();
     server.stop();
@@ -289,11 +289,11 @@ bool test_IT04_fast_flick_disarm() {
 
     // Pointer reaches edge at t = 1000
     adapter.onPointerMotion(Vector2D{500, 2}, mon, 1000);
-    if (sm.getState() != State::EdgeArmed) return false;
+    if (adapter.getState() != State::EdgeArmed) return false;
 
     // Fast flick: retreats before 80ms dwell (at t = 1030)
     adapter.onPointerMotion(Vector2D{500, 50}, mon, 1030);
-    if (sm.getState() != State::Dragging) return false;
+    if (adapter.getState() != State::Dragging) return false;
 
     // Verify 0 SHOW_STRIP messages were emitted
     auto lines = client.readLines(50);
@@ -325,15 +325,15 @@ bool test_IT05_exit_hysteresis_dismissal() {
     OutputRect mon{0, 0, 1920, 1080};
     adapter.onPointerMotion(Vector2D{500, 2}, mon, 1000);
     adapter.onPointerMotion(Vector2D{500, 2}, mon, 1090);
-    if (sm.getState() != State::StripOpen) return false;
+    if (adapter.getState() != State::StripOpen) return false;
 
     // Move within strip bounds (e.g. y = 100) -> remains StripOpen
     adapter.onPointerMotion(Vector2D{500, 100}, mon, 1100);
-    if (sm.getState() != State::StripOpen) return false;
+    if (adapter.getState() != State::StripOpen) return false;
 
     // Move past stripHeight(140) + exitHysteresis(28) = 168 -> e.g. y = 170
     adapter.onPointerMotion(Vector2D{500, 170}, mon, 1120);
-    if (sm.getState() != State::Dragging) return false;
+    if (adapter.getState() != State::Dragging) return false;
 
     auto lines = client.readLines(200);
     bool sawHide = false;
@@ -370,7 +370,7 @@ bool test_IT06_hardening_h1_exception_quarantine() {
     // Verify exception was quarantined
     if (adapter.getQuarantinedExceptionCount() != 1) return false;
     // Verify state machine safely reset to Idle
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
 
     server.stop();
     return true;
@@ -401,7 +401,7 @@ bool test_IT07_hardening_h2_prerelease_capture() {
 
     client.sendLine("CARD_HOVER 3");
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    if (sm.getState() != State::HoverTarget) return false;
+    if (adapter.getState() != State::HoverTarget) return false;
 
     // Simulate window destruction during release: remove from validWindows
     delegate.validWindows.clear();
@@ -411,7 +411,7 @@ bool test_IT07_hardening_h2_prerelease_capture() {
 
     // Because window was destroyed during release, move must be cleanly aborted (0 calls)
     if (!delegate.moveCalls.empty()) return false;
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
 
     client.disconnect();
     server.stop();
@@ -454,7 +454,7 @@ bool test_IT08_hardening_h3_aborted_release_reset() {
     if (!delegate.moveCalls.empty()) return false;
 
     // State machine must be reset to Idle (via DragSuperseded)
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
 
     // Quickshell strip must be dismissed
     auto lines = client.readLines(200);
@@ -484,20 +484,20 @@ bool test_IT09_mode_discrimination_filtering() {
 
     // 1. Resize mode must be ignored
     adapter.onDragBegin(0x1001, DragMode::Resize, true, 1, 1000);
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
     adapter.onPointerMotion(Vector2D{500, 2}, mon, 1000);
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
 
     // 2. Threshold unreached must be ignored
     adapter.onDragBegin(0x1001, DragMode::Move, false, 1, 1050);
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
 
     // 3. Feature flag disabled must be ignored
     Config offCfg{};
     offCfg.enabled = false;
     sm.setConfig(offCfg);
     adapter.onDragBegin(0x1001, DragMode::Move, true, 1, 1100);
-    if (sm.getState() != State::Idle) return false;
+    if (adapter.getState() != State::Idle) return false;
 
     server.stop();
     return true;
@@ -695,13 +695,131 @@ bool test_IT12_concurrent_broadcast_disconnect_safety() {
     return sawShow && (broadcastsCompleted.load() > 0);
 }
 
+bool test_IT13_concurrent_card_updates_and_motion() {
+    std::string sock = makeTestSocketPath("it13");
+    Config cfg{};
+    cfg.enabled = true;
+    StateMachine sm(cfg);
+    IpcServer server(sock);
+    if (!server.start()) return false;
+
+    MockCompositorDelegate delegate;
+    delegate.validWindows.insert(0x3001);
+    DragHookAdapter adapter(sm, server, &delegate);
+
+    TestIpcClient client;
+    if (!client.connect(sock)) {
+        server.stop();
+        return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    client.sendLine("STRIP_READY");
+
+    OutputRect mon{0, 0, 1920, 1080};
+    adapter.onDragBegin(0x3001, DragMode::Move, true, 1, 1000);
+    adapter.onPointerMotion(Vector2D{500, 2}, mon, 1000);
+    adapter.onPointerMotion(Vector2D{500, 2}, mon, 1090);
+    if (adapter.getState() != State::StripOpen) {
+        client.disconnect();
+        server.stop();
+        return false;
+    }
+
+    std::atomic<bool> stopFlag{false};
+    std::atomic<size_t> ipcOpsCompleted{0};
+    std::atomic<size_t> motionOpsCompleted{0};
+
+    // Thread 1: Rapid IPC card bounds registration & card hover/leave
+    std::thread ipcThread([&]() {
+        int iter = 0;
+        while (!stopFlag.load()) {
+            iter++;
+            if (iter % 3 == 0) {
+                // Bounds with 2 cards
+                client.sendLine("REGISTER_BOUNDS [{\"id\":1,\"x\":100,\"y\":10,\"w\":150,\"h\":100},{\"id\":2,\"x\":260,\"y\":10,\"w\":150,\"h\":100}]");
+            } else if (iter % 3 == 1) {
+                // Bounds with 5 cards (forces vector reallocation)
+                client.sendLine("REGISTER_BOUNDS [{\"id\":1,\"x\":50,\"y\":10,\"w\":80,\"h\":100},{\"id\":2,\"x\":140,\"y\":10,\"w\":80,\"h\":100},{\"id\":3,\"x\":230,\"y\":10,\"w\":80,\"h\":100},{\"id\":4,\"x\":320,\"y\":10,\"w\":80,\"h\":100},{\"id\":5,\"x\":410,\"y\":10,\"w\":80,\"h\":100}]");
+            } else {
+                // Bounds with 1 card (vector shrink/reallocation)
+                client.sendLine("REGISTER_BOUNDS [{\"id\":1,\"x\":100,\"y\":10,\"w\":200,\"h\":100}]");
+            }
+
+            if (iter % 4 == 0) {
+                client.sendLine("CARD_HOVER 2");
+            } else if (iter % 4 == 1) {
+                client.sendLine("CARD_HOVER 1");
+            } else if (iter % 4 == 2) {
+                client.sendLine("CARD_LEAVE");
+            } else {
+                client.sendLine("CARD_HOVER 3");
+            }
+
+            ipcOpsCompleted++;
+            std::this_thread::yield();
+        }
+    });
+
+    // Thread 2: Simulating Hyprland compositor main thread doing rapid pointer tracking & hit tests
+    std::thread compositorThread([&]() {
+        for (int i = 0; i < 2000; ++i) {
+            double posX = 50.0 + (i % 500);
+            double posY = 20.0 + (i % 80);
+            adapter.onPointerMotion(Vector2D{posX, posY}, mon, 1100 + i);
+
+            // Concurrent queries
+            volatile State st = adapter.getState();
+            (void)st;
+            volatile int tgt = adapter.getTargetWorkspaceId();
+            (void)tgt;
+            auto cards = adapter.getWorkspaceCards();
+            (void)cards.size();
+
+            motionOpsCompleted++;
+            if (i % 50 == 0) {
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    compositorThread.join();
+    stopFlag.store(true);
+    ipcThread.join();
+
+    // Verify adapter remained intact and healthy
+    State finalState = adapter.getState();
+    if (finalState != State::StripOpen && finalState != State::HoverTarget) {
+        client.disconnect();
+        server.stop();
+        return false;
+    }
+
+    // Terminate drag cleanly
+    bool ok = adapter.onDragEnd(nullptr, 0x3001, 1, 4000);
+    if (!ok) {
+        client.disconnect();
+        server.stop();
+        return false;
+    }
+    if (adapter.getState() != State::Idle) {
+        client.disconnect();
+        server.stop();
+        return false;
+    }
+
+    client.disconnect();
+    server.stop();
+
+    return (ipcOpsCompleted.load() > 50) && (motionOpsCompleted.load() == 2000);
+}
+
 // ----------------------------------------------------------------------------
 // Test Runner
 // ----------------------------------------------------------------------------
 
 int main() {
     std::cout << "====================================================================\n";
-    std::cout << " COD-29 Phase D: Integration & Verification Test Suite (IT01-IT12)  \n";
+    std::cout << " COD-29 Phase D: Integration & Verification Test Suite (IT01-IT13)  \n";
     std::cout << "====================================================================\n\n";
 
     struct TestCase {
@@ -722,7 +840,8 @@ int main() {
         {"IT09", "Mode Discrimination Filtering", test_IT09_mode_discrimination_filtering},
         {"IT10", "IPC Client Disconnect / Reconnect Resilience", test_IT10_client_reconnect_resilience},
         {"IT11", "Immediate Disconnect Message Retention", test_IT11_immediate_disconnect_message_retention},
-        {"IT12", "Concurrent Broadcast & Disconnect Safety", test_IT12_concurrent_broadcast_disconnect_safety}
+        {"IT12", "Concurrent Broadcast & Disconnect Safety", test_IT12_concurrent_broadcast_disconnect_safety},
+        {"IT13", "Concurrent IPC Card Updates & Pointer Motion Thread-Safety", test_IT13_concurrent_card_updates_and_motion}
     };
 
     int passed = 0;
@@ -756,7 +875,7 @@ int main() {
     std::cout << "--------------------------------------------------------------------\n";
 
     if (failed == 0) {
-        std::cout << " [SUCCESS] ALL 12 INTEGRATION TESTS (IT01-IT12) PASSED DETERMINISTICALLY.\n";
+        std::cout << " [SUCCESS] ALL 13 INTEGRATION TESTS (IT01-IT13) PASSED DETERMINISTICALLY.\n";
         std::cout << "====================================================================\n";
         return 0;
     } else {

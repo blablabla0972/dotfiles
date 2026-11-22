@@ -314,7 +314,19 @@ void IpcServer::serverLoop() noexcept {
             if (revents & POLLIN) {
                 char buf[512];
                 while (true) {
-                    ssize_t n = recv(fd, buf, sizeof(buf), 0);
+                    ssize_t n = -1;
+                    int err = 0;
+                    {
+                        std::lock_guard<std::mutex> lock(m_clientsMutex);
+                        if (std::find(m_clientFds.begin(), m_clientFds.end(), fd) == m_clientFds.end()) {
+                            clientDisconnected = true;
+                            break;
+                        }
+                        n = recv(fd, buf, sizeof(buf), 0);
+                        if (n < 0) {
+                            err = errno;
+                        }
+                    }
                     if (n > 0) {
                         // Defect C3: Binary safe append
                         clientBuffers[fd].append(buf, static_cast<size_t>(n));
@@ -344,7 +356,7 @@ void IpcServer::serverLoop() noexcept {
                         clientDisconnected = true;
                         break;
                     } else {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        if (err == EAGAIN || err == EWOULDBLOCK) {
                             // Drained all currently available data
                             break;
                         } else {

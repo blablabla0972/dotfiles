@@ -146,7 +146,7 @@ static void onMouseMove(const Hyprutils::Math::Vector2D& coords, Event::SCallbac
     const uint64_t now = currentTimestampMs();
 
     // Check if dragging initiated
-    if (g_pStateMachine->getState() == State::Idle) {
+    if (g_pAdapter->getState() == State::Idle) {
         if (g_layoutManager) {
             const auto& dragController = g_layoutManager->dragController();
             if (dragController && dragController->mode() == MBIND_MOVE && dragController->dragThresholdReached()) {
@@ -165,7 +165,7 @@ static void onMouseMove(const Hyprutils::Math::Vector2D& coords, Event::SCallbac
         }
     }
 
-    if (g_pStateMachine->getState() == State::Idle) return;
+    if (g_pAdapter->getState() == State::Idle) return;
 
     // Resolve active monitor logical box
     PHLMONITOR pActiveMon = nullptr;

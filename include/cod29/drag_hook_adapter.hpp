@@ -6,6 +6,8 @@
 
 #include <cstdint>
 #include <atomic>
+#include <mutex>
+#include <vector>
 
 namespace Cod29 {
 
@@ -17,6 +19,7 @@ namespace Cod29 {
  * - H1: Exception Quarantine (all entry points noexcept with try/catch quarantine).
  * - H2: Pre-Release Window Reference Capture via weak reference and post-release check.
  * - H3: Aborted Release Reset on false return from origDragEnd().
+ * - Thread-Safe State Machine Synchronization (Defect C5).
  */
 class DragHookAdapter {
 public:
@@ -39,7 +42,13 @@ public:
     void setDelegate(ICompositorDelegate* delegate) noexcept { m_delegate = delegate; }
     ICompositorDelegate* getDelegate() const noexcept { return m_delegate; }
 
-    // State machine access
+    // Synchronized state machine access (Defect C5)
+    State getState() const noexcept;
+    int getTargetWorkspaceId() const noexcept;
+    int getSourceWorkspaceId() const noexcept;
+    std::vector<WorkspaceCard> getWorkspaceCards() const noexcept;
+    void setWorkspaceCards(const std::vector<WorkspaceCard>& cards) noexcept;
+
     StateMachine& getStateMachine() noexcept { return m_stateMachine; }
     const StateMachine& getStateMachine() const noexcept { return m_stateMachine; }
 
@@ -50,6 +59,7 @@ public:
 private:
     void dispatchAction(const Action& action) noexcept;
 
+    mutable std::mutex m_stateMutex;
     StateMachine& m_stateMachine;
     IpcServer& m_ipcServer;
     ICompositorDelegate* m_delegate = nullptr;
