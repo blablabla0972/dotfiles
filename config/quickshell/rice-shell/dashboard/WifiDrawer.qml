@@ -14,7 +14,6 @@ Item {
     implicitWidth: 360
     implicitHeight: 480
     focus: visible
-    property bool drawerOpen: true
 
     Accessible.role: Accessible.Pane
     Accessible.name: "Wi-Fi"
@@ -83,53 +82,36 @@ Item {
         && root.hotspotWifiDevice === null
     readonly property bool radioOffBlocked: root.hotspotActive || root.accessPointActive
 
-    readonly property var networkSnapshot: {
-        if (!root.wifiDevice) return { all: [], connected: null, known: [], nearby: [] };
-
-        var source = root.wifiDevice.networks.values;
-        var decorated = [];
-        for (var i = 0; i < source.length; i++) {
-            var network = source[i];
-            decorated.push({
-                network: network,
-                connected: network.connected,
-                known: network.known,
-                signal: network.signalStrength || 0,
-                name: String(network.name || "").toLocaleLowerCase(),
-                security: Number(network.security)
-            });
-        }
-        decorated.sort(function(a, b) {
+    readonly property var networks: {
+        if (!root.wifiDevice) return [];
+        var list = root.wifiDevice.networks.values.slice();
+        list.sort(function(a, b) {
             if (a.connected !== b.connected) return a.connected ? -1 : 1;
             if (a.known !== b.known) return a.known ? -1 : 1;
-            var signalDifference = b.signal - a.signal;
+            var signalDifference = (b.signalStrength || 0) - (a.signalStrength || 0);
             if (signalDifference !== 0) return signalDifference;
-            if (a.name < b.name) return -1;
-            if (a.name > b.name) return 1;
-            return a.security - b.security;
+            var nameA = String(a.name || "").toLocaleLowerCase();
+            var nameB = String(b.name || "").toLocaleLowerCase();
+            if (nameA < nameB) return -1;
+            if (nameA > nameB) return 1;
+            var securityA = Number(a.security);
+            var securityB = Number(b.security);
+            return securityA - securityB;
         });
-
-        var all = [];
-        var known = [];
-        var nearby = [];
-        var connected = null;
-        for (var j = 0; j < decorated.length; j++) {
-            var sortedNetwork = decorated[j].network;
-            all.push(sortedNetwork);
-            if (decorated[j].connected) {
-                if (!connected) connected = sortedNetwork;
-            } else if (decorated[j].known) {
-                known.push(sortedNetwork);
-            } else {
-                nearby.push(sortedNetwork);
-            }
-        }
-        return { all: all, connected: connected, known: known, nearby: nearby };
+        return list;
     }
-    readonly property var networks: root.networkSnapshot.all
-    readonly property var connectedNetwork: root.networkSnapshot.connected
-    readonly property var knownNetworks: root.networkSnapshot.known
-    readonly property var nearbyNetworks: root.networkSnapshot.nearby
+    readonly property var connectedNetwork: {
+        for (var i = 0; i < root.networks.length; i++) {
+            if (root.networks[i].connected) return root.networks[i];
+        }
+        return null;
+    }
+    readonly property var knownNetworks: root.networks.filter(function(network) {
+        return network.known && !network.connected;
+    })
+    readonly property var nearbyNetworks: root.networks.filter(function(network) {
+        return !network.known && !network.connected;
+    })
 
     property var selectedNetwork: null
     property var detailsNetwork: null
@@ -178,9 +160,9 @@ Item {
         if (!root.wifiDevice) {
             root.cancelPassword();
             root.statusMessage = "Wi-Fi adapter unavailable";
-        } else if (root.visible && root.drawerOpen) {
+        } else if (root.visible) {
             root.reconcilePendingOperation();
-            root.scheduleScan();
+            root.startScan();
         }
     }
 
@@ -192,7 +174,7 @@ Item {
 
     onAccessPointActiveChanged: {
         if (root.accessPointActive) root.stopScan();
-        else if (root.visible && root.drawerOpen) root.scheduleScan();
+        else if (root.visible) root.startScan();
     }
 
     onHotspotBlocksSelectedWifiChanged: {
@@ -200,24 +182,15 @@ Item {
             root.stopScan();
             root.cancelPassword();
             root.statusMessage = root.hotspotStatusMessage();
-        } else if (root.visible && root.drawerOpen) {
-            root.scheduleScan();
-        }
-    }
-
-    onDrawerOpenChanged: {
-        if (root.drawerOpen && root.visible) {
-            root.reconcilePendingOperation();
-            root.scheduleScan();
-        } else {
-            root.stopScan();
+        } else if (root.visible) {
+            root.startScan();
         }
     }
 
     onVisibleChanged: {
-        if (root.visible && root.drawerOpen) {
+        if (root.visible) {
             root.reconcilePendingOperation();
-            root.scheduleScan();
+            root.startScan();
         } else {
             root.stopScan();
             root.cancelPassword();
@@ -228,7 +201,7 @@ Item {
 
     Component.onCompleted: {
         root.reconcilePendingOperation();
-        if (root.visible && root.drawerOpen) root.scheduleScan();
+        if (root.visible) root.startScan();
     }
 
     Component.onDestruction: {
@@ -342,14 +315,8 @@ Item {
         return "The active hotspot adapter could not be matched safely. Wi-Fi actions are paused.";
     }
 
-    function scheduleScan(): void {
-        scanStartTimer.stop();
-        if (!root.drawerOpen || !root.visible) return;
-        scanStartTimer.restart();
-    }
-
     function startScan(): void {
-        if (!root.wifiDevice || !root.drawerOpen || !root.visible || !Networking.wifiEnabled) return;
+        if (!root.wifiDevice || !root.visible || !Networking.wifiEnabled) return;
         if (!Networking.wifiHardwareEnabled || root.hotspotBlocksSelectedWifi) return;
         if (root.wifiDevice.mode !== WifiDeviceMode.Station) return;
         if (root.wifiDevice.scannerEnabled) return;
@@ -360,7 +327,6 @@ Item {
     }
 
     function stopScan(): void {
-        scanStartTimer.stop();
         scanRestartTimer.stop();
         root.scanRequested = false;
         var owned = root.scanOwnedDevice;
@@ -369,7 +335,7 @@ Item {
     }
 
     function scan(): void {
-        if (!root.wifiDevice || !root.drawerOpen || !root.visible || !Networking.wifiEnabled) return;
+        if (!root.wifiDevice || !root.visible || !Networking.wifiEnabled) return;
         if (!Networking.wifiHardwareEnabled || root.hotspotBlocksSelectedWifi) {
             root.statusMessage = "Wi-Fi is unavailable while this adapter is used by Hotspot.";
             return;
@@ -611,15 +577,6 @@ Item {
                 root.finishForget(true);
             }
         }
-    }
-
-    // shortcut: one 220ms deferral keeps NetworkManager work off initial drawer motion;
-    // raise only if scans still hitch.
-    Timer {
-        id: scanStartTimer
-        interval: 220
-        repeat: false
-        onTriggered: root.startScan()
     }
 
     Timer {
