@@ -6,6 +6,16 @@ rice_config="${config_home%/}/quickshell/rice-shell"
 rice_qml="${rice_config}/shell.qml"
 notifications=${ENABLE_NOTIFICATIONS:-1}
 
+load_workspace_drag() {
+    local repo plugin
+    repo=$(realpath "$rice_config/../../.." 2>/dev/null) || return 0
+    plugin="$repo/build/libcod29_top_edge_drag.so"
+    [[ -x "$repo/build/cod29_workspace_capture" && -r "$plugin" ]] || return 0
+    if ! hyprctl plugin list | grep -q 'Plugin cod29_top_edge_drag '; then
+        hyprctl plugin load "$plugin" >&2
+    fi
+}
+
 # Prepare persistent previews at login without blocking shell startup.
 bash "${config_home%/}/quickshell/wallpaper-switcher/generate-thumbs.sh" >/dev/null 2>&1 &
 
@@ -33,6 +43,8 @@ if ! command -v quickshell >/dev/null 2>&1; then
     echo "Quickshell is unavailable; no shell fallback was started." >&2
     exit 1
 fi
+
+load_workspace_drag
 
 if has_rice_instance; then
     for _ in {1..20}; do

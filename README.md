@@ -41,6 +41,13 @@ cd ~/Projects/dotfiles
 
 `--all` and an explicit `noctalia` selector can install `state/noctalia/settings.toml`; add `--no-state` to preserve the destination machine's runtime session settings. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for test commands, file ownership, and task completion checks.
 
+Để bật kéo cửa sổ sang workspace ở mép trên, build plugin và trình chụp preview với header khớp bản Hyprland đang chạy, cùng `wayland-client`, `wayland-protocols` và `wayland-scanner`. Rice Shell sẽ nạp plugin đã build khi đăng nhập.
+
+```bash
+cmake -S . -B build
+cmake --build build --target cod29_top_edge_drag
+```
+
 ## Đồng bộ sau khi sửa cấu hình
 
 Chỉ đồng bộ các file đã chọn; tránh `rsync --delete` và `git add -A` trên snapshot có file runtime hoặc cấu hình riêng máy.
