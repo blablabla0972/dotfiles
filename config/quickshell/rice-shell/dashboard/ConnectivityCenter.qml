@@ -10,6 +10,7 @@ Item {
     implicitWidth: 360
     implicitHeight: 480
     property string currentPage: "wifi"
+    property bool drawerOpen: false
 
     signal pageSelected(string page)
     signal closeRequested()
@@ -138,7 +139,7 @@ Item {
                 anchors.fill: parent
                 active: root.activePage === "wifi"
                 visible: active
-                source: "WifiDrawer.qml"
+                sourceComponent: WifiDrawer { drawerOpen: root.drawerOpen }
             }
             Loader {
                 id: bluetoothLoader
