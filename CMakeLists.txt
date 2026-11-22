@@ -104,6 +104,30 @@ target_link_libraries(cod29_top_edge_drag PRIVATE
     ${HYPRLAND_LIBRARIES}
 )
 
+enable_language(C)
+pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+pkg_get_variable(WAYLAND_PROTOCOLS wayland-protocols pkgdatadir)
+find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+set(capture_protocols)
+foreach(protocol ext-workspace ext-foreign-toplevel-list ext-image-capture-source ext-image-copy-capture hyprland-workspace-image-capture-source)
+    if(protocol MATCHES "^hyprland")
+        set(xml "${CMAKE_CURRENT_SOURCE_DIR}/tools/cod29/${protocol}-v1.xml")
+    else()
+        set(xml "${WAYLAND_PROTOCOLS}/staging/${protocol}/${protocol}-v1.xml")
+    endif()
+    set(generated "${CMAKE_CURRENT_BINARY_DIR}/${protocol}")
+    add_custom_command(
+        OUTPUT "${generated}.c" "${generated}.h"
+        COMMAND "${WAYLAND_SCANNER}" private-code "${xml}" "${generated}.c"
+        COMMAND "${WAYLAND_SCANNER}" client-header "${xml}" "${generated}.h"
+        DEPENDS "${xml}" VERBATIM)
+    list(APPEND capture_protocols "${generated}.c" "${generated}.h")
+endforeach()
+add_executable(cod29_workspace_capture tools/cod29/workspace_capture.c ${capture_protocols})
+target_include_directories(cod29_workspace_capture PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(cod29_workspace_capture PRIVATE PkgConfig::WAYLAND_CLIENT)
+add_dependencies(cod29_top_edge_drag cod29_workspace_capture)
+
 # -----------------------------------------------------------------------------
 # Milestone 4: Automated Integration Test Harness (IT01-IT10) (Phase D)
 # -----------------------------------------------------------------------------

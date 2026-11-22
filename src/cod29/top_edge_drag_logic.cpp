@@ -168,9 +168,9 @@ Action StateMachine::onPointerMotion(
         case State::StripOpen:
         case State::HoverTarget: {
             // Hysteresis exit check:
-            // Strip closes when pointer retreats below stripHeight + exitHysteresis
+            // Strip closes below the visible strip and its hysteresis margin
             // or moves outside monitor horizontal bounds
-            const double exitY = output.y + m_config.stripHeight + m_config.exitHysteresis;
+            const double exitY = output.y + output.topInset + m_config.stripHeight + m_config.exitHysteresis;
             const bool outsideX = (pointer.x < output.x) || (pointer.x > (output.x + output.w));
             const bool outsideY = (pointer.y > exitY);
 

@@ -16,7 +16,7 @@ namespace Cod29 {
  *
  * Implements a non-blocking, line-delimited protocol:
  * - Downstream (Plugin -> Quickshell):
- *     SHOW_STRIP
+ *     SHOW_STRIP <windowAddressHex>
  *     HIDE_STRIP
  *     TARGET_CHANGED <wsId>
  *     RESET
@@ -42,9 +42,11 @@ public:
     const std::string& getSocketPath() const noexcept;
 
     // Downstream broadcasts
-    void broadcastShowStrip() noexcept;
+    void broadcastShowStrip(uint64_t windowToken) noexcept;
     void broadcastHideStrip() noexcept;
     void broadcastTargetChanged(int targetWorkspaceId) noexcept;
+    void broadcastDropBox(const std::string& box) noexcept;
+    void broadcastPointer(const Vector2D& pointer, const Vector2D& grabAnchor) noexcept;
     void broadcastReset() noexcept;
 
     // Upstream message callbacks

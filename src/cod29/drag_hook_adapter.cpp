@@ -29,7 +29,7 @@ DragHookAdapter::DragHookAdapter(StateMachine& sm, IpcServer& ipc, ICompositorDe
 void DragHookAdapter::dispatchAction(const Action& action) noexcept {
     switch (action.type) {
         case Action::Type::ShowStrip:
-            m_ipcServer.broadcastShowStrip();
+            m_ipcServer.broadcastShowStrip(action.windowToken);
             break;
         case Action::Type::HideStrip:
             m_ipcServer.broadcastHideStrip();
@@ -45,7 +45,8 @@ void DragHookAdapter::dispatchAction(const Action& action) noexcept {
     }
 }
 
-void DragHookAdapter::onDragBegin(uint64_t windowToken, DragMode mode, bool thresholdReached, int sourceWorkspaceId, uint64_t timestampMs) noexcept {
+void DragHookAdapter::onDragBegin(uint64_t windowToken, DragMode mode, bool thresholdReached, int sourceWorkspaceId, uint64_t timestampMs,
+                                  Vector2D grabAnchor) noexcept {
     std::lock_guard<std::mutex> lock(m_stateMutex);
 
     if (!m_stateMachine.getConfig().enabled) {
@@ -55,6 +56,7 @@ void DragHookAdapter::onDragBegin(uint64_t windowToken, DragMode mode, bool thre
         return;
     }
 
+    m_grabAnchor = grabAnchor;
     Action act = m_stateMachine.onNativeDragBegin(windowToken, mode, thresholdReached, sourceWorkspaceId, timestampMs);
     dispatchAction(act);
 }
@@ -73,6 +75,8 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
 
         Action act = m_stateMachine.onPointerMotion(pointer, output, timestampMs);
         dispatchAction(act);
+        if (m_stateMachine.getState() == State::HoverTarget)
+            m_ipcServer.broadcastPointer(pointer, m_grabAnchor);
 
     } catch (const std::exception& e) {
         // Hardening Rule H1: Exception Quarantine

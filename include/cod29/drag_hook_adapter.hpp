@@ -27,7 +27,8 @@ public:
     ~DragHookAdapter() noexcept = default;
 
     // Gesture initiation
-    void onDragBegin(uint64_t windowToken, DragMode mode, bool thresholdReached, int sourceWorkspaceId, uint64_t timestampMs) noexcept;
+    void onDragBegin(uint64_t windowToken, DragMode mode, bool thresholdReached, int sourceWorkspaceId, uint64_t timestampMs,
+                     Vector2D grabAnchor = {0.5, 0.5}) noexcept;
 
     // Passive pointer motion tracking (Rule H1)
     void onPointerMotion(const Vector2D& pointer, const OutputRect& output, uint64_t timestampMs) noexcept;
@@ -63,6 +64,7 @@ private:
     StateMachine& m_stateMachine;
     IpcServer& m_ipcServer;
     ICompositorDelegate* m_delegate = nullptr;
+    Vector2D m_grabAnchor{0.5, 0.5};
 
     std::atomic<size_t> m_quarantinedExceptions{0};
     bool m_injectException = false;

@@ -54,6 +54,7 @@ struct OutputRect {
     double y = 0;
     double w = 0;
     double h = 0;
+    double topInset = 0;
 };
 
 struct WorkspaceCard {
@@ -62,6 +63,7 @@ struct WorkspaceCard {
     double y = 0;
     double w = 0;
     double h = 0;
+    OutputRect preview{};
 };
 
 struct Action {

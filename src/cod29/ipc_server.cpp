@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <sstream>
 #include <regex>
+#include <format>
 #include <iostream>
 #include <unordered_map>
 
@@ -119,8 +120,8 @@ size_t IpcServer::getConnectedClientCount() const noexcept {
     return m_clientFds.size();
 }
 
-void IpcServer::broadcastShowStrip() noexcept {
-    sendToAllClients("SHOW_STRIP\n");
+void IpcServer::broadcastShowStrip(uint64_t windowToken) noexcept {
+    sendToAllClients(std::format("SHOW_STRIP {:x}\n", windowToken));
 }
 
 void IpcServer::broadcastHideStrip() noexcept {
@@ -129,6 +130,14 @@ void IpcServer::broadcastHideStrip() noexcept {
 
 void IpcServer::broadcastTargetChanged(int targetWorkspaceId) noexcept {
     sendToAllClients("TARGET_CHANGED " + std::to_string(targetWorkspaceId) + "\n");
+}
+
+void IpcServer::broadcastDropBox(const std::string& box) noexcept {
+    sendToAllClients("DROP_BOX " + box + "\n");
+}
+
+void IpcServer::broadcastPointer(const Vector2D& pointer, const Vector2D& grabAnchor) noexcept {
+    sendToAllClients(std::format("DRAG_POINTER {:.2f} {:.2f} {:.4f} {:.4f}\n", pointer.x, pointer.y, grabAnchor.x, grabAnchor.y));
 }
 
 void IpcServer::broadcastReset() noexcept {
@@ -216,6 +225,9 @@ std::vector<WorkspaceCard> IpcServer::parseBoundsJson(const std::string& json) n
                 card.h = std::stod(match[1]);
             }
 
+            static const std::regex previewRegex(R"("preview"\s*:\s*\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\])");
+            if (std::regex_search(obj, match, previewRegex))
+                card.preview = {std::stod(match[1]), std::stod(match[2]), std::stod(match[3]), std::stod(match[4])};
             if (hasId) {
                 cards.push_back(card);
             }

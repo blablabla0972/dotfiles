@@ -222,7 +222,7 @@ bool testL06() {
     cfg.exitHysteresis = 28.0;
     Cod29::StateMachine sm(cfg);
 
-    Cod29::OutputRect mon{0.0, 0.0, 1920.0, 1080.0};
+    Cod29::OutputRect mon{0.0, 0.0, 1920.0, 1080.0, 40.0};
     sm.onNativeDragBegin(106, Cod29::DragMode::Move, true, 1, 100);
 
     // Arm and open strip
@@ -231,19 +231,19 @@ bool testL06() {
     TEST_ASSERT(aOpen.type == Cod29::Action::Type::ShowStrip, "ShowStrip emitted");
     TEST_ASSERT(sm.getState() == Cod29::State::StripOpen, "State is StripOpen");
 
-    // Move within strip height (y = 100.0 <= 140.0)
-    auto a1 = sm.onPointerMotion({500.0, 100.0}, mon, 200);
+    // At y = 175, the pointer is inside the strip only because of the 40 px top inset.
+    auto a1 = sm.onPointerMotion({500.0, 175.0}, mon, 200);
     TEST_ASSERT(a1.type == Cod29::Action::Type::None, "Motion within strip emits None");
     TEST_ASSERT(sm.getState() == Cod29::State::StripOpen, "State remains StripOpen");
 
     // Move below strip height but within hysteresis zone:
-    // Exit threshold is 140.0 + 28.0 = 168.0. Test at y = 160.0.
-    auto a2 = sm.onPointerMotion({500.0, 160.0}, mon, 220);
+    // Exit threshold is 40 + 140 + 28 = 208.
+    auto a2 = sm.onPointerMotion({500.0, 200.0}, mon, 220);
     TEST_ASSERT(a2.type == Cod29::Action::Type::None, "Motion within hysteresis buffer emits None");
     TEST_ASSERT(sm.getState() == Cod29::State::StripOpen, "State remains StripOpen in hysteresis buffer");
 
-    // Retreat past hysteresis exit threshold: y = 169.0 > 168.0
-    auto a3 = sm.onPointerMotion({500.0, 169.0}, mon, 240);
+    // Retreat past the hysteresis exit threshold.
+    auto a3 = sm.onPointerMotion({500.0, 209.0}, mon, 240);
     TEST_ASSERT(a3.type == Cod29::Action::Type::HideStrip, "Retreat past hysteresis emits HideStrip");
     TEST_ASSERT(sm.getState() == Cod29::State::Dragging, "State returns to Dragging");
 

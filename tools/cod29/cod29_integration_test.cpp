@@ -157,6 +157,10 @@ bool test_IT01_ipc_lifecycle() {
 
     if (server.getConnectedClientCount() != 1) return false;
 
+    const auto cards = IpcServer::parseBoundsJson(R"([{"id":2,"x":-360,"y":60,"w":296,"h":184,"preview":[-355.5,65.25,286,160.875]}])");
+    if (cards.size() != 1 || cards[0].preview.x != -355.5 || cards[0].preview.y != 65.25 ||
+        cards[0].preview.w != 286 || cards[0].preview.h != 160.875) return false;
+
     client.disconnect();
     server.stop();
 
@@ -185,7 +189,7 @@ bool test_IT02_e2e_drag_and_drop() {
     client.sendLine("STRIP_READY");
 
     // Step 1: Drag Begin
-    adapter.onDragBegin(0x1001, DragMode::Move, true, 1, 1000);
+    adapter.onDragBegin(0x1001, DragMode::Move, true, 1, 1000, {0.25, 0.75});
     if (adapter.getState() != State::Dragging) return false;
 
     // Step 2: Pointer touches physical top edge (y <= 4.0)
@@ -200,7 +204,7 @@ bool test_IT02_e2e_drag_and_drop() {
     auto lines = client.readLines(200);
     bool sawShow = false;
     for (const auto& l : lines) {
-        if (l == "SHOW_STRIP") sawShow = true;
+        if (l == "SHOW_STRIP 1001") sawShow = true;
     }
     if (!sawShow) return false;
 
@@ -209,6 +213,10 @@ bool test_IT02_e2e_drag_and_drop() {
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     if (adapter.getState() != State::HoverTarget) return false;
     if (adapter.getTargetWorkspaceId() != 2) return false;
+
+    adapter.onPointerMotion({300, 60}, mon, 1130);
+    lines = client.readLines(200);
+    if (std::ranges::find(lines, "DRAG_POINTER 300.00 60.00 0.2500 0.7500") == lines.end()) return false;
 
     // Step 5: Drag End on target workspace 2
     bool ok = adapter.onDragEnd(nullptr, 0x1001, 1, 1150);
@@ -298,7 +306,7 @@ bool test_IT04_fast_flick_disarm() {
     // Verify 0 SHOW_STRIP messages were emitted
     auto lines = client.readLines(50);
     for (const auto& l : lines) {
-        if (l == "SHOW_STRIP") return false;
+        if (l.starts_with("SHOW_STRIP ")) return false;
     }
 
     client.disconnect();
@@ -523,7 +531,7 @@ bool test_IT10_client_reconnect_resilience() {
     }
 
     // Broadcast messages while client is disconnected - must not throw or crash
-    server.broadcastShowStrip();
+    server.broadcastShowStrip(0x1001);
     server.broadcastTargetChanged(2);
     server.broadcastHideStrip();
 
@@ -535,11 +543,11 @@ bool test_IT10_client_reconnect_resilience() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    server.broadcastShowStrip();
+    server.broadcastShowStrip(0x1001);
     auto lines = client2.readLines(200);
     bool sawShow = false;
     for (const auto& l : lines) {
-        if (l == "SHOW_STRIP") sawShow = true;
+        if (l == "SHOW_STRIP 1001") sawShow = true;
     }
     if (!sawShow) return false;
 
@@ -629,7 +637,7 @@ bool test_IT12_concurrent_broadcast_disconnect_safety() {
     // Broadcaster thread: Rapidly broadcast events across all clients
     std::thread broadcaster([&]() {
         while (!stopFlag.load()) {
-            server.broadcastShowStrip();
+            server.broadcastShowStrip(0x1001);
             server.broadcastTargetChanged(2);
             server.broadcastHideStrip();
             broadcastsCompleted += 3;
@@ -682,11 +690,11 @@ bool test_IT12_concurrent_broadcast_disconnect_safety() {
     finalClient.sendLine("STRIP_READY");
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    server.broadcastShowStrip();
+    server.broadcastShowStrip(0x1001);
     auto lines = finalClient.readLines(200);
     bool sawShow = false;
     for (const auto& l : lines) {
-        if (l == "SHOW_STRIP") sawShow = true;
+        if (l == "SHOW_STRIP 1001") sawShow = true;
     }
 
     finalClient.disconnect();
