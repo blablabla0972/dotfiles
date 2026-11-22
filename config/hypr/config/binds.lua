@@ -178,7 +178,7 @@ hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("grim - | wl-copy 2>/dev/null || 
 hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd(noctCall .. "panel-toggle wallpaper"))
 
 -- Clipboard
-hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("qs ipc -c clipboard-history call clipboard close 2>/dev/null || qs -c clipboard-history -n"))
+hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("addr=$(hyprctl activewindow -j | jq -r .address); CLIPBOARD_FOCUS_ADDRESS=$addr qs ipc -c clipboard-history call clipboard close 2>/dev/null || CLIPBOARD_FOCUS_ADDRESS=$addr qs -c clipboard-history -n"))
 
 
 -- Notifications

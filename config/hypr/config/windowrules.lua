@@ -12,7 +12,8 @@ hl.window_rule({
     match  = { class = "^local\\.screenshot\\.Editor$" },
     float  = true,
     center = true,
-    size   = { "monitor_w*0.70", "monitor_h*0.70" },
+    size   = { "monitor_w*0.80", "monitor_h*0.80" },
+    opacity = "1.0 override",
 })
 
 -- Picture-in-Picture
