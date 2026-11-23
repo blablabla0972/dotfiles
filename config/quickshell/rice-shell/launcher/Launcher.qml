@@ -379,16 +379,19 @@ PanelWindow {
         // Center Launcher Card
         Rectangle {
             id: launcherCard
-            anchors.centerIn: parent
-            width: Math.max(0, Math.min(660, parent.width - 24))
+            readonly property int homeHeight: 610
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: Math.max(12, Math.round((parent.height - homeHeight) / 2))
+            width: Math.max(0, Math.min(700, parent.width - 24))
             height: Math.max(0, Math.min(
-                launcherWindow.homeMode ? 700 : launcherWindow.commandMode ? 230
-                : launcherWindow.calculatorMode && calculator.expression.trim() ? 230 : 540,
+                launcherWindow.homeMode ? homeHeight : launcherWindow.commandMode ? 258
+                : launcherWindow.calculatorMode && calculator.expression.trim() ? 272
+                : launcherWindow.appMode ? Math.min(540, 320 + Math.max(0, launcherWindow.filteredApps.length - 1) * 56) : 540,
                 parent.height - 24))
             Behavior on height { NumberAnimation { duration: launcherWindow.reducedMotion ? 0 : 160; easing.type: Easing.OutCubic } }
             radius: 24
             color: Tokens.surface
-            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.45)
+            border.color: Qt.alpha(Tokens.outline, 0.7)
             border.width: 1
             clip: true
 
@@ -410,7 +413,7 @@ PanelWindow {
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: launcherCard.width < 440 ? 12 : 20
-                spacing: 10
+                spacing: 12
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -419,10 +422,10 @@ PanelWindow {
                         text: launcherWindow.contextApp ? launcherWindow.contextApp.name
                             : launcherWindow.calculatorMode ? "Calculator"
                             : launcherWindow.actionsMode ? "Quick Actions"
-                            : launcherWindow.commandMode ? "Terminal Command" : "Rice Launcher"
+                            : launcherWindow.commandMode ? "Terminal Command" : "Applications"
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
-                        font.pixelSize: 17
+                        font.pixelSize: 19
                         font.weight: Font.DemiBold
                         color: Tokens.text_primary
                     }
@@ -430,12 +433,17 @@ PanelWindow {
                         visible: launcherWindow.homeMode
                         focusPolicy: Qt.NoFocus
                         text: "All apps"
+                        Accessible.name: text
+                        implicitHeight: 30
+                        leftPadding: 11
+                        rightPadding: 11
                         background: Rectangle {
-                            radius: 8
-                            color: Tokens.surface_high
+                            radius: 9
+                            color: parent.hovered ? Tokens.surface_high : "transparent"
+                            border.color: Qt.alpha(Tokens.outline, 0.65)
                         }
                         contentItem: Text {
-                            text: "All apps"
+                            text: parent.text
                             color: Tokens.text_primary
                             font.pixelSize: 12
                             horizontalAlignment: Text.AlignHCenter
@@ -450,7 +458,15 @@ PanelWindow {
                         visible: !launcherWindow.contextApp
                         focusPolicy: Qt.NoFocus
                         text: "⋯"
+                        implicitWidth: 30
+                        implicitHeight: 30
                         Accessible.name: "Launcher modes"
+                        ToolTip.text: Accessible.name
+                        ToolTip.visible: hovered
+                        background: Rectangle {
+                            radius: 9
+                            color: parent.hovered ? Tokens.surface_high : "transparent"
+                        }
                         onClicked: modeMenu.open()
                         Menu {
                             id: modeMenu
@@ -475,11 +491,11 @@ PanelWindow {
                 // Search Input Box
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 48
+                    Layout.preferredHeight: 52
                     radius: 14
-                    color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.8)
-                    border.color: searchInput.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                    border.width: searchInput.activeFocus ? 1.5 : 1
+                    color: Tokens.surface_high
+                    border.color: searchInput.activeFocus ? Qt.alpha(Tokens.accent, 0.74) : Qt.alpha(Tokens.outline, 0.5)
+                    border.width: 1
 
                     RowLayout {
                         anchors.fill: parent
@@ -677,29 +693,49 @@ PanelWindow {
                     }
                 }
 
-                Text {
-                    visible: launcherWindow.homeMode
-                    text: "Pinned / Frequent"
-                    font.pixelSize: 12
-                    color: Tokens.text_secondary
-                    Accessible.role: Accessible.Heading
+                RowLayout {
+                    visible: launcherWindow.appMode
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 6
+                    Layout.rightMargin: 6
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: launcherWindow.homeMode ? "Suggestions" : "Results"
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        color: Tokens.text_primary
+                        Accessible.role: Accessible.Heading
+                    }
+                    Text {
+                        visible: !launcherWindow.homeMode
+                        text: launcherWindow.filteredApps.length
+                        font.pixelSize: 12
+                        color: Tokens.text_secondary
+                    }
                 }
 
                 // Application List View
-                Item {
+                Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    radius: 16
+                    color: Qt.tint(Tokens.surface, Qt.alpha(Tokens.background, 0.45))
+                    border.color: Qt.alpha(Tokens.outline, 0.45)
+                    border.width: 1
                     clip: true
 
                     ListView {
                         id: appList
                         anchors.fill: parent
+                        anchors.margins: 6
                         model: launcherWindow.filteredApps
                         reuseItems: true
                         cacheBuffer: 120
                         spacing: 4
                         currentIndex: launcherWindow.selectedIndex
                         boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                         delegate: Rectangle {
                             id: appDelegate
@@ -716,7 +752,7 @@ PanelWindow {
                                 && (launcherWindow.store?.recents.slice(0, 8).includes(modelData.id) ?? false)
 
                             width: appList.width
-                            height: launcherWindow.homeMode ? 44
+                            height: launcherWindow.homeMode ? 46
                                 : launcherWindow.calculatorMode && calculator.expression.trim() ? 66 : 52
                             radius: 12
                             Accessible.role: Accessible.ListItem
@@ -832,11 +868,9 @@ PanelWindow {
                                 Rectangle {
                                     visible: launcherCard.width >= 420 && !appDelegate.modelData.disabled
                                         && (appDelegate.isCommand || appDelegate.isSelected)
-                                    Layout.preferredHeight: 20
+                                        Layout.preferredHeight: 23
                                     radius: 10
-                                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-                                    border.color: Tokens.accent
-                                    border.width: 1
+                                    color: Tokens.accent
                                     implicitWidth: cmdBadgeRow.implicitWidth + 12
 
                                     RowLayout {
@@ -847,9 +881,9 @@ PanelWindow {
                                         Text {
                                             text: appDelegate.kind === "history" ? "↵ Reuse" : launcherWindow.calculatorMode ? "↵ Copy"
                                                 : appDelegate.isCommand || launcherWindow.actionsMode ? "↵ Run" : "↵ Open"
-                                            font.pixelSize: 10
-                                            font.bold: true
-                                            color: Tokens.accent
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                            color: Tokens.on_accent
                                         }
                                     }
                                 }
@@ -885,6 +919,7 @@ PanelWindow {
 
                         ColumnLayout {
                             anchors.centerIn: parent
+                            width: Math.max(0, parent.width - 24)
                             spacing: 8
 
                             Text {
@@ -896,19 +931,23 @@ PanelWindow {
                             }
 
                             Text {
-                                Layout.alignment: Qt.AlignHCenter
+                                Layout.fillWidth: true
                                 text: launcherWindow.actionsMode ? "No matching actions" : "No applications found"
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
                                 font.pixelSize: 13
                                 font.bold: true
                                 color: Tokens.text_primary
                             }
 
                             Text {
-                                Layout.alignment: Qt.AlignHCenter
+                                Layout.fillWidth: true
                                 text: launcherWindow.actionsMode ? "Try DND, volume, brightness, System, Power or reload."
                                     : launcherWindow.selectedCategory !== "All"
                                     ? ("No apps match in '" + launcherWindow.selectedCategory + "'. Press Tab to cycle categories.")
-                                    : "Type '> command' to run a command in the terminal."
+                                    : "Check the name or try a different keyword."
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
                                 font.pixelSize: 11
                                 color: Tokens.text_secondary
                             }
@@ -918,22 +957,53 @@ PanelWindow {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 8
-                    Text {
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                        text: launcherWindow.appMode ? (launcherCard.width < 490
-                            ? "Tab  Category   Alt+↵  Actions   Ctrl+P  Favorite"
-                            : "↑↓  Navigate     Tab  Category     Alt+↵  App actions     Ctrl+P  Favorite")
-                            : launcherWindow.calculatorMode ? (calculator.expression.trim() ? "↵  Copy result" : "↵  Reuse expression")
-                            : launcherWindow.actionsMode ? "↵  Run action" : "↵  Open"
-                        font.pixelSize: 11
-                        color: Tokens.text_secondary
-                    }
-                    Text {
-                        text: launcherWindow.contextApp ? "Esc  Back" : "Esc  Close"
-                        font.pixelSize: 11
-                        color: Tokens.text_secondary
+                    spacing: 12
+                    Repeater {
+                        model: [
+                            { keys: "↑↓", label: "Navigate", show: launcherWindow.appMode && launcherCard.width >= 420 },
+                            { keys: "Tab", label: "Category", show: launcherWindow.appMode },
+                            { keys: "Alt+↵", label: "App actions", show: launcherWindow.appMode && launcherCard.width >= 540 },
+                            { keys: "Ctrl+P", label: "Favorite", show: launcherWindow.appMode && launcherCard.width >= 540 },
+                            { keys: "↵", label: launcherWindow.calculatorMode
+                                ? (calculator.expression.trim() ? "Copy result" : "Reuse expression")
+                                : launcherWindow.actionsMode ? "Run action" : "Open", show: !launcherWindow.appMode },
+                            { keys: "Esc", label: launcherWindow.contextApp ? "Back" : "Close", show: true }
+                        ]
+                        delegate: Item {
+                            id: shortcut
+                            required property var modelData
+                            Layout.fillWidth: modelData.keys === "Esc"
+                            implicitWidth: hint.implicitWidth
+                            implicitHeight: hint.implicitHeight
+                            visible: modelData.show
+
+                            Row {
+                                id: hint
+                                anchors.right: parent.right
+                                spacing: 5
+
+                                Rectangle {
+                                    width: keyLabel.implicitWidth + 10
+                                    height: 21
+                                    radius: 5
+                                    color: Tokens.surface_high
+                                    Text {
+                                        id: keyLabel
+                                        anchors.centerIn: parent
+                                        text: shortcut.modelData.keys
+                                        color: Tokens.text_primary
+                                        font.pixelSize: 11
+                                    }
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: shortcut.modelData.label
+                                    color: Tokens.text_secondary
+                                    font.pixelSize: 11
+                                }
+                            }
+                        }
                     }
                 }
             }

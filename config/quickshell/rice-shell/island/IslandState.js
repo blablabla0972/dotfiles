@@ -81,15 +81,6 @@ function targetDimensions(state, details) {
     }
 }
 
-function normalizedProgress(value, base, target) {
-    if (typeof value !== "number" || !isFinite(value)
-        || typeof base !== "number" || !isFinite(base)
-        || typeof target !== "number" || !isFinite(target)) return 0;
-    var delta = target - base;
-    if (Math.abs(delta) < 0.001) return 1;
-    return Math.max(0, Math.min(1, (value - base) / delta));
-}
-
 function normalizeOsdProgress(progress, kind) {
     if (typeof progress !== "number" || !isFinite(progress)) return 0;
     var limit = kind === "volume" ? 1.5 : 1;

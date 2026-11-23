@@ -28,14 +28,14 @@ class DashboardMotionTests(unittest.TestCase):
         base = Path(cls.temp.name)
         for name in ('dashboard', 'island', 'theme', 'services'):
             (base / name).mkdir()
-        for name in ('IslandShape.qml', 'IslandState.js'):
+        for name in ('IslandShape.qml', 'IslandState.js', 'IslandContentMotion.qml', 'IslandSpring.qml'):
             shutil.copy2(SHELL / 'island' / name, base / 'island' / name)
         # Only hardware-backed bodies and palette loading are replaced.
         for name in ('System', 'Config', 'NotificationCenter', 'AudioDrawer', 'WifiDrawer', 'BluetoothDrawer', 'HotspotDrawer'):
             body = ('import QtQuick\nItem { property string currentPage: ""; signal requestSideDrawer(string type); '
                     'signal closeRequested(); signal pageSelected(string page); function handleEscape() { return false; } '
                     'property bool wifiLoaded: currentPage === "wifi" || currentPage === ""; '
-                    'property bool bluetoothLoaded: currentPage === "bluetooth"; '
+                    'property bool bluetoothLoaded: currentPage === "bluetooth"; property bool drawerOpen: false; '
                     + ('TextInput { objectName: "wifiPassword"; text: "password" }'
                        if name == 'WifiDrawer' else '') + ' }\n')
             (base / f'dashboard/{name}.qml').write_text(body)
@@ -130,6 +130,7 @@ QtObject {
     property real contentHeight: cardContent.height
     property real contentY: cardContent.y
     property real contentOpacity: cardContent.opacity
+    property real contentScale: cardContent.scale
     property bool viewportClips: cardContent.parent.clip
     property real drawerWidth: sideDrawerContainer.width
     property real drawerOpacity: sideDrawerContainer.opacity
@@ -173,6 +174,7 @@ QtObject {
     property real contentHeight: dashboard.contentHeight
     property real contentY: dashboard.contentY
     property real contentOpacity: dashboard.contentOpacity
+    property real contentScale: dashboard.contentScale
     property real panelWidth: islandShape.pillWidth
     property real panelHeight: islandShape.pillHeight
     property real panelY: islandContainer.y
@@ -205,6 +207,7 @@ QtObject {
     property string tabName: dashboard.currentTab
     property bool dashboardVisible: dashboard.visible
     property bool expanded: dashboard.expanded
+    property bool dashboardClosing: dashboard.closing
     property bool dashboardActiveFocus: dashboard.activeFocus
     property bool sideDrawerOpen: dashboard.sideDrawerOpen
     property bool scrimInteractive: islandWindow.modalOpen
@@ -241,6 +244,9 @@ QtObject {
     function notify(summary) { triggerNotification(summary, "Body", "Test", ""); }
     function notifyWithActions(summary) {
         triggerNotification(summary, "Body", "Test", "", 1, [{text: "Open", id: "open"}]);
+    }
+    function notifyWithInvalidActions(summary) {
+        triggerNotification(summary, "Body", "Test", "", 1, "[sai]");
     }
     function osd() { triggerOsd("vol", 0.5); }
     function osdVolume125() { triggerOsd("vol", 1.25); }
@@ -329,7 +335,7 @@ int main(int argc, char **argv) {
     QJsonObject results;
     auto snapshot = [&](const char *name) {
         QJsonObject row;
-        for (auto key : {"contentWidth", "contentHeight", "contentY", "contentOpacity",
+        for (auto key : {"contentWidth", "contentHeight", "contentY", "contentOpacity", "contentScale",
                          "panelWidth", "panelHeight", "panelY", "layerHeightBudget", "drawerWidth", "drawerOpacity", "drawerX", "morphX", "drawerProgressValue",
                          "tabOpacity", "tabOffset", "dashboardCardWidth", "dashboardCardHeight",
                          "homeContentHeight", "homeLayoutColumns", "tabContentHeight",
@@ -358,6 +364,12 @@ int main(int argc, char **argv) {
         row["osdReadout"] = osdReadout ? osdReadout->property("text").toString() : QString();
         auto osdRing = w->findChild<QQuickItem *>("feedbackOsdRing");
         row["osdRingProgress"] = osdRing ? osdRing->property("progress").toDouble() : -1;
+        auto notification = w->findChild<QQuickItem *>("notificationIslandSummary");
+        auto notificationCard = notification ? notification->parentItem()->parentItem() : nullptr;
+        row["notificationText"] = notification ? notification->property("text").toString() : QString();
+        row["notificationOpacity"] = notificationCard ? notificationCard->opacity() : -1;
+        row["notificationScale"] = notificationCard ? notificationCard->scale() : -1;
+        row["notificationEnabled"] = notificationCard && notificationCard->isEnabled();
         row["mediaSeekCalls"] = w->property("mediaSeekCalls").toInt();
         row["mediaPreviousCalls"] = w->property("mediaPreviousCalls").toInt();
         row["mediaNextCalls"] = w->property("mediaNextCalls").toInt();
@@ -393,6 +405,7 @@ int main(int argc, char **argv) {
         if (!QTest::qWaitFor([&] {
                 return !w->property("shapeAnimating").toBool()
                     && !w->property("drawerAnimating").toBool()
+                    && !w->property("dashboardClosing").toBool()
                     && w->property("panelY").toDouble() == w->property("targetTopGap").toDouble();
             }, 1600)) {
             fprintf(stderr, "Spring did not settle: y=%g targetY=%g height=%g shape=%d drawer=%d\n",
@@ -407,7 +420,7 @@ int main(int argc, char **argv) {
     QTest::qWait(55); snapshot("opening100");
     QTest::qWait(100); snapshot("opening200");
     settle(); snapshot("opened");
-    dismiss(); QTest::qWait(45); snapshot("closing45");
+    dismiss(); snapshot("closeStart"); QTest::qWait(45); snapshot("closing45");
     QTest::qWait(55); snapshot("closing100");
     QTest::qWait(130); snapshot("closed230");
     settle(); snapshot("closedSettled");
@@ -452,6 +465,16 @@ int main(int argc, char **argv) {
     w->setWidth(768); settle(); snapshot("drawer768Viewport");
     w->setWidth(640); settle(); snapshot("drawer640Viewport");
     w->setHeight(360); settle(); snapshot("drawer640x360Viewport");
+    dismiss(); settle();
+    w->setHeight(536);
+    toggle();
+    double peakBottom = 0;
+    for (int frame = 0; frame < 30; ++frame) {
+        QTest::qWait(16);
+        peakBottom = qMax(peakBottom,
+            w->property("panelY").toDouble() + w->property("panelHeight").toDouble());
+    }
+    results["narrowOpenPeakBottom"] = QJsonObject{{"bottom", peakBottom}};
     w->setWidth(1920); w->setHeight(1080); settle();
     QMetaObject::invokeMethod(w, "toggle", Q_ARG(QVariant, QVariant("System")));
     QTest::qWait(30); snapshot("systemTabEntering");
@@ -504,6 +527,11 @@ int main(int argc, char **argv) {
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Before dashboard")));
     snapshot("notificationReplacesOsd");
     QMetaObject::invokeMethod(w, "osdMicMuted"); snapshot("notificationWinsOverOsd");
+    settle(); snapshot("notificationBeforeDismiss");
+    QMetaObject::invokeMethod(w, "clearAlert"); snapshot("notificationDismissStart");
+    QTest::qWait(35); snapshot("notificationExiting");
+    settle(); snapshot("notificationDismissed");
+    QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Before dashboard")));
     toggle(); snapshot("dashboardClearsAlert");
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("During dashboard")));
     snapshot("notificationWhileDashboard");
@@ -557,8 +585,12 @@ int main(int argc, char **argv) {
     QTest::qWait(1000); snapshot("notificationAfterExpiry");
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Notification 88")));
     settle(); snapshot("notification88");
+    QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Superseded")));
     QMetaObject::invokeMethod(w, "notifyWithActions", Q_ARG(QVariant, QVariant("Notification 120")));
+    snapshot("notificationReplacementStart");
     settle(); snapshot("notification120");
+    QMetaObject::invokeMethod(w, "notifyWithInvalidActions", Q_ARG(QVariant, QVariant("Invalid actions")));
+    settle(); snapshot("notificationInvalidActions");
     QMetaObject::invokeMethod(w, "notify", Q_ARG(QVariant, QVariant("Notification 88 again")));
     settle(); snapshot("notification88Again");
     QMetaObject::invokeMethod(w, "clearAlert"); settle();
@@ -711,11 +743,12 @@ int main(int argc, char **argv) {
             with self.subTest(frame=frame):
                 row = self.rows[frame]
                 self.assertGreaterEqual(row['panelY'], 0)
-                self.assertLess(row['panelY'], 18)
+                self.assertLessEqual(row['panelY'], 18)
                 self.assertGreaterEqual(row['layerHeightBudget'], row['panelY'] + row['panelHeight'])
-                expected_y = 6 + 12 * (row['panelHeight'] - 32) / (520 - 32)
+                progress = min(1, max(0, (row['panelHeight'] - 32) / (160 - 32)))
+                expected_y = 6 + 12 * progress
                 self.assertAlmostEqual(row['panelY'], expected_y, delta=0.15)
-        self.assertLess(self.rows['closed230']['panelY'], 8)
+        self.assertLess(self.rows['closed230']['panelY'], self.rows['closing100']['panelY'])
         self.assertEqual(self.rows['closedSettled']['panelY'], 6)
         self.assertAlmostEqual(self.rows['beforeReopen']['panelY'],
                                self.rows['afterReopen']['panelY'], delta=0.1)
@@ -742,6 +775,44 @@ int main(int argc, char **argv) {
         self.assertTrue(self.rows['reopened']['dashboardVisible'], self.rows['reopened'])
         self.assertTrue(self.rows['reopened']['expanded'], self.rows['reopened'])
         self.assertEqual(self.rows['reopened']['panelHeight'], 520)
+
+    def test_content_fade_and_scale_retarget_without_reset(self):
+        middle = self.rows['opening100']
+        self.assertGreater(middle['contentOpacity'], 0)
+        self.assertLess(middle['contentOpacity'], 1)
+        self.assertGreater(middle['contentScale'], 0.94)
+        self.assertLess(middle['contentScale'], 1)
+        for before, after in (('opened', 'closeStart'), ('beforeReopen', 'afterReopen')):
+            for key in ('contentOpacity', 'contentScale'):
+                self.assertAlmostEqual(self.rows[before][key], self.rows[after][key], delta=0.001)
+        self.assertEqual(self.rows['reopened']['contentScale'], 1)
+
+    def test_notification_payload_survives_fade_without_retaining_input(self):
+        shown = self.rows['notificationBeforeDismiss']
+        start = self.rows['notificationDismissStart']
+        exiting = self.rows['notificationExiting']
+        self.assertEqual(shown['notificationText'], 'Before dashboard')
+        self.assertEqual(start['notificationText'], shown['notificationText'])
+        self.assertEqual(exiting['notificationText'], shown['notificationText'])
+        self.assertEqual(start['notificationOpacity'], shown['notificationOpacity'])
+        self.assertGreater(exiting['notificationOpacity'], 0)
+        self.assertLess(exiting['notificationOpacity'], start['notificationOpacity'])
+        self.assertGreater(exiting['notificationScale'], 0.94)
+        self.assertLess(exiting['notificationScale'], 1)
+        self.assertFalse(start['notificationEnabled'])
+        self.assertEqual(self.rows['notificationDismissed']['notificationOpacity'], 0)
+
+    def test_notification_burst_keeps_outgoing_layout_then_shows_latest(self):
+        original = self.rows['notification88']
+        replacing = self.rows['notificationReplacementStart']
+        self.assertEqual(replacing['notificationText'], original['notificationText'])
+        self.assertEqual(replacing['notificationOpacity'], original['notificationOpacity'])
+        self.assertFalse(replacing['notificationEnabled'])
+        latest = self.rows['notification120']
+        self.assertEqual(latest['notificationText'], 'Notification 120')
+        self.assertEqual(latest['notificationOpacity'], 1)
+        self.assertTrue(latest['notificationEnabled'])
+        self.assertEqual(self.rows['notificationInvalidActions']['panelHeight'], 88)
 
     def test_dismiss_cancels_pending_open(self):
         self.assertFalse(self.rows['earlyDismiss']['expanded'], self.rows['earlyDismiss'])
@@ -838,6 +909,7 @@ int main(int argc, char **argv) {
         self.assertLessEqual(row['drawerX'] + row['drawerWidth'], 1080)
 
     def test_responsive_dashboard_geometry_at_narrow_viewports(self):
+        self.assertLessEqual(self.rows["narrowOpenPeakBottom"]["bottom"], 536)
         for name, screen_width, width, height, overlay in (
                 ('drawer1280Viewport', 1280, 900, 520, True),
                 ('drawer960Viewport', 960, 900, 520, True),

@@ -481,7 +481,7 @@ class DynamicIslandDashboardArchitectureTest(unittest.TestCase):
         self.assertRegex(state, r"var Dashboard = \{\s*width: 900,\s*height: 520")
         self.assertIn("Math.min(Dashboard.width", state)
         self.assertIn("Math.min(Dashboard.height", state)
-        self.assertIn("targetScreen.width, targetScreen.height, 7", island)
+        self.assertIn("targetScreen?.width, targetScreen?.height, 7", island)
         self.assertIn("cardDimensions: islandWindow.dashboardDimensions", island)
         # LayerShell mask verification
         self.assertIn("mask: Region", island)
@@ -1296,7 +1296,7 @@ ShellRoot {
         # ConnectivityCenter owns the Wi-Fi, Bluetooth, and Hotspot pages.
         self.assertIn("Accessible.name: pageTitle", center_content)
         self.assertNotIn("Repeater {", center_content)
-        self.assertIn('source: "WifiDrawer.qml"', center_content)
+        self.assertIn('sourceComponent: WifiDrawer { drawerOpen: root.drawerOpen }', center_content)
         self.assertIn('source: "BluetoothDrawer.qml"', center_content)
         self.assertIn('source: "HotspotDrawer.qml"', center_content)
         for page in ("wifi", "bluetooth", "hotspot"):

@@ -6,16 +6,24 @@ import QtQuick.Shapes
 Item {
     id: root
 
-    property real pillWidth: 140
-    property real pillHeight: 28
+    property vector3d targetGeometry: Qt.vector3d(140, 28, 14)
+    readonly property real pillWidth: Math.max(1, spring.position.x)
+    readonly property real pillHeight: Math.max(1, spring.position.y)
     property real antiCornerRadius: 12
-    property real bottomRadius: 14
+    readonly property real bottomRadius: spring.position.z
     property color fillColor: "#1a1b21"
     property color borderColor: "#43474e"
     property bool showAntiCorners: true
 
     property bool contracting: false
-    readonly property bool morphing: widthSpring.running || heightSpring.running || radiusSpring.running
+    readonly property bool morphing: spring.running
+
+    IslandSpring {
+        id: spring
+        target: root.targetGeometry
+        contracting: root.contracting
+        openingFrequency: 18
+    }
 
     // Budgeted radii to prevent self-intersecting arcs
     readonly property real r: Math.max(0, Math.min(root.bottomRadius, root.pillHeight / 2, root.pillWidth / 2))
@@ -25,33 +33,6 @@ Item {
 
     width: pillWidth + (showAntiCorners ? a * 2 : 0)
     height: pillHeight
-
-    // Native springs retain momentum when a morph reverses mid-flight.
-    Behavior on pillWidth {
-        SpringAnimation {
-            id: widthSpring
-            spring: root.contracting ? 3.7 : 3.8
-            damping: root.contracting ? 0.43 : 0.36
-            epsilon: 0.25
-        }
-    }
-    Behavior on pillHeight {
-        SpringAnimation {
-            id: heightSpring
-            spring: root.contracting ? 3.7 : 3.8
-            damping: root.contracting ? 0.43 : 0.36
-            epsilon: 0.25
-        }
-    }
-
-    Behavior on bottomRadius {
-        SpringAnimation {
-            id: radiusSpring
-            spring: root.contracting ? 3.7 : 3.8
-            damping: root.contracting ? 0.43 : 0.36
-            epsilon: 0.25
-        }
-    }
 
     // 1. Fully rounded card mode (when showAntiCorners: false -> all corners rounded in)
     Rectangle {

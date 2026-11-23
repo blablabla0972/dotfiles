@@ -5,10 +5,12 @@ set -euo pipefail
 exec 9>"${XDG_RUNTIME_DIR:?}/hypr-screenshot-region.lock"
 flock -n 9 || exit 0
 
-if ! command -v satty >/dev/null; then
-    notify-send "Screenshot" "Install Satty to edit screenshots before saving."
-    exit 1
-fi
+for command in hyprpicker hyprctl jq slurp grim satty xdg-user-dir wl-copy; do
+    if ! command -v "$command" >/dev/null; then
+        notify-send "Ảnh chụp màn hình" "Thiếu lệnh $command."
+        exit 1
+    fi
+done
 
 tmp=$(mktemp -d "${XDG_RUNTIME_DIR}/hypr-screenshot.XXXXXX")
 picker=
@@ -46,7 +48,7 @@ done
 sleep 0.08
 
 # Escape cancels without changing the clipboard.
-slurp > "$tmp/geometry" &
+slurp -b '#18161188' -s '#e6c57222' -c '#e6c572ff' -w 2 > "$tmp/geometry" &
 selector=$!
 wait "$selector" || exit 0
 selector=
@@ -66,8 +68,9 @@ picker=
 # Keep the clipboard unchanged until Copy; Escape discards the temporary image.
 pictures=$(xdg-user-dir PICTURES)
 mkdir -p -- "$pictures/Screenshots"
-satty --config /dev/null --filename "$tmp/region.png" \
+GTK_THEME=Adwaita:dark satty --config /dev/null --filename "$tmp/region.png" \
     --output-filename "$pictures/Screenshots/Screenshot-%Y-%m-%d_%H-%M-%S-%f.png" \
-    --app-id local.screenshot.Editor --initial-tool arrow --early-exit all \
+    --app-id local.screenshot.Editor --title "Chỉnh sửa ảnh chụp" \
+    --initial-tool pointer --early-exit all \
     --copy-command "wl-copy --type image/png" \
     --actions-on-enter save-to-clipboard --actions-on-escape exit 9>&-

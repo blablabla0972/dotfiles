@@ -285,9 +285,10 @@ ShellRoot {
         visible: false
         screen: Quickshell.screens.find(screen => Hyprland.focusedMonitor && screen.name === Hyprland.focusedMonitor.name) || Quickshell.screens[0]
         anchors.top: true
-        margins.top: 12
+        margins.top: 20
         implicitWidth: Math.min(960, (screen?.width || 960) - 24)
-        implicitHeight: (width < 580 ? 300 : 254) + (root.detailsOpen ? 242 : 0) + (root.error ? 28 : 0)
+        implicitHeight: Math.min((screen?.height || 900) - 40,
+            (width < 580 ? 348 : 312) + (root.detailsOpen ? 264 : 0) + (root.error ? 28 : 0))
         color: "transparent"
         exclusiveZone: 0
         WlrLayershell.layer: WlrLayer.Overlay
@@ -301,7 +302,7 @@ ShellRoot {
         Rectangle {
             id: card
             anchors.fill: parent
-            radius: 16
+            radius: 22
             color: Tokens.surface_low
             border.width: 1
             border.color: Tokens.outline
@@ -316,8 +317,23 @@ ShellRoot {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 12
-                spacing: 8
+                anchors.margins: 16
+                spacing: 12
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    UiText { text: "Lịch sử clipboard"; font.pixelSize: 19; font.weight: Font.DemiBold }
+                    UiText { text: root.filtered.length + " mục"; color: Tokens.text_secondary; font.pixelSize: 12 }
+                    Item { Layout.fillWidth: true }
+                    ActionButton {
+                        icon.name: "window-close"
+                        ToolTip.text: "Đóng · Esc"
+                        implicitWidth: 32
+                        implicitHeight: 32
+                        padding: 0
+                        onClicked: Qt.quit()
+                    }
+                }
 
                 GridLayout {
                     columns: card.width < 580 ? 1 : 2
@@ -352,11 +368,6 @@ ShellRoot {
                             }
                         }
                         Item { Layout.fillWidth: true }
-                        UiText {
-                            text: root.filtered.length + " mục"
-                            color: Tokens.text_secondary
-                            font.pixelSize: 12
-                        }
                     }
 
                     RowLayout {
@@ -416,14 +427,6 @@ ShellRoot {
                             enabled: root.entries.length > 0 && !operation.running
                             onClicked: root.confirmation = "wipe"
                         }
-                        ActionButton {
-                            icon.name: "window-close"
-                            ToolTip.text: "Đóng · Esc"
-                            implicitWidth: 32
-                            implicitHeight: 32
-                            padding: 0
-                            onClicked: Qt.quit()
-                        }
                     }
                 }
 
@@ -433,7 +436,7 @@ ShellRoot {
                     Layout.fillHeight: true
                     orientation: ListView.Horizontal
                     clip: true
-                    spacing: 8
+                    spacing: 12
                     cacheBuffer: 0
                     model: root.filtered
                     currentIndex: -1
@@ -460,9 +463,9 @@ ShellRoot {
                         readonly property bool isImage: modelData.kind === "image"
                         property string thumbnail: root.thumbnails[modelData.id] || ""
 
-                        width: Math.max(160, Math.floor((history.width - 3 * history.spacing) / 4))
+                        width: Math.max(170, Math.floor((history.width - 2 * history.spacing) / 3))
                         height: history.height - 9
-                        padding: 8
+                        padding: 10
                         hoverEnabled: true
                         highlighted: history.currentIndex === index
                         Accessible.name: isImage ? "Ảnh · " + modelData.metadata : modelData.preview
@@ -488,8 +491,9 @@ ShellRoot {
                         }
 
                         background: Rectangle {
-                            radius: 10
-                            color: entryCard.hovered ? Tokens.surface_high : Tokens.surface
+                            radius: 14
+                            color: entryCard.highlighted ? Qt.tint(Tokens.surface, Qt.alpha(Tokens.accent, 0.10))
+                                : entryCard.hovered ? Tokens.surface_high : Tokens.surface
                             border.width: entryCard.highlighted || entryCard.activeFocus ? 2 : 1
                             border.color: entryCard.highlighted || entryCard.activeFocus ? Tokens.accent : Tokens.outline
                         }
@@ -499,7 +503,7 @@ ShellRoot {
                             Rectangle {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
-                                radius: 5
+                                radius: 8
                                 color: entryCard.isImage ? Tokens.background : "transparent"
                                 clip: true
                                 Image {
@@ -537,8 +541,8 @@ ShellRoot {
                                 UiText {
                                     Layout.fillWidth: true
                                     Layout.leftMargin: 4
-                                    text: entryCard.modelData.metadata
-                                        || (entryCard.modelData.kind === "link" ? "Liên kết" : "Văn bản")
+                                    text: entryCard.isImage ? "Ảnh · " + entryCard.modelData.metadata
+                                        : entryCard.modelData.metadata || (entryCard.modelData.kind === "link" ? "Liên kết" : "Văn bản")
                                     textFormat: Text.PlainText
                                     elide: Text.ElideRight
                                     color: Tokens.text_secondary
@@ -582,7 +586,7 @@ ShellRoot {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 230
+                    Layout.preferredHeight: 252
                     visible: root.detailsOpen
                     spacing: 10
 

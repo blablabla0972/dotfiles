@@ -17,30 +17,18 @@ PanelWindow {
     required property ShellScreen targetScreen
     screen: targetScreen
     color: "transparent"
-    visible: true
+    visible: targetScreen !== null
     readonly property real topGap: 6
     readonly property real idleHeight: IslandState.targetDimensions(IslandState.State.IDLE).height
     readonly property real trackingHeight: IslandState.targetDimensions(IslandState.State.EXPANDED).height
-    readonly property real dashboardHeight: Math.min(520, Math.max(1, targetScreen.height - 16))
     readonly property real extraTopGap: Math.max(0, Math.min(12,
-        targetScreen.height - Math.max(trackingHeight, dashboardHeight) - topGap - 8))
-    property real targetTopGap: topGap
-
-    Behavior on targetTopGap {
-        SpringAnimation {
-            spring: islandWindow.contracting ? 3.7 : 3.8
-            damping: islandWindow.contracting ? 0.43 : 0.36
-            epsilon: 0.05
-        }
-    }
+        (targetScreen?.height ?? 0) - Math.max(trackingHeight, dashboardDimensions.height) - topGap - 8))
+    readonly property real targetTopGap: topGapForHeight(currentDims.height)
 
     function topGapForHeight(height: real): real {
         const heightProgress = Math.max(0, Math.min(1,
             (height - idleHeight) / Math.max(1, trackingHeight - idleHeight)));
         return topGap + extraTopGap * heightProgress;
-    }
-    function updateTopGapTarget(): void {
-        targetTopGap = topGapForHeight(currentDims.height);
     }
     // Grow ahead of the pill animation; delay shrinking until the morph settles.
     readonly property real requestedLayerHeight: Math.ceil(Math.max(currentDims.height, islandShape.pillHeight)
@@ -67,15 +55,7 @@ PanelWindow {
         if (!dashboardShowing && hoverHandler.hovered && hasMedia && !activeAlert && !modalOpen)
             hoverDwell.restart();
     }
-    Component.onCompleted: {
-        updateTopGapTarget();
-        reconcileLayerHeight();
-    }
-
-    Connections {
-        target: islandWindow.targetScreen
-        function onHeightChanged(): void { islandWindow.updateTopGapTarget(); }
-    }
+    Component.onCompleted: reconcileLayerHeight()
 
     Timer {
         id: layerShrinkTimer
@@ -125,14 +105,7 @@ PanelWindow {
     readonly property string dashboardCurrentTab: dashboard.currentTab
     // Release fullscreen input when Dashboard starts closing; keep its geometry until the morph ends.
     readonly property bool modalOpen: isPinned || dashboard.expanded
-    property string dashboardOriginMode: IslandState.State.IDLE
-    property var dashboardOriginDims: IslandState.targetDimensions(IslandState.State.IDLE)
-
     function toggleDashboard(tab: string): void {
-        if (!dashboardShowing) {
-            dashboardOriginMode = activeMode;
-            dashboardOriginDims = { width: islandShape.pillWidth, height: islandShape.pillHeight };
-        }
         dashboard.toggle(tab);
     }
 
@@ -146,12 +119,14 @@ PanelWindow {
         dashboard.toggleSideDrawer(drawer);
     }
 
-    function finishDashboardClose(): void {
-        if (dashboard.closing
-            && !islandShape.morphing
-            && Math.abs(islandShape.pillWidth - currentDims.width) < 0.01
-            && Math.abs(islandShape.pillHeight - currentDims.height) < 0.01)
-            dashboard.closing = false;
+    readonly property bool dashboardCloseReady: dashboard.closing && !dashboard.expanded
+        && activeMode !== IslandState.State.DASHBOARD && !islandShape.morphing
+        && dashboardMotion.opacity === 0
+        && islandShape.pillWidth === currentDims.width && islandShape.pillHeight === currentDims.height
+    onDashboardCloseReadyChanged: {
+        if (dashboardCloseReady) Qt.callLater(() => {
+            if (islandWindow.dashboardCloseReady) dashboard.closing = false;
+        });
     }
 
     // Media bindings from native Mpris service
@@ -166,26 +141,9 @@ PanelWindow {
 
     // Synchronize dimensions based on active mode
     readonly property var dashboardDimensions: IslandState.dashboardGeometry(
-        targetScreen.width, targetScreen.height, 7)
-    readonly property var currentDims: activeMode === IslandState.State.DASHBOARD
-        ? dashboardDimensions : IslandState.targetDimensions(activeMode, activeAlert)
+        targetScreen?.width, targetScreen?.height, 7)
+    property var currentDims: IslandState.targetDimensions(IslandState.State.IDLE)
     readonly property color islandColor: Tokens.mode === "dark" ? Qt.darker(Tokens.surface, 1.65) : Tokens.surface
-    property real lastTargetWidth: IslandState.targetDimensions(IslandState.State.IDLE).width
-    property real lastTargetHeight: IslandState.targetDimensions(IslandState.State.IDLE).height
-    function reveal(mode): real {
-        if (activeMode !== mode && !(dashboard.expanded && dashboardOriginMode === mode)) return 0;
-        const notification = typeof activeAlert !== "undefined" ? activeAlert : null;
-        const dims = mode === IslandState.State.DASHBOARD
-            ? dashboardDimensions
-            : IslandState.targetDimensions(mode,
-                mode === IslandState.State.NOTIFICATION ? notification : null);
-        // Keep incoming content opaque through overshoot; fade the Dashboard origin out.
-        const direction = activeMode === mode ? (contracting ? -1 : 1) : -1;
-        const delta = Math.max(0,
-            direction * (dims.width - islandShape.pillWidth) / Math.max(1, dims.width),
-            direction * (dims.height - islandShape.pillHeight) / Math.max(1, dims.height));
-        return Math.max(0, 1 - delta * 2.5);
-    }
 
     function collapse(): void {
         hoverDwell.stop();
@@ -194,8 +152,14 @@ PanelWindow {
         isPinned = false;
         updateMode();
     }
+    property var renderedNotification: null
+    function syncNotification(): void {
+        // Keep the outgoing layout and actions intact until the fade completes.
+        if (notificationMotion.presence === 0)
+            renderedNotification = activeAlert?.type === IslandState.State.NOTIFICATION ? activeAlert : null;
+    }
     readonly property string notificationIconSource: {
-        var icon = activeAlert ? (activeAlert.appIcon || "") : "";
+        var icon = renderedNotification?.appIcon || "";
         if (!icon) return "";
         if (icon.charAt(0) === "/" || icon.indexOf(":/") >= 0 || icon.indexOf("://") >= 0) return icon;
         return Quickshell.iconPath(icon, true);
@@ -208,17 +172,15 @@ PanelWindow {
             : IslandState.targetDimensions(nextMode,
                 nextMode === IslandState.State.NOTIFICATION ? activeAlert : null);
         const modeChanged = nextMode !== activeMode;
-        const sizeChanged = Math.abs(nextDims.width - lastTargetWidth) >= 0.01
-            || Math.abs(nextDims.height - lastTargetHeight) >= 0.01;
+        const sizeChanged = nextDims.width !== currentDims.width || nextDims.height !== currentDims.height
+            || nextDims.radius !== currentDims.radius;
         if (!modeChanged && !sizeChanged) return;
         // Latch damping before retargeting, including interrupted spring motion.
         const fromHeight = islandShape ? islandShape.pillHeight : currentDims.height;
         const fromWidth = islandShape ? islandShape.pillWidth : currentDims.width;
         contracting = nextDims.height < fromHeight
             || (nextDims.height === fromHeight && nextDims.width < fromWidth);
-        lastTargetWidth = nextDims.width;
-        lastTargetHeight = nextDims.height;
-        targetTopGap = topGapForHeight(nextDims.height);
+        if (sizeChanged) currentDims = nextDims;
         if (modeChanged) activeMode = nextMode;
     }
 
@@ -236,7 +198,6 @@ PanelWindow {
             activeAlert = null;
         }
         updateMode();
-        updateTopGapTarget();
         reconcileLayerHeight();
     }
     onActiveAlertChanged: {
@@ -245,16 +206,13 @@ PanelWindow {
             hoverGrace.stop();
             hoverPreview = false;
         }
+        syncNotification();
         updateMode();
-        updateTopGapTarget();
         if (!activeAlert && hoverHandler.hovered && hasMedia && !hoverPreview
             && !modalOpen && !dashboardShowing)
             hoverDwell.restart();
     }
-    onDashboardDimensionsChanged: {
-        updateMode();
-        updateTopGapTarget();
-    }
+    onDashboardDimensionsChanged: updateMode()
 
     Timer {
         id: hoverDwell
@@ -276,7 +234,8 @@ PanelWindow {
         osdIcon = icon;
         osdKind = kind === "brightness" || kind === "microphone" ? kind : "volume";
         osdProgress = IslandState.normalizeOsdProgress(progress, osdKind);
-        activeAlert = { type: IslandState.State.OSD };
+        if (activeAlert?.type !== IslandState.State.OSD)
+            activeAlert = { type: IslandState.State.OSD };
         dismissTimer.interval = osdKind === "microphone" ? 1400 : 2200;
         dismissTimer.restart();
     }
@@ -291,7 +250,9 @@ PanelWindow {
             body: body,
             appName: appName || "",
             appIcon: appIcon || "",
-            actions: actions || []
+            actions: Array.isArray(actions)
+                ? actions.filter(action => typeof action?.id === "string" && typeof action?.text === "string")
+                : []
         };
         dismissTimer.interval = 4000;
         dismissTimer.restart();
@@ -339,7 +300,7 @@ PanelWindow {
         Item {
             id: islandContainer
             anchors.top: parent.top
-            anchors.topMargin: islandWindow.targetTopGap
+            anchors.topMargin: islandWindow.topGapForHeight(islandShape.pillHeight)
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.horizontalCenterOffset: -dashboard.drawerOffset
             width: islandShape.width
@@ -348,12 +309,10 @@ PanelWindow {
             IslandShape {
                 id: islandShape
                 anchors.centerIn: parent
-                pillWidth: islandWindow.currentDims.width
-                pillHeight: islandWindow.currentDims.height
-                bottomRadius: islandWindow.currentDims.radius
+                targetGeometry: Qt.vector3d(islandWindow.currentDims.width,
+                    islandWindow.currentDims.height, islandWindow.currentDims.radius)
                 antiCornerRadius: 0
                 contracting: islandWindow.contracting
-                onMorphingChanged: islandWindow.finishDashboardClose()
                 fillColor: islandWindow.islandColor
                 borderColor: Tokens.outline
                 showAntiCorners: false
@@ -399,10 +358,18 @@ PanelWindow {
                 clip: true
 
                 RowLayout {
-                    opacity: islandWindow.reveal(IslandState.State.IDLE)
-                    Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                    id: idleContent
+                    IslandContentMotion {
+                        id: idleMotion
+                        shape: islandShape
+                        active: islandWindow.activeMode === IslandState.State.IDLE
+                        contentWidth: idleContent.width
+                        contentHeight: idleContent.height
+                    }
+                    opacity: idleMotion.opacity
+                    scale: idleMotion.scale
                     visible: opacity > 0
-                    enabled: opacity > 0.9
+                    enabled: idleMotion.active && opacity > 0.9
                     anchors.centerIn: parent
                     spacing: 7
                     Text {
@@ -420,11 +387,19 @@ PanelWindow {
                 }
 
                 RowLayout {
+                    id: compactMediaContent
                     objectName: "compactMediaContent"
-                    opacity: islandWindow.reveal(IslandState.State.MEDIA)
-                    Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                    IslandContentMotion {
+                        id: compactMotion
+                        shape: islandShape
+                        active: islandWindow.activeMode === IslandState.State.MEDIA
+                        contentWidth: compactMediaContent.width
+                        contentHeight: compactMediaContent.height
+                    }
+                    opacity: compactMotion.opacity
+                    scale: compactMotion.scale
                     visible: opacity > 0
-                    enabled: opacity > 0.9
+                    enabled: compactMotion.active && opacity > 0.9
                     anchors.centerIn: parent
                     width: IslandState.targetDimensions(IslandState.State.MEDIA).width - 24
                     height: 28
@@ -486,8 +461,15 @@ PanelWindow {
             // Compact feedback inspired by Tide Island: a clear readout and progress ring.
             RowLayout {
                 id: osdContent
-                opacity: islandWindow.reveal(IslandState.State.OSD)
-                Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                IslandContentMotion {
+                    id: osdMotion
+                    shape: islandShape
+                    active: islandWindow.activeMode === IslandState.State.OSD
+                    contentWidth: osdContent.width
+                    contentHeight: osdContent.height
+                }
+                opacity: osdMotion.opacity
+                scale: osdMotion.scale
                 visible: opacity > 0
                 anchors.centerIn: parent
                 width: IslandState.targetDimensions(IslandState.State.OSD).width - 32
@@ -569,14 +551,25 @@ PanelWindow {
 
             // 4. Notification Alert Content
             RowLayout {
-                opacity: islandWindow.reveal(IslandState.State.NOTIFICATION)
-                Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                id: notificationContent
+                IslandContentMotion {
+                    id: notificationMotion
+                    shape: islandShape
+                    active: islandWindow.activeMode === IslandState.State.NOTIFICATION
+                        && islandWindow.renderedNotification !== null
+                        && islandWindow.renderedNotification === islandWindow.activeAlert
+                    contentWidth: notificationContent.width
+                    contentHeight: notificationContent.height
+                    onPresenceChanged: islandWindow.syncNotification()
+                }
+                opacity: notificationMotion.opacity
+                scale: notificationMotion.scale
                 visible: opacity > 0
-                enabled: opacity > 0.9
+                enabled: notificationMotion.active && opacity > 0.9
                 anchors.centerIn: parent
                 width: IslandState.targetDimensions(IslandState.State.NOTIFICATION).width - 32
                 height: IslandState.targetDimensions(IslandState.State.NOTIFICATION,
-                    islandWindow.activeAlert).height - 24
+                    islandWindow.renderedNotification).height - 24
                 spacing: 12
 
                 Rectangle {
@@ -615,9 +608,7 @@ PanelWindow {
                     Text {
                         Layout.fillWidth: true
                         textFormat: Text.PlainText
-                        text: islandWindow.activeAlert
-                            ? (islandWindow.activeAlert.appName || "Notification")
-                            : "Notification"
+                        text: islandWindow.renderedNotification?.appName || "Notification"
                         font.pixelSize: 10
                         font.weight: Font.DemiBold
                         color: Tokens.accent
@@ -625,8 +616,9 @@ PanelWindow {
                     }
 
                     Text {
+                        objectName: "notificationIslandSummary"
                         Layout.fillWidth: true
-                        text: islandWindow.activeAlert ? (islandWindow.activeAlert.summary || "Notification") : ""
+                        text: islandWindow.renderedNotification?.summary || "Notification"
                         textFormat: Text.PlainText
                         font.pixelSize: 14
                         font.bold: true
@@ -639,8 +631,8 @@ PanelWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.maximumHeight: 32
-                            textFormat: Text.PlainText
-                        text: islandWindow.activeAlert ? (islandWindow.activeAlert.body || "") : ""
+                        textFormat: Text.PlainText
+                        text: islandWindow.renderedNotification?.body || ""
                         font.pixelSize: 12
                         color: Tokens.text_secondary
                         wrapMode: Text.Wrap
@@ -650,11 +642,11 @@ PanelWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        visible: (islandWindow.activeAlert?.actions?.length ?? 0) > 0
+                        visible: (islandWindow.renderedNotification?.actions?.length ?? 0) > 0
                         spacing: 6
 
                         Repeater {
-                            model: islandWindow.activeAlert ? islandWindow.activeAlert.actions : []
+                            model: islandWindow.renderedNotification?.actions ?? []
                             delegate: Rectangle {
                                 required property var modelData
                                 Layout.fillWidth: true
@@ -679,7 +671,7 @@ PanelWindow {
                                 TapHandler {
                                     onTapped: {
                                         DesktopControls.requestNotificationAction(
-                                            islandWindow.activeAlert.notificationId, modelData.id);
+                                            islandWindow.renderedNotification.notificationId, modelData.id);
                                         islandWindow.activeAlert = null;
                                         dismissTimer.stop();
                                     }
@@ -693,11 +685,18 @@ PanelWindow {
             // 5. Expanded Media Capsule Content
             Item {
                 id: expandedMediaContent
-                opacity: islandWindow.reveal(IslandState.State.EXPANDED)
-                Behavior on opacity { enabled: targetValue === 0; NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                IslandContentMotion {
+                    id: expandedMotion
+                    shape: islandShape
+                    active: islandWindow.activeMode === IslandState.State.EXPANDED
+                    contentWidth: expandedMediaContent.width
+                    contentHeight: expandedMediaContent.height
+                }
+                opacity: expandedMotion.opacity
+                scale: expandedMotion.scale
                 visible: opacity > 0
                 // Enable visible controls during the final part of the reveal animation.
-                enabled: islandWindow.activeMode === IslandState.State.EXPANDED && opacity > 0.5
+                enabled: expandedMotion.active && opacity > 0.5
                 anchors.centerIn: parent
                 width: IslandState.targetDimensions(IslandState.State.EXPANDED).width - 40
                 height: IslandState.targetDimensions(IslandState.State.EXPANDED).height - 32
@@ -706,7 +705,7 @@ PanelWindow {
                 Timer {
                     interval: 1000
                     repeat: true
-                    running: expandedMediaContent.visible && Media.isPlaying
+                    running: expandedMotion.active && expandedMediaContent.visible && Media.isPlaying
                         && Media.activePlayer !== null && Media.activePlayer.positionSupported
                     onTriggered: {
                         if (Media.activePlayer && Media.isPlaying)
@@ -771,7 +770,7 @@ PanelWindow {
                             visible: Media.hasPlayer && Media.trackArtUrl.length > 0
                                 && status === Image.Ready
                             asynchronous: true
-                            layer.enabled: true
+                            layer.enabled: expandedMediaContent.visible && visible
                             layer.effect: MultiEffect {
                                 maskEnabled: true
                                 maskSource: expandedArtworkMask
@@ -783,7 +782,7 @@ PanelWindow {
                             anchors.fill: expandedArtwork
                             radius: 18
                             color: "white"
-                            layer.enabled: true
+                            layer.enabled: expandedArtwork.layer.enabled
                             visible: false
                         }
 
@@ -861,6 +860,7 @@ PanelWindow {
                                     color: Tokens.accent
 
                                     Behavior on width {
+                                        enabled: expandedMediaContent.visible
                                         NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
                                     }
                                 }
@@ -1109,13 +1109,15 @@ PanelWindow {
             surface: islandContainer
             shape: islandShape
             cardDimensions: islandWindow.dashboardDimensions
-            revealProgress: {
-                const base = expanded ? islandWindow.dashboardOriginDims : islandWindow.currentDims;
-                const target = islandWindow.dashboardDimensions;
-                return Math.min(
-                    IslandState.normalizedProgress(islandShape.pillHeight, base.height, target.height),
-                    IslandState.normalizedProgress(islandShape.pillWidth, base.width, target.width));
+            IslandContentMotion {
+                id: dashboardMotion
+                shape: islandShape
+                active: dashboard.expanded
+                contentWidth: islandWindow.dashboardDimensions.width
+                contentHeight: islandWindow.dashboardDimensions.height
+                revealStart: 0.22
             }
+            revealProgress: dashboardMotion.opacity
             onExpandedChanged: {
                 if (expanded) {
                     islandWindow.collapse();
@@ -1123,7 +1125,6 @@ PanelWindow {
                     islandWindow.activeAlert = null;
                 }
                 islandWindow.updateMode();
-                if (!expanded) Qt.callLater(islandWindow.finishDashboardClose);
             }
         }
     }

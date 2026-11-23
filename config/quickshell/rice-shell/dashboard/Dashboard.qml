@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import "../theme"
+import "../island" as Island
 import "../island/IslandState.js" as IslandState
 import "."
 
@@ -33,17 +34,14 @@ Item {
     }
     readonly property bool sideDrawerOpen: expanded && activeSideDrawer.length > 0
     readonly property bool drawerOverlay: !cardDimensions.sideBySide
-    property real drawerProgress: sideDrawerOpen ? 1 : 0
+    readonly property real drawerProgress: drawerSpring.position.x
     readonly property real drawerOffset: drawerOverlay ? 0
         : Math.min(156, cardDimensions.drawerWidth * 0.52) * drawerProgress
-    Behavior on drawerProgress {
-        id: drawerMotion
-        SpringAnimation {
-            id: drawerSpring
-            spring: 4.0
-            damping: drawerMotion.targetValue === 1 ? 0.34 : 0.4
-            epsilon: 0.002
-        }
+    Island.IslandSpring {
+        id: drawerSpring
+        target: Qt.vector3d(dashboardWindow.sideDrawerOpen ? 1 : 0, 0, 0)
+        contracting: !dashboardWindow.sideDrawerOpen
+        epsilon: 0.001
     }
     readonly property real activeContentHeight: {
         var loaded = currentTab === "Home" ? homeLoader.item
@@ -157,8 +155,11 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             width: dashboardWindow.cardDimensions.width
             height: dashboardWindow.cardDimensions.height
-            y: -18 * (1 - dashboardWindow.revealProgress)
-            opacity: Math.max(0, (dashboardWindow.revealProgress - 0.15) / 0.85)
+            y: -12 * (1 - dashboardWindow.revealProgress)
+            opacity: dashboardWindow.revealProgress
+            scale: 0.96 + 0.04 * opacity
+            transformOrigin: Item.Top
+            visible: opacity > 0
             enabled: dashboardWindow.expanded && opacity > 0.9
                 && !(dashboardWindow.sideDrawerOpen && dashboardWindow.drawerOverlay)
 
@@ -393,7 +394,8 @@ Item {
         }
 
         Item {
-            anchors.fill: parent
+            width: parent.width
+            height: dashboardWindow.cardDimensions.height
 
             Loader {
                 anchors.fill: parent

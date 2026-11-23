@@ -27,15 +27,18 @@ class ScreenshotWorkflowTests(unittest.TestCase):
         for fragment in (
             'flock -n 9 || exit 0',
             'for command in hyprpicker hyprctl jq slurp grim satty xdg-user-dir',
-            'notify-send "Screenshot" "$1"',
+            'notify-send "Ảnh chụp màn hình" "Thiếu lệnh $command."',
             'hyprpicker -r -z -d',
             'sleep 0.08',
-            'slurp > "$tmp/geometry" &',
+            '> "$tmp/geometry" &',
             'wait "$selector" || exit 0',
             'trap cleanup EXIT',
+            '--copy-command "wl-copy --type image/png"',
+            '--actions-on-enter save-to-clipboard',
             '--actions-on-escape exit',
         ):
             self.assertIn(fragment, source)
+        self.assertNotIn('--auto-copy', source)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,41 @@
+.root, .outer_box {
+    background-color: #181611;
+}
+
+.inner_box {
+    background-color: #100f0c;
+}
+
+.outer_box .toolbar,
+.overlay .toolbar {
+    margin: 12px 0;
+    padding: 5px 9px;
+    border: 1px solid #494234;
+    border-radius: 20px;
+    background-color: #262219;
+    color: #f3ead7;
+}
+
+.toolbar button {
+    border-radius: 10px;
+}
+
+.toolbar button:checked {
+    background-color: #473a20;
+    color: #e6c572;
+}
+
+/* Satty 0.22 places Copy, Save and Save As at the end of the top toolbar. */
+.toolbar-top > button:nth-last-child(3) {
+    background-color: #e6c572;
+    color: #291e08;
+}
+
+.toolbar-top > button:nth-last-child(3):hover {
+    background-color: #f3d691;
+}
+
+.toolbar separator {
+    margin: 5px 3px;
+    background-color: #494234;
+}

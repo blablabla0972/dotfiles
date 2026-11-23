@@ -180,12 +180,11 @@ ShellRoot {
         self.assertEqual(values["shifted"]["y"], 6)
         self.assertEqual(values["shifted"]["height"], 102)
 
-    def test_native_morph_bounces_gently_and_retargets_without_jumping(self):
+    def test_native_morph_syncs_size_and_radius_and_retargets_without_jumping(self):
         qml = """
 import QtQuick
 import Quickshell
 import "@@ISLAND_DIR@@" as Island
-import "@@STATE_URL@@" as IslandState
 
 ShellRoot {
     Item {
@@ -196,17 +195,12 @@ ShellRoot {
         property real peakHeight: 32
         property var settled: []
         property real jump: 0
-        property string activeMode: "notification"
-        property bool contracting: false
-        property string dashboardOriginMode: "idle"
-        property var islandShape: pill
-        property real lowestOpacity: 1
-        property real originOpacity: 1
-        QtObject { id: dashboard; property bool expanded: false }
-        @@REVEAL@@
+        property real largestProgressDelta: 0
+        property real reverseFrom: 0
+        property real reverseMinimum: Infinity
         Island.IslandShape {
             id: pill
-            pillWidth: 138; pillHeight: 32
+            targetGeometry: Qt.vector3d(138, 32, 16)
             showAntiCorners: false
         }
         Timer {
@@ -215,36 +209,39 @@ ShellRoot {
                 const elapsed = Date.now() - probe.started;
                 if (probe.phase === 0 && elapsed >= 100) {
                     probe.phase = 1;
-                    pill.pillWidth = 390; pill.pillHeight = 88;
+                    pill.targetGeometry = Qt.vector3d(390, 88, 24);
                 } else if (probe.phase === 1) {
                     probe.peakWidth = Math.max(probe.peakWidth, pill.pillWidth);
                     probe.peakHeight = Math.max(probe.peakHeight, pill.pillHeight);
-                    if (pill.pillWidth >= 390 && pill.pillHeight >= 88)
-                        probe.lowestOpacity = Math.min(probe.lowestOpacity, probe.reveal("notification"));
+                    const widthProgress = (pill.pillWidth - 138) / 252;
+                    const heightProgress = (pill.pillHeight - 32) / 56;
+                    const radiusProgress = (pill.bottomRadius - 16) / 8;
+                    probe.largestProgressDelta = Math.max(probe.largestProgressDelta,
+                        Math.abs(widthProgress - heightProgress), Math.abs(widthProgress - radiusProgress));
                     if (elapsed >= 1100) {
-                        probe.settled = [pill.pillWidth, pill.pillHeight];
-                        probe.activeMode = "dashboard";
-                        dashboard.expanded = true;
-                        probe.originOpacity = probe.reveal("idle");
-                        dashboard.expanded = false;
-                        probe.activeMode = "volume";
-                        probe.contracting = true;
+                        probe.settled = [pill.pillWidth, pill.pillHeight, pill.bottomRadius];
                         pill.contracting = true;
                         probe.phase = 2;
-                        pill.pillWidth = 138; pill.pillHeight = 32;
+                        pill.targetGeometry = Qt.vector3d(138, 32, 16);
                     }
                 } else if (probe.phase === 2 && elapsed >= 1180) {
-                    const width = pill.pillWidth, height = pill.pillHeight;
-                    pill.pillWidth = 244; pill.pillHeight = 48;
+                    const width = pill.pillWidth, height = pill.pillHeight, radius = pill.bottomRadius;
+                    probe.reverseFrom = width;
+                    pill.contracting = false;
+                    pill.targetGeometry = Qt.vector3d(420, 160, 26);
                     probe.jump = Math.max(Math.abs(pill.pillWidth - width),
-                                          Math.abs(pill.pillHeight - height));
+                                          Math.abs(pill.pillHeight - height),
+                                          Math.abs(pill.bottomRadius - radius));
                     probe.phase = 3;
-                } else if (probe.phase === 3 && elapsed >= 2200) {
+                } else if (probe.phase === 3 && elapsed < 2200) {
+                    probe.reverseMinimum = Math.min(probe.reverseMinimum, pill.pillWidth);
+                } else if (probe.phase === 3) {
                     console.log("NATIVE_MASK:" + JSON.stringify({
                         peakWidth: probe.peakWidth, peakHeight: probe.peakHeight,
                         settled: probe.settled, jump: probe.jump,
-                        lowestOpacity: probe.lowestOpacity, originOpacity: probe.originOpacity,
-                        final: [pill.pillWidth, pill.pillHeight]
+                        reverseFrom: probe.reverseFrom, reverseMinimum: probe.reverseMinimum,
+                        largestProgressDelta: probe.largestProgressDelta,
+                        final: [pill.pillWidth, pill.pillHeight, pill.bottomRadius]
                     }));
                     Qt.quit();
                 }
@@ -252,19 +249,18 @@ ShellRoot {
         }
     }
 }
-""".replace("@@ISLAND_DIR@@", SHAPE.parent.as_uri()).replace(
-            "@@STATE_URL@@", (SHAPE.parent / "IslandState.js").as_uri()
-        ).replace("@@REVEAL@@", qml_block(self.island, "function reveal(mode): real {"))
+""".replace("@@ISLAND_DIR@@", SHAPE.parent.as_uri())
         values = self.run_native(qml)
         self.assertGreater(values["peakWidth"], 390.5, values)
         self.assertLess(values["peakWidth"], 390 + (390 - 138) * 0.08, values)
         self.assertGreater(values["peakHeight"], 88.1, values)
         self.assertLess(values["peakHeight"], 88 + (88 - 32) * 0.08, values)
-        self.assertEqual(values["settled"], [390, 88], values)
+        self.assertEqual(values["settled"], [390, 88, 24], values)
         self.assertEqual(values["jump"], 0, values)
-        self.assertEqual(values["lowestOpacity"], 1, values)
-        self.assertEqual(values["originOpacity"], 0, values)
-        self.assertEqual(values["final"], [244, 48], values)
+        self.assertLess(values["largestProgressDelta"], 0.04, values)
+        self.assertLess(values["reverseFrom"], 390, values)
+        self.assertLess(values["reverseMinimum"], values["reverseFrom"], values)
+        self.assertEqual(values["final"], [420, 160, 26], values)
 
     def test_native_outside_tap_logic_dismisses_modal_only(self):
         scrim = self.island.index("id: scrim")
@@ -398,7 +394,68 @@ ShellRoot {
 }
 """.replace("@@HANDLER@@", handler)
         self.assertEqual(self.run_native(qml), {"closing": 0, "resumed": 1, "noMedia": 1})
+    def test_morph_advances_on_consecutive_144_hz_frames(self):
+        qml = """
+import QtQuick
+import Quickshell
+import "@@ISLAND_DIR@@" as Island
 
+ShellRoot {
+    Island.IslandSpring {
+        id: spring
+        target: Qt.vector3d(138, 32, 16)
+        Component.onCompleted: Qt.callLater(() => {
+            spring.target = Qt.vector3d(390, 88, 20);
+            const initial = spring.position.x;
+            spring.advance(1 / 144);
+            const first = spring.position.x;
+            spring.advance(1 / 144);
+            console.log("NATIVE_MASK:" + JSON.stringify({
+                initial, first, second: spring.position.x
+            }));
+            Qt.quit();
+        })
+    }
+}
+""".replace("@@ISLAND_DIR@@", SHAPE.parent.as_uri())
+        frames = self.run_native(qml)
+        self.assertLess(frames["initial"], frames["first"])
+        self.assertLess(frames["first"], frames["second"])
+        self.assertLess(frames["second"], 390)
+
+    def test_content_motion_loads_in_native_quickshell(self):
+        qml = """
+import QtQuick
+import Quickshell
+import "@@ISLAND_DIR@@" as Island
+
+ShellRoot {
+    Island.IslandShape {
+        id: pill
+        targetGeometry: Qt.vector3d(390, 88, 20)
+    }
+    Island.IslandContentMotion {
+        id: motion
+        shape: pill
+        active: true
+        contentWidth: 358
+        contentHeight: 64
+    }
+    Timer {
+        interval: 100
+        running: true
+        onTriggered: {
+            const before = motion.opacity;
+            motion.active = false;
+            console.log("NATIVE_MASK:" + JSON.stringify({
+                before, after: motion.opacity
+            }));
+            Qt.quit();
+        }
+    }
+}
+""".replace("@@ISLAND_DIR@@", SHAPE.parent.as_uri())
+        self.assertEqual(self.run_native(qml), {"before": 1, "after": 1})
 
 if __name__ == "__main__":
     unittest.main()
