@@ -132,10 +132,6 @@ void IpcServer::broadcastTargetChanged(int targetWorkspaceId) noexcept {
     sendToAllClients("TARGET_CHANGED " + std::to_string(targetWorkspaceId) + "\n");
 }
 
-void IpcServer::broadcastDropBox(const std::string& box) noexcept {
-    sendToAllClients("DROP_BOX " + box + "\n");
-}
-
 void IpcServer::broadcastPointer(const Vector2D& pointer, const Vector2D& grabAnchor) noexcept {
     sendToAllClients(std::format("DRAG_POINTER {:.2f} {:.2f} {:.4f} {:.4f}\n", pointer.x, pointer.y, grabAnchor.x, grabAnchor.y));
 }

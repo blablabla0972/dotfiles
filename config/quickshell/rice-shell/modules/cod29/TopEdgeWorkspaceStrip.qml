@@ -29,14 +29,6 @@ PanelWindow {
 
     property bool isStripVisible: false
     property int highlightedWorkspaceId: -1
-    property point dragPointer: Qt.point(0, 0)
-    property point dragAnchor: Qt.point(0.5, 0.5)
-    property var dropBox: null
-    property var wallpapers: ({})
-    property string draggedAddress: ""
-    readonly property var draggedWindow: draggedAddress
-        ? Hyprland.toplevels.values.find(window => String(window.address).replace(/^0x/, "") === draggedAddress)
-        : null
     property string socketPath: {
         var runtime = Quickshell.env("XDG_RUNTIME_DIR") || "/run/user/1000";
         var sig = Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE");
@@ -48,7 +40,7 @@ PanelWindow {
     mask: Region {}
 
     readonly property var targetMonitor: Hyprland.monitorFor(targetScreen)
-    readonly property int stripHeight: 216
+    readonly property int stripHeight: 264
     readonly property int topInset: Math.max(0, targetMonitor?.lastIpcObject?.reserved?.[1] ?? 0)
     readonly property var activeWorkspace: targetMonitor ? targetMonitor.activeWorkspace : null
     readonly property int focusedWsId: activeWorkspace ? activeWorkspace.id : 0
@@ -86,33 +78,20 @@ PanelWindow {
 
         switch (cmd) {
         case "SHOW_STRIP":
-            stripWindow.draggedAddress = arg;
             stripWindow.isStripVisible = true;
-            Hyprland.refreshToplevels();
-            wallpaperQuery.running = true;
             syncBoundsTimer.restart();
             break;
         case "HIDE_STRIP":
         case "RESET":
             stripWindow.isStripVisible = false;
             stripWindow.highlightedWorkspaceId = -1;
-            stripWindow.dropBox = null;
-            stripWindow.draggedAddress = "";
             break;
         case "TARGET_CHANGED":
         case "HIGHLIGHT":
             stripWindow.highlightedWorkspaceId = parseInt(arg) || -1;
-            stripWindow.dropBox = null;
             break;
         case "DROP_BOX":
-            stripWindow.dropBox = parts.length === 6 ? {
-                id: Number(arg),
-                rect: Qt.rect(Number(parts[2]), Number(parts[3]), Number(parts[4]), Number(parts[5]))
-            } : null;
-            break;
         case "DRAG_POINTER":
-            stripWindow.dragAnchor = parts.length === 5 ? Qt.point(Number(parts[3]), Number(parts[4])) : Qt.point(0.5, 0.5);
-            stripWindow.dragPointer = Qt.point(Number(arg), Number(parts[2]));
             break;
         default:
             console.log("[COD-29 Strip] Unknown IPC command: " + msg);
@@ -141,22 +120,6 @@ PanelWindow {
             }
         }
         ipcSocket.write("REGISTER_BOUNDS " + JSON.stringify(bounds) + "\n");
-    }
-
-    Process {
-        id: wallpaperQuery
-        command: ["awww", "query"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const wallpapers = {};
-                for (const line of text.split("\n")) {
-                    const match = line.match(/^(?::\s*)?([^:]+):.*currently displaying: image: (.+)$/);
-                    if (match && match[2].startsWith("/"))
-                        wallpapers[match[1].trim()] = "file://" + match[2].split("/").map(encodeURIComponent).join("/");
-                }
-                stripWindow.wallpapers = wallpapers;
-            }
-        }
     }
 
     // UNIX Domain Socket IPC Connection
@@ -211,16 +174,11 @@ PanelWindow {
         width: Math.min(parent.width - 48, cardsLayout.implicitWidth + 36)
         height: stripWindow.stripHeight - 16
         y: stripWindow.topInset + 8
-        opacity: stripWindow.isStripVisible ? 1.0 : 0.0
         radius: 20
         color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Math.max(0.92, Tokens.panelOpacity))
         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
         border.width: 1
         clip: true
-
-        Behavior on opacity {
-            NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-        }
 
         RowLayout {
             id: cardsLayout
@@ -241,7 +199,7 @@ PanelWindow {
                     readonly property bool isCurrent: stripWindow.focusedWsId === wsId
                     readonly property var workspace: modelData.workspace
 
-                    Layout.preferredWidth: Math.min(296, (containerBox.parent.width - 84 - (cardsRepeater.count - 1) * cardsLayout.spacing) / cardsRepeater.count)
+                    Layout.preferredWidth: Math.min(370, (containerBox.parent.width - 64 - (cardsRepeater.count - 1) * cardsLayout.spacing) / cardsRepeater.count)
                     Layout.preferredHeight: containerBox.height - 16
                     radius: 14
 
@@ -271,8 +229,6 @@ PanelWindow {
                             Layout.fillHeight: true
                             workspace: cardItem.workspace
                             strip: stripWindow
-                            live: cardItem.isTarget
-                            dropRect: stripWindow.dropBox?.id === cardItem.wsId ? stripWindow.dropBox.rect : null
                         }
 
                         Text {

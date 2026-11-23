@@ -45,7 +45,6 @@ public:
     void broadcastShowStrip(uint64_t windowToken) noexcept;
     void broadcastHideStrip() noexcept;
     void broadcastTargetChanged(int targetWorkspaceId) noexcept;
-    void broadcastDropBox(const std::string& box) noexcept;
     void broadcastPointer(const Vector2D& pointer, const Vector2D& grabAnchor) noexcept;
     void broadcastReset() noexcept;
 

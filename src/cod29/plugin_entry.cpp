@@ -13,6 +13,10 @@
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/managers/SessionLockManager.hpp>
+#include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/SceneResources.hpp>
+#include <hyprland/src/render/scene/SceneSelection.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/state/workspace/State.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
@@ -27,7 +31,7 @@
 #include <linux/input-event-codes.h>
 #include <memory>
 #include <cstring>
-#include <format>
+#include <unordered_map>
 #include <limits>
 
 namespace Cod29 {
@@ -46,7 +50,19 @@ struct DropPlacement {
     Hyprutils::Math::Vector2D point;
     CBox box;
     bool floating;
+    PHLWINDOWREF neighbor{};
+    CBox resizedTile{};
 };
+
+static CBox tileContentBox(CBox tile, const CBox& area, const ::Config::CCssGapData& gaps, const PHLWINDOW& window) {
+    const auto reserved = window->getFullWindowReservedArea();
+    const auto left = reserved.topLeft.x + (std::abs(tile.x - area.x) < 1 ? 0 : gaps.m_left);
+    const auto top = reserved.topLeft.y + (std::abs(tile.y - area.y) < 1 ? 0 : gaps.m_top);
+    const auto right = reserved.bottomRight.x + (std::abs(tile.x + tile.w - area.x - area.w) < 1 ? 0 : gaps.m_right);
+    const auto bottom = reserved.bottomRight.y + (std::abs(tile.y + tile.h - area.y - area.h) < 1 ? 0 : gaps.m_bottom);
+    tile.round();
+    return CBox{tile.x + left, tile.y + top, tile.w - left - right, tile.h - top - bottom}.round();
+}
 
 static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool tiled, const WorkspaceCard& card,
                                                   const PHLMONITOR& source, const Hyprutils::Math::Vector2D& cursor,
@@ -88,6 +104,8 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
                                           area.w - outer.m_left - outer.m_right, area.h - outer.m_top - outer.m_bottom};
     box = area;
     auto focalPoint = point;
+    PHLWINDOW neighbor;
+    CBox neighborTile;
     double distance = std::numeric_limits<double>::infinity();
     if (dwindle) {
         for (const auto& candidate : Desktop::windowState()->windows()) {
@@ -102,6 +120,7 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
             if (const auto nearest = dx * dx + dy * dy; nearest < distance) {
                 box = rect;
                 distance = nearest;
+                neighbor = candidate;
             }
         }
     }
@@ -121,20 +140,24 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
         auto& size = vertical ? box.h : box.w;
         auto& position = vertical ? box.y : box.x;
         const double split = size * fraction;
+        neighborTile = box;
+        auto& neighborSize = vertical ? neighborTile.h : neighborTile.w;
+        auto& neighborPosition = vertical ? neighborTile.y : neighborTile.x;
+        if (first)
+            neighborPosition += split;
+        neighborSize = first ? size - split : split;
         if (!first)
             position += split;
         size = first ? split : size - split;
     }
     const auto rules = workspace ? ::Config::workspaceRuleMgr()->getWorkspaceRuleFor(workspace) : std::nullopt;
     const auto inner = rules && rules->m_gapsIn ? *rules->m_gapsIn : *static_cast<::Config::CCssGapData*>(gapsIn.ptr());
-    const auto reserved = window->getFullWindowReservedArea();
-    const auto left = reserved.topLeft.x + (std::abs(box.x - area.x) < 1 ? 0 : inner.m_left);
-    const auto top = reserved.topLeft.y + (std::abs(box.y - area.y) < 1 ? 0 : inner.m_top);
-    const auto right = reserved.bottomRight.x + (std::abs(box.x + box.w - area.x - area.w) < 1 ? 0 : inner.m_right);
-    const auto bottom = reserved.bottomRight.y + (std::abs(box.y + box.h - area.y - area.h) < 1 ? 0 : inner.m_bottom);
-    box.round();
-    box = {box.x + left, box.y + top, box.w - left - right, box.h - top - bottom};
-    return DropPlacement{card.id, focalPoint, box.round(), false};
+    DropPlacement placement{card.id, focalPoint, tileContentBox(box, area, inner, window), false, {}, {}};
+    if (neighbor && !neighbor->grouping().group() && !neighbor->layoutTarget()->isPseudo()) {
+        placement.neighbor = neighbor;
+        placement.resizedTile = tileContentBox(neighborTile, area, inner, neighbor);
+    }
+    return placement;
 }
 
 class HyprlandCompositorDelegate : public ICompositorDelegate {
@@ -233,7 +256,172 @@ static CHyprSignalListener g_mouseButtonListener;
 static SP<CEventLoopTimer> g_edgeTimer;
 static std::optional<Hyprutils::Math::Vector2D> g_grabPoint;
 static std::optional<Vector2D> g_grabAnchor;
-static std::string g_dropMessage;
+using BeginRender = bool (*)(Render::IHyprRenderer*, PHLMONITOR, CRegion&, Render::eRenderMode, SP<IHLBuffer>, SP<Render::IFramebuffer>,
+                             bool, const Render::SRenderOptions&, std::optional<Monitor::CDamageRing::CTransaction>*);
+using RenderWorkspace = void (*)(Render::IHyprRenderer*, Render::CRenderContext&, PHLWORKSPACE, const Time::steady_tp&, Render::eSceneMode);
+using RenderLayer = void (*)(Render::IHyprRenderer*, Render::CRenderContext&, PHLLS, PHLMONITOR, const Time::steady_tp&, bool, bool, bool);
+static BeginRender g_beginRender = nullptr;
+static RenderWorkspace g_renderWorkspace = nullptr;
+static CFunctionHook* g_layerHook = nullptr;
+static CHyprSignalListener g_renderListener;
+
+static std::unordered_map<int, SP<Render::IFramebuffer>> g_cardFrames;
+static SP<Render::IFramebuffer> g_liveFrame;
+static SP<Render::CSceneResources> g_sceneResources;
+static int g_liveWorkspaceId = -1;
+static PHLMONITORREF g_stripMonitor;
+
+static CBox previewBox(const WorkspaceCard& card) {
+    return {card.preview.x, card.preview.y, card.preview.w, card.preview.h};
+}
+
+static void stopPreview() {
+    g_stripMonitor.reset();
+    g_cardFrames.clear();
+    g_liveWorkspaceId = -1;
+}
+
+static bool renderCard(const PHLWORKSPACE& workspace, SP<Render::IFramebuffer>& framebuffer, const DropPlacement* placement) {
+    const auto monitor = workspace->m_monitor.lock();
+    if (!monitor || !monitor->m_output)
+        return false;
+    if (!framebuffer)
+        framebuffer = g_pHyprRenderer->createFB("cod29 preview");
+    const auto size = monitor->m_pixelSize;
+    if ((!framebuffer->isAllocated() || framebuffer->m_size != size) && !framebuffer->alloc(size.x, size.y, DRM_FORMAT_ARGB8888))
+        return false;
+    framebuffer->setImageDescription(NColorManagement::DEFAULT_SRGB_IMAGE_DESCRIPTION);
+    if (!g_sceneResources)
+        g_sceneResources = makeShared<Render::CSceneResources>(
+            g_pHyprRenderer->createFB("cod29 preview blur"),
+            Render::SSceneBufferDescription{DRM_FORMAT_ARGB8888, NColorManagement::DEFAULT_SRGB_IMAGE_DESCRIPTION});
+    Render::SRenderOptions options{.sceneResources = g_sceneResources};
+    CRegion damage{CBox{{}, monitor->m_transformedSize}};
+    auto* renderer = g_pHyprRenderer.get();
+    if (!g_beginRender(renderer, monitor, damage, Render::RENDER_MODE_FULL_FAKE, nullptr, framebuffer, false, options, nullptr))
+        return false;
+
+    auto& ctx = renderer->context();
+    ctx.m_data.blockScreenShader = true;
+    ctx.m_renderingCapture = true;
+    ctx.m_blockSurfaceFeedback = true;
+    renderer->draw(ctx, CClearPassElement::SClearData{{0, 0, 0, 0}}, damage);
+    renderer->startRenderPass(ctx);
+
+    // The offscreen pass gets the proposed tile geometry; input and layout retain their real state.
+    struct RenderGeometry {
+        PHLWINDOW window;
+        CBox before;
+        RenderGeometry(const PHLWINDOW& w, const CBox& box)
+            : window(w), before(w ? CBox{w->positionAnimation()->value(), w->sizeAnimation()->value()} : CBox{}) {
+            if (window) {
+                window->positionAnimation()->value() = box.pos();
+                window->sizeAnimation()->value() = box.size();
+            }
+        }
+        ~RenderGeometry() {
+            if (window) {
+                window->positionAnimation()->value() = before.pos();
+                window->sizeAnimation()->value() = before.size();
+            }
+        }
+    };
+    const auto now = Time::steadyNow();
+    const auto target = g_layoutManager->dragController()->target();
+    auto window = placement && target ? target->window() : nullptr;
+    if (window && (!window->mapped() || window->m_workspace == workspace))
+        window.reset();
+    {
+        const auto previousWorkspace = window ? window->m_workspace : nullptr;
+        const auto previousMonitor = window ? window->m_monitor : PHLMONITORREF{};
+        const auto restoreWorkspace = Hyprutils::Utils::CScopeGuard([&] {
+            if (window) {
+                window->m_workspace = previousWorkspace;
+                window->m_monitor = previousMonitor;
+            }
+        });
+        if (window) {
+            window->m_workspace = workspace;
+            window->m_monitor = monitor;
+        }
+        const RenderGeometry incoming(window, window ? placement->box : CBox{});
+        const RenderGeometry displaced(window ? placement->neighbor.lock() : nullptr, window ? placement->resizedTile : CBox{});
+        g_renderWorkspace(renderer, ctx, workspace, now, Render::eSceneMode::WORKSPACE_WITH_SHELL);
+        renderer->endRender();
+    }
+    return true;
+}
+
+static void renderPreview(const Event::SRenderStageEvent& event) {
+    if (event.stage != RENDER_POST || g_stripMonitor != event.monitor || g_pSessionLockManager->isSessionLocked())
+        return;
+
+    const int target = g_pAdapter->getTargetWorkspaceId();
+    const auto cards = g_pAdapter->getWorkspaceCards();
+    for (const auto& card : cards) {
+        const auto box = previewBox(card);
+        if (box.empty() || !event.monitor->logicalBox().containsPoint(box.middle()) || g_cardFrames.contains(card.id))
+            continue;
+        if (const auto workspace = workspaceById(card.id)) {
+            SP<Render::IFramebuffer> frame;
+            if (renderCard(workspace, frame, nullptr)) {
+                g_cardFrames.emplace(card.id, std::move(frame));
+                g_pHyprRenderer->damageBox(box);
+            }
+            return;
+        }
+    }
+
+    const auto card = std::ranges::find_if(cards, [target](const auto& item) { return item.id == target; });
+    if (card == cards.end())
+        return;
+    const auto box = previewBox(*card);
+    const auto workspace = workspaceById(target);
+    if (box.empty() || !event.monitor->logicalBox().containsPoint(box.middle()) || !workspace)
+        return;
+    const auto& placement = g_pDelegate->placement;
+    if (renderCard(workspace, g_liveFrame, placement && placement->workspaceId == target ? &*placement : nullptr)) {
+        g_liveWorkspaceId = target;
+        const auto owner = workspace->m_monitor.lock();
+        if (owner && workspace != owner->m_activeWorkspace)
+            g_pHyprRenderer->sendFrameEventsToWorkspace(owner, workspace, Time::steadyNow());
+        g_pHyprRenderer->damageBox(box);
+    }
+}
+
+static void renderStripLayer(Render::IHyprRenderer* renderer, Render::CRenderContext& ctx, PHLLS layer, PHLMONITOR monitor,
+                             const Time::steady_tp& now, bool popups, bool lockscreen, bool workspaceScene) {
+    const bool strip = layer && layer->m_namespace == "cod29-workspace-strip";
+    // Exclude the preview's own layer from workspace renders, including other workspace captures.
+    if (strip && workspaceScene)
+        return;
+    reinterpret_cast<RenderLayer>(g_layerHook->m_original)(renderer, ctx, layer, monitor, now, popups, lockscreen, workspaceScene);
+    if (!strip || popups || lockscreen || !layer->mapped() || !layer->alphaNonZero() || g_stripMonitor != monitor ||
+        ctx.m_renderingCapture || ctx.m_mode != Render::RENDER_MODE_NORMAL ||
+        g_pSessionLockManager->isSessionLocked())
+        return;
+
+    const int target = g_pAdapter->getTargetWorkspaceId();
+    for (const auto& card : g_pAdapter->getWorkspaceCards()) {
+        if (const auto it = g_cardFrames.find(card.id); it != g_cardFrames.end()) {
+            const auto& frame = card.id == target && target == g_liveWorkspaceId ? g_liveFrame : it->second;
+            auto box = previewBox(card);
+            if (!monitor->logicalBox().containsPoint(box.middle()))
+                continue;
+            box.translate(-monitor->m_position).scale(monitor->m_scale).round();
+            renderer->addPassElement(ctx, makeUnique<CTexPassElement>(
+                CTexPassElement::SRenderData{.tex = frame->getTexture(), .box = box, .round = static_cast<int>(5 * monitor->m_scale)}));
+        }
+    }
+}
+
+static void* renderFunction(const char* symbol, const char* signature) {
+    for (const auto& match : HyprlandAPI::findFunctionsByName(g_pPluginHandle, symbol)) {
+        if (match.demangled.find(signature) != std::string::npos)
+            return match.address;
+    }
+    return nullptr;
+}
 
 static inline uint64_t currentTimestampMs() noexcept {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -259,19 +447,17 @@ static void updatePointer(const Hyprutils::Math::Vector2D& coords, uint64_t now)
                     g_pDelegate->placement = dropPlacement(target->window(), controller->draggingTiled(), *card, monitor, coords,
                                                            g_grabAnchor.value_or(Vector2D{0.5, 0.5}));
             }
-            auto message = std::to_string(targetId);
-            if (const auto& placement = g_pDelegate->placement; placement) {
-                const auto& rect = placement->box;
-                message = std::format("{} {:.2f} {:.2f} {:.2f} {:.2f}", targetId, rect.x, rect.y, rect.w, rect.h);
-            }
-            if (message != g_dropMessage) {
-                g_dropMessage = std::move(message);
-                if (targetId > 0)
-                    g_pIpcServer->broadcastDropBox(g_dropMessage);
-            }
+            const auto state = g_pAdapter->getState();
+            if (state == State::StripOpen || state == State::HoverTarget) {
+                if (g_stripMonitor != monitor)
+                    stopPreview();
+                g_stripMonitor = monitor;
+            } else if (g_stripMonitor)
+                stopPreview();
             return;
         }
     }
+    stopPreview();
     g_pAdapter->onCancel(CancelReason::MonitorRemoved);
 }
 
@@ -320,8 +506,8 @@ static bool hkDragEnd(void* thisptr) noexcept {
     if (token && (state == State::StripOpen || state == State::HoverTarget))
         updatePointer(g_pInputManager->getMouseCoordsInternal(), now);
     const bool ended = g_pAdapter->onDragEnd(thisptr, token, sourceWs, now);
+    stopPreview();
     g_pDelegate->placement.reset();
-    g_dropMessage.clear();
     return ended;
 }
 
@@ -365,11 +551,10 @@ static void onMouseMove(const Hyprutils::Math::Vector2D& coords, Event::SCallbac
 
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Cod29::g_pPluginHandle = handle;
-
     // Initialize State Machine with Config (default disabled per constraint)
     Cod29::Config cfg{};
     cfg.enabled = true; // Enabled when plugin is explicitly loaded
-    cfg.stripHeight = 216; // Matches the Rice Shell workspace strip.
+    cfg.stripHeight = 264; // Matches the Rice Shell workspace strip.
     Cod29::g_pStateMachine = std::make_unique<Cod29::StateMachine>(cfg);
 
     // Initialize Compositor Delegate
@@ -416,6 +601,17 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Cod29::g_mouseMoveListener = Event::bus()->m_events.input.mouse.move.listen(Cod29::onMouseMove);
     Cod29::g_mouseButtonListener = Event::bus()->m_events.input.mouse.button.listen(Cod29::onMouseButton);
 
+    Cod29::g_beginRender = reinterpret_cast<Cod29::BeginRender>(Cod29::renderFunction("beginRender", "Render::IHyprRenderer::beginRender("));
+    Cod29::g_renderWorkspace = reinterpret_cast<Cod29::RenderWorkspace>(
+        Cod29::renderFunction("renderWorkspace", "Render::eSceneMode)"));
+    if (Cod29::g_beginRender && Cod29::g_renderWorkspace) {
+        if (auto* address = Cod29::renderFunction("renderLayer", "Render::IHyprRenderer::renderLayer(")) {
+            Cod29::g_layerHook = HyprlandAPI::createFunctionHook(handle, address, reinterpret_cast<void*>(&Cod29::renderStripLayer));
+            if (Cod29::g_layerHook && Cod29::g_layerHook->hook())
+                Cod29::g_renderListener = Event::bus()->m_events.render.stage.listen(Cod29::renderPreview);
+        }
+    }
+
     return PLUGIN_DESCRIPTION_INFO{
         .name = "cod29_top_edge_drag",
         .description = "COD-29 Top-edge Workspace Drag for Rice Shell",
@@ -427,6 +623,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 APICALL EXPORT void PLUGIN_EXIT() {
     Cod29::g_mouseMoveListener.reset();
     Cod29::g_mouseButtonListener.reset();
+    Cod29::g_renderListener.reset();
+    if (Cod29::g_layerHook)
+        HyprlandAPI::removeFunctionHook(Cod29::g_pPluginHandle, Cod29::g_layerHook);
+    Cod29::stopPreview();
+    Cod29::g_liveFrame.reset();
+    Cod29::g_sceneResources.reset();
     g_pEventLoopManager->removeTimer(Cod29::g_edgeTimer);
     Cod29::g_edgeTimer.reset();
     if (Cod29::g_pDragEndHook) {

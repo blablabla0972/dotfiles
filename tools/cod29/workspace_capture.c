@@ -1,4 +1,6 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -124,17 +126,19 @@ static void emit_frame(const uint32_t *pixels, unsigned width, unsigned height) 
         const unsigned bits = (unsigned)rgb[i] << 16 |
             (i + 1 < length ? (unsigned)rgb[i + 1] << 8 : 0) |
             (i + 2 < length ? rgb[i + 2] : 0);
-        putchar(alphabet[bits >> 18]);
-        putchar(alphabet[bits >> 12 & 63]);
-        putchar(i + 1 < length ? alphabet[bits >> 6 & 63] : '=');
-        putchar(i + 2 < length ? alphabet[bits & 63] : '=');
+        putchar_unlocked(alphabet[bits >> 18]);
+        putchar_unlocked(alphabet[bits >> 12 & 63]);
+        putchar_unlocked(i + 1 < length ? alphabet[bits >> 6 & 63] : '=');
+        putchar_unlocked(i + 2 < length ? alphabet[bits & 63] : '=');
     }
     putchar('\n');
     fflush(stdout);
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2)
+    const bool once = argc == 3 && !strcmp(argv[2], "--once");
+    const bool preview = argc == 3 && !strcmp(argv[2], "--preview");
+    if (argc != 2 && !once && !preview)
         return 2;
     struct capture c = {.name = argv[1]};
     struct wl_display *display = wl_display_connect(NULL);
@@ -172,6 +176,8 @@ int main(int argc, char **argv) {
     close(fd);
 
     while (!c.failed && c.width == width && c.height == height) {
+        struct timespec next;
+        clock_gettime(CLOCK_MONOTONIC, &next);
         struct ext_image_copy_capture_frame_v1 *frame = ext_image_copy_capture_session_v1_create_frame(session);
         wl_proxy_add_dispatcher((struct wl_proxy *)frame, frame_event, &c, NULL);
         ext_image_copy_capture_frame_v1_attach_buffer(frame, buffer);
@@ -184,8 +190,31 @@ int main(int argc, char **argv) {
         if (c.failed || !c.ready || c.transform != WL_OUTPUT_TRANSFORM_NORMAL)
             break;
         emit_frame(pixels, width, height);
-        const struct timespec interval = {.tv_nsec = 50000000};
-        nanosleep(&interval, NULL);
+        if (once) {
+            munmap(pixels, bytes);
+            wl_display_disconnect(display);
+            return 0;
+        }
+        if (preview) {
+            // Include capture time in the frame interval and coalesce queued placement changes.
+            next.tv_nsec += 16666667;
+            if (next.tv_nsec >= 1000000000) {
+                ++next.tv_sec;
+                next.tv_nsec -= 1000000000;
+            }
+            while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL) == EINTR) {}
+            struct pollfd input = {.fd = STDIN_FILENO, .events = POLLIN};
+            int pending;
+            do {
+                pending = poll(&input, 1, 85);
+            } while (pending < 0 && errno == EINTR);
+            char requests[4096];
+            if (pending < 0 || (pending > 0 && read(STDIN_FILENO, requests, sizeof(requests)) <= 0))
+                break;
+        } else {
+            const struct timespec interval = {.tv_nsec = 50000000};
+            nanosleep(&interval, NULL);
+        }
     }
     munmap(pixels, bytes);
     wl_display_disconnect(display);
