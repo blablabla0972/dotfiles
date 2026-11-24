@@ -6,6 +6,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import Quickshell.Networking
+import Quickshell.Bluetooth
+import Quickshell.Services.UPower
 import "theme"
 import "services"
 import "bar"
@@ -283,6 +286,14 @@ ShellRoot {
         onRunningChanged: if (!running) Qt.callLater(checkStart)
     }
 
+    readonly property bool launcherWifiAvailable: Networking.wifiHardwareEnabled
+        && Networking.devices.values.some(device => device.type === DeviceType.Wifi)
+        && !Hotspot.active && !Hotspot.busy
+    readonly property bool launcherBluetoothAvailable: !!Bluetooth.defaultAdapter
+        && Bluetooth.defaultAdapter.state !== BluetoothAdapterState.Blocked
+        && Bluetooth.defaultAdapter.state !== BluetoothAdapterState.Enabling
+        && Bluetooth.defaultAdapter.state !== BluetoothAdapterState.Disabling
+
     readonly property var launcherActionStatuses: {
         const output = !Audio.available ? "Output unavailable"
             : Audio.muted ? "Muted" : Math.round(Audio.volume * 100) + "%";
@@ -295,12 +306,35 @@ ShellRoot {
             "mic-mute": !Audio.micAvailable ? "Microphone unavailable" : Audio.micMuted ? "Muted" : "On",
             "brightness-up": backlight, "brightness-down": backlight,
             "night-light": DesktopControls.nightLightActive ? "On" : "Off",
-            "awake": DesktopControls.caffeineActive ? "On" : "Off"
+            "awake": DesktopControls.caffeineActive ? "On" : "Off",
+            "volume-mute-on": output, "volume-mute-off": output,
+            "mic": Audio.micAvailable ? Math.round(Audio.micVolume * 100) + "%" : "Unavailable",
+            "mic-up": Audio.micAvailable ? Math.round(Audio.micVolume * 100) + "%" : "Unavailable",
+            "mic-down": Audio.micAvailable ? Math.round(Audio.micVolume * 100) + "%" : "Unavailable",
+            "mic-mute-on": Audio.micMuted ? "Muted" : "On", "mic-mute-off": Audio.micMuted ? "Muted" : "On",
+            "wifi": Hotspot.active ? "Used by hotspot" : Networking.wifiEnabled ? "On" : "Off",
+            "bluetooth": Bluetooth.defaultAdapter?.enabled ? "On" : "Off",
+            "hotspot": Hotspot.tileStatus,
+            "media-toggle": Media.hasPlayer ? Media.trackTitle : "No active player",
+            "media-play": Media.hasPlayer ? Media.trackTitle : "No active player",
+            "media-pause": Media.hasPlayer ? Media.trackTitle : "No active player",
+            "media-next": Media.hasPlayer ? Media.trackTitle : "No active player",
+            "media-prev": Media.hasPlayer ? Media.trackTitle : "No active player",
+            "theme-dark": Tokens.mode === "dark" ? "Current" : "",
+            "theme-light": Tokens.mode === "light" ? "Current" : "",
+            "profile-saver": PowerProfiles.profile === PowerProfile.PowerSaver ? "Current" : "",
+            "profile-balanced": PowerProfiles.profile === PowerProfile.Balanced ? "Current" : "",
+            "profile-performance": PowerProfiles.profile === PowerProfile.Performance ? "Current" : ""
         };
     }
 
     function runLauncherAction(launcher: Launcher, action: string, argument: real): void {
         if (!launcher || !launcher.visible || launcher.closing) return;
+        if (action.startsWith("settings-")) {
+            if (!root.openSettings(action.slice(9), launcher.targetScreen))
+                launcher.feedback = "Settings page unavailable";
+            return;
+        }
         switch (action) {
         case "dnd":
         case "dnd-on":
@@ -326,9 +360,93 @@ ShellRoot {
             }
             launcher.feedback = "";
             break;
+        case "volume-mute-on":
+        case "volume-mute-off":
+            if (!Audio.available || Audio.changeBusy) { launcher.feedback = "Audio unavailable or busy"; break; }
+            if (Audio.muted !== (action === "volume-mute-on")) Audio.requestOutputMute();
+            break;
         case "mic-mute":
-            if (Audio.micAvailable) Audio.toggleMicMute();
-            else launcher.feedback = "Microphone unavailable";
+        case "mic-mute-on":
+        case "mic-mute-off":
+        case "mic-up":
+        case "mic-down":
+        case "mic-set":
+            if (!Audio.micAvailable || Audio.micBusy) { launcher.feedback = "Microphone unavailable or busy"; break; }
+            if (action === "mic-mute" || action === "mic-mute-on" || action === "mic-mute-off") {
+                if (action === "mic-mute" || Audio.micMuted !== (action === "mic-mute-on")) Audio.toggleMicMute();
+            } else if (action === "mic-set") {
+                if (Number.isFinite(argument) && argument >= 0 && argument <= 100) Audio.setMicVolume(argument / 100);
+            } else Audio.setMicVolume(Audio.micVolume + (action === "mic-up" ? 0.05 : -0.05));
+            break;
+        case "media-toggle":
+        case "media-play":
+        case "media-pause":
+        case "media-next":
+        case "media-prev":
+        case "media-loop":
+            if (!Media.hasPlayer) { launcher.feedback = "No active media player"; break; }
+            if (action === "media-toggle") Media.togglePlaying();
+            else if (action === "media-play" && Media.activePlayer.canPlay && !Media.isPlaying) Media.activePlayer.play();
+            else if (action === "media-pause" && Media.activePlayer.canPause && Media.isPlaying) Media.activePlayer.pause();
+            else if (action === "media-next") Media.next();
+            else if (action === "media-prev") Media.previous();
+            else if (action === "media-loop") Media.cycleLoop();
+            break;
+        case "wifi-on":
+        case "wifi-off":
+            if (!root.launcherWifiAvailable) { launcher.feedback = "Wi-Fi unavailable or used by hotspot"; break; }
+            Networking.wifiEnabled = action === "wifi-on";
+            launcher.feedback = "Wi-Fi change requested";
+            break;
+        case "bluetooth-on":
+        case "bluetooth-off":
+            if (!root.launcherBluetoothAvailable) { launcher.feedback = "Bluetooth unavailable or busy"; break; }
+            Bluetooth.defaultAdapter.enabled = action === "bluetooth-on";
+            launcher.feedback = "Bluetooth change requested";
+            break;
+        case "theme-dark":
+        case "theme-light": {
+            const mode = action === "theme-dark" ? "dark" : "light";
+            if (Tokens.mode === mode) { launcher.feedback = "Theme already active"; break; }
+            if (ThemeCommandQueue.requestThemeMode(mode, Tokens.mode))
+                launcher.feedback = "Theme change requested";
+            else launcher.feedback = "Theme unavailable";
+            break;
+        }
+        case "profile-saver":
+        case "profile-balanced":
+        case "profile-performance":
+            if (action === "profile-performance" && !PowerProfiles.hasPerformanceProfile) {
+                launcher.feedback = "Performance profile unavailable"; break;
+            }
+            PowerProfiles.profile = action === "profile-saver" ? PowerProfile.PowerSaver
+                : action === "profile-balanced" ? PowerProfile.Balanced : PowerProfile.Performance;
+            launcher.feedback = "Power profile requested";
+            break;
+        case "session":
+            launcher.dismiss();
+            root.togglePowerMenu(launcher.targetScreen);
+            break;
+        case "lock":
+            launcher.dismiss();
+            utilityDelay.command = ["sh", "-c", "pidof hyprlock >/dev/null || exec hyprlock"];
+            utilityDelay.restart();
+            break;
+        case "workspace-next":
+        case "workspace-prev":
+        case "workspace-empty":
+        case "scratchpad":
+            launcher.dismiss();
+            if (Hyprland.usingLua) {
+                const dispatcher = action === "scratchpad" ? "hl.dsp.workspace.toggle_special()"
+                    : action === "workspace-next" ? 'hl.dsp.focus({ workspace = "m+1" })'
+                    : action === "workspace-prev" ? 'hl.dsp.focus({ workspace = "m-1" })'
+                    : 'hl.dsp.focus({ workspace = "emptym" })';
+                Hyprland.dispatch(dispatcher);
+            } else {
+                Hyprland.dispatch(action === "scratchpad" ? "togglespecialworkspace"
+                    : "workspace " + (action === "workspace-next" ? "m+1" : action === "workspace-prev" ? "m-1" : "emptym"));
+            }
             break;
         case "night-light":
         case "night-light-on":
@@ -371,12 +489,15 @@ ShellRoot {
         case "home":
         case "config":
         case "audio":
+        case "wifi":
+        case "bluetooth":
+        case "hotspot":
             if (!instanceOnScreen(islandInstances, launcher.targetScreen)) {
                 launcher.feedback = "Control Center unavailable";
                 break;
             }
             launcher.dismiss();
-            if (action === "audio") root.toggleSideDrawer("audio", launcher.targetScreen);
+            if (["audio", "wifi", "bluetooth", "hotspot"].includes(action)) root.toggleSideDrawer(action, launcher.targetScreen);
             else root.toggleDashboard(action[0].toUpperCase() + action.slice(1), launcher.targetScreen);
             break;
         case "windows": {
@@ -391,10 +512,12 @@ ShellRoot {
         }
         case "clipboard":
         case "screenshot":
+        case "screenshot-full":
         case "wallpaper": {
             const home = Quickshell.env("HOME");
             const command = action === "clipboard" ? ["qs", "-c", "clipboard-history", "-n"]
                 : action === "screenshot" ? [home + "/.config/hypr/scripts/screenshot-region.sh"]
+                : action === "screenshot-full" ? ["sh", "-c", "grim - | wl-copy --type image/png"]
                 : root.wallpaperPickerCommand();
             launcher.dismiss();
             utilityDelay.command = command;
@@ -403,8 +526,21 @@ ShellRoot {
         }
         case "clear-recents":
         case "clear-calculations":
+            if (!launcherStore.ready || !launcherStore.writable) { launcher.feedback = "History unavailable"; break; }
             launcherStore.clearHistory(action === "clear-calculations");
-            launcher.feedback = "History cleared";
+            launcher.feedback = "History clear requested";
+            break;
+        case "clear-notifications":
+            DesktopControls.clearNotificationHistory();
+            launcher.feedback = "Notification history cleared";
+            break;
+        case "regenerate-theme":
+            ThemeCommandQueue.regenerateTheme();
+            launcher.feedback = "Palette regeneration requested";
+            break;
+        case "reload-hyprland":
+            ThemeCommandQueue.reloadHyprland();
+            launcher.feedback = "Hyprland reload requested";
             break;
         case "reload":
             launcher.dismiss();
@@ -690,7 +826,24 @@ ShellRoot {
                     "volume-up": Audio.available, "volume-down": Audio.available,
                     "volume-mute": Audio.available, "mic-mute": Audio.micAvailable,
                     "brightness-up": DesktopControls.brightnessAvailable,
-                    "brightness-down": DesktopControls.brightnessAvailable
+                    "brightness-down": DesktopControls.brightnessAvailable,
+                    "volume-mute-on": Audio.available && !Audio.changeBusy,
+                    "volume-mute-off": Audio.available && !Audio.changeBusy,
+                    "mic-mute-on": Audio.micAvailable && !Audio.micBusy,
+                    "mic-mute-off": Audio.micAvailable && !Audio.micBusy,
+                    "mic-up": Audio.micAvailable && !Audio.micBusy,
+                    "mic-down": Audio.micAvailable && !Audio.micBusy,
+                    "media-toggle": Media.canToggle, "media-play": !!Media.activePlayer?.canPlay,
+                    "media-pause": !!Media.activePlayer?.canPause,
+                    "media-next": Media.canNext, "media-prev": Media.canPrev,
+                    "media-loop": !!Media.activePlayer?.loopSupported,
+                    "wifi-on": root.launcherWifiAvailable, "wifi-off": root.launcherWifiAvailable,
+                    "bluetooth-on": root.launcherBluetoothAvailable, "bluetooth-off": root.launcherBluetoothAvailable,
+                    "theme-dark": Tokens.isValid, "theme-light": Tokens.isValid,
+                    "profile-performance": PowerProfiles.hasPerformanceProfile,
+                    "clear-recents": launcherStore.ready && launcherStore.writable && launcherStore.savedRecents.length > 0,
+                    "clear-calculations": launcherStore.ready && launcherStore.writable && launcherStore.savedCalculations.length > 0,
+                    "clear-notifications": DesktopControls.notificationHistory.length > 0
                 })
                 onActionsModeChanged: {
                     if (actionsMode && !DesktopControls.brightnessAvailable)

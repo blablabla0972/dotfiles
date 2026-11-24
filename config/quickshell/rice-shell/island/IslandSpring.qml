@@ -7,29 +7,37 @@ QtObject {
 
     required property vector3d target
     property bool contracting: false
-    property real openingFrequency: 20
+    property bool mediaBounce: false
+    property real openingFrequency: 24
     property real epsilon: 0.15
     readonly property bool running: driver.running
     property vector3d position
     property vector3d velocity
     property bool initialized: false
+    property real travelWeight: 0
+    readonly property real frequency: Math.max(1, (contracting ? 29 : openingFrequency) - 6 * travelWeight)
+    readonly property real decay: frequency * (mediaBounce ? (contracting ? 0.72 : 0.62)
+        : (contracting ? 0.96 : 0.74 + 0.13 * travelWeight))
+    readonly property real oscillation: Math.sqrt(frequency * frequency - decay * decay)
 
     Component.onCompleted: {
         position = target;
         initialized = true;
     }
-    onTargetChanged: if (initialized) driver.start()
+    onTargetChanged: {
+        if (!initialized) return;
+        // Measure once per destination so the spring keeps its rhythm through reversals.
+        travelWeight = Math.min(1, target.minus(position).length() / 640);
+        driver.start();
+    }
 
     readonly property FrameAnimation driver: FrameAnimation {
-        onTriggered: spring.advance(Math.min(0.05, frameTime))
+        onTriggered: spring.advance(frameTime)
     }
 
     function advance(seconds: real): void {
         if (seconds <= 0) return;
         // Exact damped spring step. A new target keeps the rendered position and velocity.
-        const frequency = contracting ? 20 : openingFrequency;
-        const decay = frequency * (contracting ? 0.89 : 0.80);
-        const oscillation = Math.sqrt(frequency * frequency - decay * decay);
         const attenuation = Math.exp(-decay * seconds);
         const cosine = attenuation * Math.cos(oscillation * seconds);
         const sine = attenuation * Math.sin(oscillation * seconds) / oscillation;

@@ -45,7 +45,17 @@ class IslandMonitorDispatchTest(unittest.TestCase):
 Item {
     id: root
     property var islandInstances: [left, right]
-    property QtObject audio: QtObject { signal osdRequested(string icon, real progress) }
+    property QtObject audio: QtObject {
+        signal osdRequested(string icon, real progress)
+        signal volumeChanged()
+        signal micMuteChangedByBackend(bool muted)
+    }
+    QtObject {
+        id: presentationState
+        property bool enabled: true
+        function allowsOsd(kind) { return enabled; }
+    }
+    QtObject { id: launcherVolume; function acknowledge() {} }
     QtObject {
         id: fakeHyprland
         property var focusedMonitor: ({ name: "DP-2" })
@@ -86,7 +96,7 @@ Item {
 
         riceIpc.islandOsd("brightness", 0.65);
         riceIpc.islandNotify("Error", "details");
-        riceIpc.islandNotification("Hello", "body", "app", "icon");
+        riceIpc.islandNotification(1, "Hello", "body", "app", "icon", "[]");
         check(left.osds === 0 && left.alerts === 0, "unfocused monitor received feedback");
         check(right.osds === 2 && right.alerts === 2, "focused monitor missed feedback");
 
@@ -96,16 +106,20 @@ Item {
         check(left.lastProgress === 0.3 && left.lastKind === "volume", "switched Audio OSD targeted wrong state");
 
         riceIpc.islandOsd("volume", 0.3);
-        riceIpc.islandNotification("Hello", "body", "app", "icon");
+        riceIpc.islandNotification(1, "Hello", "body", "app", "icon", "[]");
         check(left.osds === 2 && left.alerts === 1, "focus switch failed");
         check(right.osds === 2 && right.alerts === 2, "previous monitor received feedback");
 
+        presentationState.enabled = false;
+        audio.osdRequested("volume", 0.7);
+        check(left.osds === 2 && right.osds === 2, "Disabled OSD reached a monitor");
+        presentationState.enabled = true;
         fakeHyprland.focusedMonitor = null;
         riceIpc.islandNotify("Fallback", "body");
         check(left.alerts === 2 && right.alerts === 2, "fallback must target one monitor");
         root.islandInstances = [];
         riceIpc.islandOsd("brightness", 0.9);
-        riceIpc.islandNotification("None", "body", "app", "icon");
+        riceIpc.islandNotification(2, "None", "body", "app", "icon", "[]");
         check(left.osds === 2 && right.osds === 2, "detached monitors received feedback");
         Qt.exit(73);
     });

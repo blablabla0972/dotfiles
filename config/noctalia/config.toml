@@ -209,7 +209,7 @@ widget_order = [ "media_main" ]
         background_padding = 14.0
 
 [wallpaper]
-directory = "~/Ảnh/Wallpaper"
+directory = "~/Pictures/Wallpaper"
 edge_smoothness = 0.65
 enabled = false
 transition = [ "disc" ]

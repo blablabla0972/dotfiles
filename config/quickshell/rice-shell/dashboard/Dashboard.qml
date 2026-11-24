@@ -18,24 +18,34 @@ Item {
     property bool expanded: false
     property bool closing: false
     property real revealProgress: 0
-    property real tabEntranceProgress: 1
-    readonly property real tabEntranceOffset: 10 * (1 - tabEntranceProgress)
+    readonly property real headerReveal: Math.min(1, revealProgress / 0.70)
+    readonly property real bodyReveal: Math.max(0, Math.min(1, (revealProgress - 0.24) / 0.76))
+    property string renderedTab: "Home"
+    property real tabEntranceProgress: expanded && renderedTab !== currentTab ? 0 : 1
+    Behavior on tabEntranceProgress {
+        id: tabFade
+        NumberAnimation {
+            duration: tabFade.targetValue === 0 ? 85 : 165
+            easing.type: tabFade.targetValue === 0 ? Easing.InQuad : Easing.OutCubic
+        }
+    }
+    onTabEntranceProgressChanged: if (tabEntranceProgress === 0) showCurrentTab()
     property string activeSideDrawer: ""
     property string renderedSideDrawer: ""
     onCurrentTabChanged: {
         activeSideDrawer = "";
+        if (!expanded) showCurrentTab();
+    }
+    function showCurrentTab(): void {
+        renderedTab = currentTab;
         tabScroll.contentY = 0;
-        if (expanded) {
-            tabEntranceProgress = 0;
-            tabEntranceAnimation.restart();
-        }
     }
     onActiveSideDrawerChanged: {
         if (activeSideDrawer.length > 0) renderedSideDrawer = activeSideDrawer;
     }
     readonly property bool sideDrawerOpen: expanded && activeSideDrawer.length > 0
     readonly property bool drawerOverlay: !cardDimensions.sideBySide
-    readonly property real drawerProgress: drawerSpring.position.x
+    readonly property real drawerProgress: Math.max(0, Math.min(1, drawerSpring.position.x))
     readonly property real drawerOffset: drawerOverlay ? 0
         : Math.min(156, cardDimensions.drawerWidth * 0.52) * drawerProgress
     Island.IslandSpring {
@@ -45,10 +55,10 @@ Item {
         epsilon: 0.001
     }
     readonly property real activeContentHeight: {
-        var loaded = currentTab === "Home" ? homeLoader.item
-            : currentTab === "Power" ? powerLoader.item
-            : currentTab === "System" ? systemLoader.item
-            : currentTab === "Notifications" ? notificationLoader.item : configLoader.item;
+        var loaded = renderedTab === "Home" ? homeLoader.item
+            : renderedTab === "Power" ? powerLoader.item
+            : renderedTab === "System" ? systemLoader.item
+            : renderedTab === "Notifications" ? notificationLoader.item : configLoader.item;
         return loaded ? Math.max(0, loaded.implicitHeight) : 370;
     }
     readonly property bool connectivityLoaded: connectivityLoader.item !== null
@@ -60,16 +70,6 @@ Item {
         if (expanded) Qt.callLater(() => {
             if (dashboardWindow.expanded) dashboardWindow.forceActiveFocus();
         });
-    }
-
-    NumberAnimation {
-        id: tabEntranceAnimation
-        target: dashboardWindow
-        property: "tabEntranceProgress"
-        from: 0
-        to: 1
-        duration: 210
-        easing.type: Easing.OutCubic
     }
 
     Keys.onEscapePressed: (event) => {
@@ -156,12 +156,8 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             width: dashboardWindow.cardDimensions.width
             height: dashboardWindow.cardDimensions.height
-            y: -12 * (1 - dashboardWindow.revealProgress)
-            opacity: dashboardWindow.revealProgress
-            scale: 0.96 + 0.04 * opacity
-            transformOrigin: Item.Top
-            visible: opacity > 0
-            enabled: dashboardWindow.expanded && opacity > 0.9
+            visible: dashboardWindow.revealProgress > 0
+            enabled: dashboardWindow.expanded && dashboardWindow.revealProgress > 0.9
                 && !(dashboardWindow.sideDrawerOpen && dashboardWindow.drawerOverlay)
 
             ColumnLayout {
@@ -172,126 +168,59 @@ Item {
                 anchors.rightMargin: 18
                 spacing: 12
 
-                // Header: Branding, Tabs, and Dismiss Button
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 12
+                    spacing: 8
+                    opacity: dashboardWindow.headerReveal
+                    transform: Translate { y: -8 * (1 - dashboardWindow.headerReveal) }
 
-                    // Left Branding / Title
-                    Row {
-                        spacing: 8
-                        Layout.alignment: Qt.AlignVCenter
-
-                        Rectangle {
-                            width: 26
-                            height: 26
-                            radius: 13
-                            color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-                            anchors.verticalCenter: parent.verticalCenter
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "󰍹"
-                                font.pixelSize: 14
-                                color: Tokens.accent
-                            }
-                        }
-
-                        Text {
-                            visible: dashboardWindow.cardDimensions.width >= 680
-                            text: "Control Center"
-                            font.pixelSize: 13
-                            font.bold: true
-                            color: Tokens.text_primary
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
+                    Text {
+                        visible: dashboardWindow.cardDimensions.width >= 680
+                        text: qsTr("Control Center")
+                        font.pixelSize: 17
+                        font.weight: Font.DemiBold
+                        color: Tokens.text_primary
                     }
-
                     Item { Layout.fillWidth: true }
 
-                    // Center Tab Navigation Pills
-                    Row {
-                        spacing: 6
-                        Layout.alignment: Qt.AlignHCenter
-
-                        Repeater {
-                            model: [
-                                { id: "Home", name: "Home", icon: "󰋜" },
-                                { id: "Notifications", name: "Alerts", icon: "󰂚" },
-                                { id: "System", name: "System", icon: "󰍹" },
-                                { id: "Power", name: "Power", icon: "󰁹" },
-                                { id: "Config", name: "Config", icon: "󰒓" }
-                            ]
-
-                            Rectangle {
-                                id: tabPill
-                                required property var modelData
-                                readonly property bool isSelected: dashboardWindow.currentTab === modelData.id
-
-                                width: tabRow.implicitWidth + 24
-                                height: 30
-                                radius: 15
-                                color: isSelected ? Tokens.accent : (tabHover.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.8) : "transparent")
-                                border.color: isSelected ? "transparent" : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
-                                border.width: isSelected ? 0 : 1
-
-                                Behavior on color { ColorAnimation { duration: 160 } }
-                                Behavior on border.color { ColorAnimation { duration: 160 } }
-
-                                Row {
-                                    id: tabRow
-                                    anchors.centerIn: parent
-                                    spacing: 6
-
-                                    Text {
-                                        text: tabPill.modelData.icon
-                                        font.pixelSize: 12
-                                        color: tabPill.isSelected ? Tokens.on_accent : Tokens.text_primary
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        Behavior on color { ColorAnimation { duration: 160 } }
-                                    }
-
-                                    Text {
-                                        visible: dashboardWindow.cardDimensions.width >= 680
-                                        text: tabPill.modelData.name
-                                        font.pixelSize: 12
-                                        font.bold: true
-                                        color: tabPill.isSelected ? Tokens.on_accent : Tokens.text_primary
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        Behavior on color { ColorAnimation { duration: 160 } }
-                                    }
-                                }
-
-                                HoverHandler { id: tabHover }
-                                TapHandler {
-                                    onTapped: dashboardWindow.currentTab = tabPill.modelData.id
-                                }
-                            }
-                        }
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    // Right Close Button
                     Rectangle {
-                        width: 28
-                        height: 28
-                        radius: 14
-                        color: closeHover.hovered ? Qt.rgba(Tokens.danger.r, Tokens.danger.g, Tokens.danger.b, 0.2) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.6)
-                        border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
-                        border.width: 1
-
-                        Text {
+                        implicitWidth: tabs.implicitWidth + 6
+                        implicitHeight: tabs.implicitHeight + 6
+                        radius: height / 2
+                        color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.8)
+                        Row {
+                            id: tabs
                             anchors.centerIn: parent
-                            text: "󰅖"
-                            font.pixelSize: 14
-                            color: closeHover.hovered ? Tokens.danger : Tokens.text_secondary
+                            spacing: 2
+                            Repeater {
+                                model: [
+                                    { id: "Home", name: qsTr("Home"), icon: "󰋜" },
+                                    { id: "Notifications", name: qsTr("Alerts"), icon: "󰂚" },
+                                    { id: "System", name: qsTr("System"), icon: "󰍹" },
+                                    { id: "Power", name: qsTr("Power"), icon: "󰁹" },
+                                    { id: "Config", name: qsTr("Config"), icon: "󰒓" }
+                                ]
+                                Island.IslandButton {
+                                    required property var modelData
+                                    text: modelData.name
+                                    glyph: dashboardWindow.cardDimensions.width >= 680 ? text : modelData.icon
+                                    horizontalPadding: dashboardWindow.cardDimensions.width >= 680 ? 12 : 6
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                    prominent: dashboardWindow.currentTab === modelData.id
+                                    Accessible.role: Accessible.PageTab
+                                    Accessible.selected: prominent
+                                    onClicked: dashboardWindow.currentTab = modelData.id
+                                }
+                            }
                         }
+                    }
 
-                        HoverHandler { id: closeHover }
-                        TapHandler {
-                            onTapped: dashboardWindow.dismiss()
-                        }
+                    Item { Layout.fillWidth: true }
+                    Island.IslandButton {
+                        text: qsTr("Close Control Center")
+                        glyph: "󰅖"
+                        onClicked: dashboardWindow.dismiss()
                     }
                 }
 
@@ -304,9 +233,11 @@ Item {
                         id: tabStage
                         anchors.fill: parent
                         clip: true
-                        opacity: dashboardWindow.tabEntranceProgress
-                        enabled: dashboardWindow.tabEntranceProgress >= 0.8
-                        transform: Translate { y: dashboardWindow.tabEntranceOffset }
+                        opacity: dashboardWindow.tabEntranceProgress * dashboardWindow.bodyReveal
+                        enabled: dashboardWindow.renderedTab === dashboardWindow.currentTab && opacity >= 0.8
+                        transform: Translate {
+                            y: -14 * (1 - dashboardWindow.bodyReveal) + 4 * (1 - dashboardWindow.tabEntranceProgress)
+                        }
 
                         Flickable {
                             id: tabScroll
@@ -315,7 +246,7 @@ Item {
                             contentWidth: width
                             contentHeight: Math.max(height, dashboardWindow.activeContentHeight)
                             boundsBehavior: Flickable.StopAtBounds
-                            interactive: (dashboardWindow.currentTab !== "Home" || dashboardWindow.cardDimensions.width < 820)
+                            interactive: (dashboardWindow.renderedTab !== "Home" || dashboardWindow.cardDimensions.width < 820)
                                 && contentHeight > height
 
                             Item {
@@ -326,8 +257,7 @@ Item {
                                 Loader {
                                     id: homeLoader
                                     anchors.fill: parent
-                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "Home"
-                                    visible: dashboardWindow.currentTab === "Home"
+                                    active: dashboardWindow.visible && dashboardWindow.renderedTab === "Home"
                                     sourceComponent: Home {
                                         onRequestSideDrawer: (type) => dashboardWindow.toggleSideDrawer(type)
                                     }
@@ -336,32 +266,28 @@ Item {
                                 Loader {
                                     id: systemLoader
                                     anchors.fill: parent
-                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "System"
-                                    visible: dashboardWindow.currentTab === "System"
+                                    active: dashboardWindow.visible && dashboardWindow.renderedTab === "System"
                                     sourceComponent: System {}
                                 }
 
                                 Loader {
                                     id: powerLoader
                                     anchors.fill: parent
-                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "Power"
-                                    visible: dashboardWindow.currentTab === "Power"
+                                    active: dashboardWindow.visible && dashboardWindow.renderedTab === "Power"
                                     source: "Power.qml"
                                 }
 
                                 Loader {
                                     id: notificationLoader
                                     anchors.fill: parent
-                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "Notifications"
-                                    visible: dashboardWindow.currentTab === "Notifications"
+                                    active: dashboardWindow.visible && dashboardWindow.renderedTab === "Notifications"
                                     sourceComponent: NotificationCenter {}
                                 }
 
                                 Loader {
                                     id: configLoader
                                     anchors.fill: parent
-                                    active: dashboardWindow.visible && dashboardWindow.currentTab === "Config"
-                                    visible: dashboardWindow.currentTab === "Config"
+                                    active: dashboardWindow.visible && dashboardWindow.renderedTab === "Config"
                                     sourceComponent: Config {
                                         onRequestSettings: dashboardWindow.requestSettings()
                                     }
@@ -378,17 +304,16 @@ Item {
     Item {
         id: sideDrawerContainer
         anchors.top: morphContainer.top
-        x: (dashboardWindow.drawerOverlay ? morphContainer.x
-            : morphContainer.x + morphContainer.width + 12)
-            + 20 * (1 - dashboardWindow.drawerProgress)
+        x: morphContainer.x + (dashboardWindow.drawerOverlay
+            ? 24 * (1 - dashboardWindow.drawerProgress)
+            : morphContainer.width + 12 * dashboardWindow.drawerProgress)
         width: dashboardWindow.drawerOverlay ? dashboardWindow.cardDimensions.width
             : dashboardWindow.cardDimensions.drawerWidth
         height: morphContainer.height
         clip: true
         visible: dashboardWindow.sideDrawerOpen || drawerSpring.running
         enabled: dashboardWindow.sideDrawerOpen
-        opacity: Math.max(0, Math.min(1, dashboardWindow.drawerProgress))
-        transform: Translate { y: 8 * (1 - dashboardWindow.drawerProgress) }
+        opacity: dashboardWindow.drawerProgress * dashboardWindow.bodyReveal
 
         // Absorb inner clicks
         MouseArea {

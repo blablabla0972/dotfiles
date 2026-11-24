@@ -99,7 +99,7 @@ class IslandLayerHeightTest(unittest.TestCase):
         self.assertIn("if (!islandWindow.isPinned && !islandWindow.dashboardShowing)", self.source)
         self.assertIn("bottom: islandWindow.isPinned || islandWindow.dashboardShowing", self.source)
         self.assertIn("item: islandWindow.modalOpen ? scrim : null", self.source)
-        self.assertIn("width: islandShape.pillWidth", self.source)
+        self.assertIn("width: islandWindow.modalOpen ? 0 : islandShape.pillWidth", self.source)
         self.assertIn("width: 900", STATE.read_text())
         self.assertIn("height: 520", STATE.read_text())
 

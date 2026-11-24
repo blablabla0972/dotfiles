@@ -147,6 +147,15 @@ ShellRoot {
             const idle = sample();
             isPinned = true;
             const pinned = sample();
+            islandContainer.x = 270;
+            islandContainer.y = 18;
+            islandShape.pillWidth = 500;
+            islandShape.pillHeight = 200;
+            const pinnedDuringMorph = sample();
+            islandContainer.x = 320;
+            islandContainer.y = 0;
+            islandShape.pillWidth = 300;
+            islandShape.pillHeight = 90;
             isPinned = false;
             dashboard.expanded = true;
             const expanded = sample();
@@ -157,7 +166,7 @@ ShellRoot {
             const closed = sample();
             islandContainer.y = 18;
             const shifted = sample();
-            console.log("NATIVE_MASK:" + JSON.stringify({idle, pinned, expanded, closing, closed, shifted}));
+            console.log("NATIVE_MASK:" + JSON.stringify({idle, pinned, pinnedDuringMorph, expanded, closing, closed, shifted}));
             Qt.quit();
         }
     }
@@ -175,6 +184,8 @@ ShellRoot {
             with self.subTest(state=state):
                 self.assertTrue(values[state]["fullscreen"])
                 self.assertEqual(values[state]["bottomRadius"], 0)
+        self.assertEqual(values["pinned"], values["pinnedDuringMorph"],
+                         "fullscreen region must not track animated capsule geometry")
         self.assertTrue(values["closing"]["showing"])
         self.assertFalse(values["closing"]["modal"])
         self.assertEqual(values["shifted"]["y"], 6)
@@ -394,6 +405,187 @@ ShellRoot {
 }
 """.replace("@@HANDLER@@", handler)
         self.assertEqual(self.run_native(qml), {"closing": 0, "resumed": 1, "noMedia": 1})
+    def test_notification_icon_decode_is_bounded(self):
+        import struct
+        import zlib
+
+        def chunk(kind, data):
+            return (struct.pack(">I", len(data)) + kind + data
+                    + struct.pack(">I", zlib.crc32(kind + data)))
+
+        with tempfile.TemporaryDirectory() as directory:
+            icon = Path(directory) / "large.png"
+            icon.write_bytes(b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", struct.pack(">IIBBBBB", 1024, 1024, 8, 2, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress((b"\0" + b"\xff\0\0" * 1024) * 1024))
+                + chunk(b"IEND", b""))
+            image = qml_block(self.island, "Image {\n                            id: notificationAppIcon")
+            qml = """
+import QtQuick
+import Quickshell
+ShellRoot {
+    Item {
+        id: islandWindow
+        property string notificationIconSource: "@@ICON@@"
+        @@IMAGE@@
+        Timer {
+            interval: 50; repeat: true; running: true
+            onTriggered: {
+                if (notificationAppIcon.status !== Image.Ready) return;
+                console.log("NATIVE_MASK:" + JSON.stringify({
+                    width: notificationAppIcon.sourceSize.width,
+                    height: notificationAppIcon.sourceSize.height
+                }));
+                Qt.quit();
+            }
+        }
+    }
+}
+""".replace("@@IMAGE@@", image).replace("@@ICON@@", icon.as_uri())
+            sizes = self.run_native(qml)
+            self.assertLessEqual(sizes["width"], 96)
+            self.assertLessEqual(sizes["height"], 96)
+            self.assertGreaterEqual(sizes["width"], 24)
+            self.assertGreaterEqual(sizes["height"], 24)
+
+    def test_media_prewarms_before_hover_morph_and_reuses_item(self):
+        loader = qml_block(self.island, "Loader {\n                    id: expandedMediaContent")
+        dwell = qml_block(self.island, "Timer {\n        id: hoverDwell")
+        qml = """
+pragma ComponentBehavior: Bound
+import QtQuick
+import QtQuick.Window
+import QtQuick.Layouts
+import QtQuick.Effects
+import QtQuick.Templates as T
+import Quickshell
+import "@@ISLAND_DIR@@"
+import "@@ISLAND_DIR@@/IslandState.js" as IslandState
+import "@@ROOT@@/theme"
+import "@@ROOT@@/services"
+ShellRoot {
+    Window {
+        width: 800; height: 600; visible: true
+        Item {
+            id: islandWindow
+            anchors.fill: parent
+            property string activeMode: "media"
+            property bool hasMedia: true
+            property bool isPinned: false
+            property bool modalOpen: false
+            property bool dashboardShowing: false
+            property var activeAlert: null
+            property bool hoverPreview: false
+            onHoverPreviewChanged: activeMode = hoverPreview ? "expanded" : "media"
+            function capsuleWidth(mode) { return IslandState.targetDimensions(mode).width; }
+            property var warmItem: null
+            property bool warm: false
+            property bool early: false
+            property bool expanded: false
+            property bool reused: false
+            property bool cold: false
+            property int phase: 0
+            IslandShape {
+                id: islandShape
+                showAntiCorners: false
+                targetGeometry: islandWindow.hoverPreview ? Qt.vector3d(420, 160, 26) : Qt.vector3d(232, 32, 16)
+            }
+            QtObject { id: hoverHandler; property bool hovered: false }
+            @@DWELL@@
+            @@LOADER@@
+            Timer {
+                interval: 55; running: true; repeat: true
+                onTriggered: {
+                    if (islandWindow.phase === 0) {
+                        islandWindow.cold = expandedMediaContent.item === null;
+                        hoverHandler.hovered = true;
+                        hoverDwell.restart();
+                    } else if (islandWindow.phase === 1) {
+                        islandWindow.warm = expandedMediaContent.status === Loader.Loading
+                            || expandedMediaContent.status === Loader.Ready;
+                        islandWindow.early = !islandWindow.hoverPreview;
+                    } else if (islandWindow.phase === 2) {
+                        islandWindow.warmItem = expandedMediaContent.item;
+                    } else if (islandWindow.phase === 3) {
+                        islandWindow.expanded = islandWindow.hoverPreview;
+                        islandWindow.reused = islandWindow.warmItem !== null
+                            && islandWindow.warmItem === expandedMediaContent.item;
+                        hoverHandler.hovered = false;
+                        islandWindow.hoverPreview = false;
+                    } else if (islandWindow.phase === 12) {
+                        console.log("NATIVE_MASK:" + JSON.stringify({
+                            cold: islandWindow.cold, warm: islandWindow.warm, early: islandWindow.early,
+                            expanded: islandWindow.expanded, reused: islandWindow.reused,
+                            unloaded: expandedMediaContent.item === null,
+                            dwell: hoverDwell.interval, enterDuration: expandedMotion.enterDuration
+                        }));
+                        Qt.quit();
+                    }
+                    islandWindow.phase++;
+                }
+            }
+        }
+    }
+}
+""".replace("@@ISLAND_DIR@@", SHAPE.parent.as_uri()).replace(
+            "@@ROOT@@", SHAPE.parent.parent.as_uri()).replace(
+            "@@DWELL@@", dwell).replace("@@LOADER@@", loader)
+        values = self.run_native(qml)
+        self.assertTrue(values["cold"], values)
+        self.assertTrue(values["early"], values)
+        self.assertTrue(values["warm"], values)
+        self.assertTrue(values["expanded"], values)
+        self.assertTrue(values["reused"], values)
+        self.assertTrue(values["unloaded"], values)
+        self.assertLessEqual(values["dwell"], 110)
+        self.assertLessEqual(values["enterDuration"], 160)
+
+    def test_media_spring_has_visible_bounce_in_both_directions(self):
+        qml = """
+import QtQuick
+import Quickshell
+import "@@ISLAND_DIR@@" as Island
+ShellRoot {
+    Island.IslandSpring {
+        id: spring
+        target: Qt.vector3d(232, 32, 16)
+        Component.onCompleted: Qt.callLater(() => {
+            if (spring.mediaBounce !== undefined) spring.mediaBounce = true;
+            spring.target = Qt.vector3d(420, 160, 26);
+            let peak = 232, openFrames = 0;
+            while (spring.running && openFrames < 144) {
+                spring.advance(1 / 144);
+                peak = Math.max(peak, spring.position.x);
+                openFrames++;
+            }
+            spring.contracting = true;
+            spring.target = Qt.vector3d(232, 32, 16);
+            let trough = 420, minHeight = 160, closeFrames = 0;
+            while (spring.running && closeFrames < 144) {
+                spring.advance(1 / 144);
+                trough = Math.min(trough, spring.position.x);
+                minHeight = Math.min(minHeight, spring.position.y);
+                closeFrames++;
+            }
+            console.log("NATIVE_MASK:" + JSON.stringify({
+                peak, trough, minHeight, openFrames, closeFrames,
+                restWidth: spring.position.x, restHeight: spring.position.y
+            }));
+            Qt.quit();
+        })
+    }
+}
+""".replace("@@ISLAND_DIR@@", SHAPE.parent.as_uri())
+        values = self.run_native(qml)
+        self.assertGreater(values["peak"], 420 + 188 * 0.06, values)
+        self.assertLess(values["peak"], 420 + 188 * 0.12, values)
+        self.assertLess(values["trough"], 232 - 188 * 0.025, values)
+        self.assertGreaterEqual(values["minHeight"], 26, values)
+        self.assertGreaterEqual(values["openFrames"], 70, values)
+        self.assertLess(values["openFrames"], 85, values)
+        self.assertLess(values["closeFrames"], 80, values)
+        self.assertEqual((values["restWidth"], values["restHeight"]), (232, 32))
+
     def test_morph_advances_on_consecutive_144_hz_frames(self):
         qml = """
 import QtQuick

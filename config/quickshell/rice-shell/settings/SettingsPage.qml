@@ -37,7 +37,7 @@ ColumnLayout {
     signal openWallpaper()
     signal requestRoute(string route)
 
-    spacing: compact ? 16 : 22
+    spacing: compact ? 14 : 20
     readonly property color card: Qt.tint(Tokens.surface, Qt.alpha(Tokens.surface_high, 0.53))
     readonly property color rule: Qt.tint(card, Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.58))
     readonly property color softAccent: Qt.tint(card, Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.16))
@@ -62,7 +62,7 @@ ColumnLayout {
             id: heading
             Layout.fillWidth: true
             text: root.page.label
-            font.pixelSize: 32
+            font.pixelSize: 29
             font.weight: Font.DemiBold
             wrapMode: Text.Wrap
             Accessible.role: Accessible.Heading
@@ -135,6 +135,13 @@ ColumnLayout {
                 target: Tokens
                 function onParsedDataChanged(): void { wallpaper.refresh(); }
             }
+            Label {
+                text: qsTr("Personalization")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
+            }
             SettingRow {
                 id: wallpaperRow
                 objectName: "wallpaper"
@@ -156,7 +163,7 @@ ColumnLayout {
                         Layout.fillWidth: true
                         Layout.maximumWidth: 260
                         Layout.preferredWidth: 260
-                        Layout.preferredHeight: 132
+                        Layout.preferredHeight: 124
                         Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
                         color: Tokens.surface
                         clip: true
@@ -360,7 +367,7 @@ ColumnLayout {
                 }
             }
             Label {
-                text: qsTr("Interface")
+                text: qsTr("Interface & accessibility")
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
                 color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
@@ -450,6 +457,13 @@ ColumnLayout {
             }
             ReadCommand { id: gammaTool; argv: ["gammastep", "-V"]; jsonResponse: false }
 
+            Label {
+                text: qsTr("Screen configuration")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
+            }
             SettingRow {
                 objectName: "displays"
                 stacked: true
@@ -461,17 +475,12 @@ ColumnLayout {
                     onRefreshRequested: Hyprland.refreshMonitors()
                 }
             }
-            SettingRow {
-                objectName: "night-light"
-                label: qsTr("Night Light")
-                description: DesktopControls.nightLightError || (gammaTool.error ? qsTr("Night Light service is unavailable.")
-                    : qsTr("Use warmer display colors in this session."))
-                detail: SettingsToggle {
-                    Accessible.name: qsTr("Night Light")
-                    enabled: !!gammaTool.value
-                    checked: DesktopControls.nightLightRequested
-                    onToggled: DesktopControls.toggleNightLight()
-                }
+            Label {
+                text: qsTr("Brightness & color")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
             }
             SettingRow {
                 objectName: "brightness"
@@ -506,6 +515,18 @@ ColumnLayout {
                     }
                 }
             }
+            SettingRow {
+                objectName: "night-light"
+                label: qsTr("Night Light")
+                description: DesktopControls.nightLightError || (gammaTool.error ? qsTr("Night Light service is unavailable.")
+                    : qsTr("Use warmer display colors in this session."))
+                detail: SettingsToggle {
+                    Accessible.name: qsTr("Night Light")
+                    enabled: !!gammaTool.value
+                    checked: DesktopControls.nightLightRequested
+                    onToggled: DesktopControls.toggleNightLight()
+                }
+            }
         }
     }
 
@@ -520,6 +541,62 @@ ColumnLayout {
                 printErrors: false
             }
 
+            Label {
+                text: qsTr("Window layout")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
+            }
+            SettingRow {
+                objectName: "gaps"
+                stacked: true
+                label: qsTr("Window spacing")
+                description: qsTr("Adjust tiled window gaps and borders in Hyprland.")
+                detail: WindowLayoutSettings { store: root.layoutState }
+            }
+            SettingRow {
+                objectName: "window-effects"
+                stacked: true
+                label: qsTr("Window effects")
+                description: qsTr("Values currently reported by Hyprland.")
+                detail: GridLayout {
+                    columns: width >= 520 ? 4 : 2
+                    columnSpacing: 12
+                    rowSpacing: 8
+                    Repeater {
+                        model: [
+                            ["rounding", qsTr("Corner radius")], ["blur", qsTr("Blur")],
+                            ["shadows", qsTr("Shadows")], ["animation", qsTr("Animations")]
+                        ]
+                        delegate: ColumnLayout {
+                            id: effect
+                            required property var modelData
+                            readonly property var backendValue: root.layoutState?.snapshot?.effects?.[modelData[0]]
+                            Layout.fillWidth: true
+                            spacing: 3
+                            Label {
+                                text: effect.modelData[1]
+                                color: Registry.readable(Tokens.text_secondary, root.card, 4.5)
+                                wrapMode: Text.Wrap
+                            }
+                            Label {
+                                text: typeof effect.backendValue === "number" ? qsTr("%1 px").arg(effect.backendValue)
+                                    : typeof effect.backendValue === "boolean" ? (effect.backendValue ? qsTr("On") : qsTr("Off"))
+                                    : qsTr("Unavailable")
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+                }
+            }
+            Label {
+                text: qsTr("Workspaces")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
+            }
             SettingRow {
                 objectName: "workspaces"
                 stacked: true
@@ -564,47 +641,12 @@ ColumnLayout {
                     }
                 }
             }
-            SettingRow {
-                objectName: "gaps"
-                stacked: true
-                label: qsTr("Window spacing")
-                description: qsTr("Adjust tiled window gaps and borders in Hyprland.")
-                detail: WindowLayoutSettings { store: root.layoutState }
-            }
-            SettingRow {
-                objectName: "window-effects"
-                stacked: true
-                label: qsTr("Window effects")
-                description: qsTr("Values currently reported by Hyprland.")
-                detail: GridLayout {
-                    columns: width >= 520 ? 4 : 2
-                    columnSpacing: 12
-                    rowSpacing: 8
-                    Repeater {
-                        model: [
-                            ["rounding", qsTr("Corner radius")], ["blur", qsTr("Blur")],
-                            ["shadows", qsTr("Shadows")], ["animation", qsTr("Animations")]
-                        ]
-                        delegate: ColumnLayout {
-                            id: effect
-                            required property var modelData
-                            readonly property var backendValue: root.layoutState?.snapshot?.effects?.[modelData[0]]
-                            Layout.fillWidth: true
-                            spacing: 3
-                            Label {
-                                text: effect.modelData[1]
-                                color: Registry.readable(Tokens.text_secondary, root.card, 4.5)
-                                wrapMode: Text.Wrap
-                            }
-                            Label {
-                                text: typeof effect.backendValue === "number" ? qsTr("%1 px").arg(effect.backendValue)
-                                    : typeof effect.backendValue === "boolean" ? (effect.backendValue ? qsTr("On") : qsTr("Off"))
-                                    : qsTr("Unavailable")
-                                font.weight: Font.DemiBold
-                            }
-                        }
-                    }
-                }
+            Label {
+                text: qsTr("Advanced")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
             }
             SettingRow {
                 id: rulesSection
@@ -913,6 +955,13 @@ ColumnLayout {
             }
             ReadCommand { id: profiles; argv: ["powerprofilesctl", "get"]; jsonResponse: false }
             ReadCommand { id: inhibit; argv: ["systemd-inhibit", "--version"]; jsonResponse: false }
+            Label {
+                text: qsTr("Battery & performance")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
+            }
             SettingRow {
                 objectName: "battery"
                 label: qsTr("Battery")
@@ -946,6 +995,13 @@ ColumnLayout {
                         PowerProfiles.profile = currentValue;
                     }
                 }
+            }
+            Label {
+                text: qsTr("Sleep & lock")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
             }
             SettingRow {
                 objectName: "awake"
@@ -1251,6 +1307,13 @@ ColumnLayout {
                     }
                 }
             }
+            Label {
+                text: qsTr("System status")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
+            }
             SettingRow {
                 objectName: "diagnostics"
                 stacked: true
@@ -1293,24 +1356,12 @@ ColumnLayout {
                     }
                 }
             }
-            Repeater {
-                model: maintenancePage.actions
-                delegate: SettingRow {
-                    id: operationRow
-                    required property var modelData
-                    objectName: modelData.id
-                    label: modelData.label
-                    description: modelData.summary
-                    detail: SettingsActionButton {
-                        text: operationRow.label + qsTr("…")
-                        Accessible.name: operationRow.label
-                        enabled: modelData.id !== "regenerate-theme" || maintenanceGenerator.loaded
-                        onClicked: {
-                            confirmOperation.operation = operationRow.modelData;
-                            confirmOperation.open();
-                        }
-                    }
-                }
+            Label {
+                text: qsTr("Preferences & backups")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
             }
             SettingRow {
                 objectName: "settings-preferences"
@@ -1349,6 +1400,32 @@ ColumnLayout {
                         visible: !!root.preferences?.importPreview
                         text: qsTr("Review")
                         onClicked: reviewPreferences.open()
+                    }
+                }
+            }
+            Label {
+                text: qsTr("Maintenance actions")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Registry.readable(Tokens.text_secondary, Tokens.background, 4.5)
+                Accessible.role: Accessible.Heading
+            }
+            Repeater {
+                model: maintenancePage.actions
+                delegate: SettingRow {
+                    id: operationRow
+                    required property var modelData
+                    objectName: modelData.id
+                    label: modelData.label
+                    description: modelData.summary
+                    detail: SettingsActionButton {
+                        text: operationRow.label + qsTr("…")
+                        Accessible.name: operationRow.label
+                        enabled: modelData.id !== "regenerate-theme" || maintenanceGenerator.loaded
+                        onClicked: {
+                            confirmOperation.operation = operationRow.modelData;
+                            confirmOperation.open();
+                        }
                     }
                 }
             }
@@ -1417,7 +1494,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     text: row.label
                     wrapMode: Text.Wrap
-                    font.pixelSize: 15
+                    font.pixelSize: 14
                     font.weight: Font.DemiBold
                     color: Registry.readable(Tokens.text_primary, root.card, 4.5)
                 }

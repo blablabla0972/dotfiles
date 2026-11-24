@@ -35,7 +35,7 @@ for (const input of ["vol " + "9".repeat(400), "vol 37 extra", "backlight 60 ext
     assert.equal(row.action, undefined, input);
     assert.equal(row.argument, undefined, input);
 }
-assert.deepEqual(findActions("shutdown"), []);
+assert.deepEqual(findActions("shutdown").map(item => item.action), ["session"]);
 for (const input of ["dnd on", "DND ON", "Do Not Disturb ON"])
     assert.equal(findActions(input, {dnd: "Off"})[0].action, "dnd-on", input);
 for (const input of ["dnd off", "DND OFF", "Do Not Disturb OFF"])
@@ -67,4 +67,21 @@ for (const id of ["home", "config", "notifications", "system", "power", "clipboa
 const unavailable = findActions("system", {}, {system: false})[0];
 assert.equal(unavailable.action, "system");
 assert.equal(unavailable.disabled, true);
+for (const [input,id] of [["wifi on","wifi-on"],["wi-fi off","wifi-off"],["bluetooth off","bluetooth-off"],
+    ["media next","media-next"],["dark mode","theme-dark"],["mic 50","mic-set"],
+    ["settings-display","settings-display"],["workspace next","workspace-next"],["tat may","session"]])
+    assert.equal(findActions(input)[0].action,id,input);
+assert.equal(findActions("mic 50")[0].argument,50);
+for (const input of ["mic 101","mic -1","mic 50 extra","mic 999999999999999999999999999"])
+    assert.equal(findActions(input)[0].disabled,true,input);
+assert.equal(findActions("wifi off")[0].confirm,true);
+assert.equal(findActions("bluetooth off")[0].confirm,true);
+assert.equal(findActions("clear-notifications")[0].confirm,true);
+assert.equal(findActions("wifi on",{},{"wifi-on":false})[0].disabled,true);
+assert.equal(findActions("mic 50",{},{"mic-up":false})[0].disabled,true);
+assert.equal(findActions("media-next",{},{"media-next":false})[0].disabled,true);
+assert.equal(new Set(actions.map(item=>item.action)).size,actions.length);
+assert(actions.every(item=>item.category && item.icon));
+assert(findActions("").every(item=>item.category));
+assert(!actions.some(item=>["shutdown","reboot","logout"].includes(item.action)));
 """], check=True)

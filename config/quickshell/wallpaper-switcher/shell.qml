@@ -336,7 +336,7 @@ PanelWindow {
     // Resolve once before building the model; NUL preserves whitespace in filenames.
     Process {
         id: currentWallpaperQuery
-        command: ["find", "-L", Quickshell.env("HOME") + "/Ảnh/Wallpaper", "-maxdepth", "1",
+        command: ["find", "-L", Quickshell.env("HOME") + "/Pictures/Wallpaper", "-maxdepth", "1",
             "-type", "f", "!", "-name", ".*", "-regextype", "posix-extended",
             "-iregex", ".*\\.(png|jpg|jpeg|webp)", "-samefile", root.configHome + "/hypr/current_wallpaper",
             "-print0", "-quit"]
@@ -346,10 +346,10 @@ PanelWindow {
         }
     }
 
-    // Đọc ảnh từ thư mục ~/Ảnh/Wallpaper
+    // Đọc ảnh từ thư mục ~/Pictures/Wallpaper
     FolderListModel {
         id: folderModel
-        folder: root.localFileUrl(Quickshell.env("HOME") + "/Ảnh/Wallpaper")
+        folder: root.localFileUrl(Quickshell.env("HOME") + "/Pictures/Wallpaper")
         nameFilters: ["*.png", "*.jpg", "*.jpeg", "*.webp"]
         caseSensitive: false
         showDirs: false

@@ -44,7 +44,7 @@ PanelWindow {
     }
     readonly property color internetStatusColor: Networking.connectivity === NetworkConnectivity.Full
         ? Tokens.accent
-        : Tokens.text_secondary
+        : Networking.connectivity === NetworkConnectivity.None ? Tokens.danger : Tokens.text_secondary
 
     Component.onCompleted: {
         if (Networking.canCheckConnectivity) Networking.checkConnectivity();
@@ -139,32 +139,41 @@ PanelWindow {
 
             // Internet connectivity
             Rectangle {
+                id: internetPill
                 objectName: "bar-connectivity"
                 visible: barRoot.presentation.showConnectivity
                 Layout.alignment: Qt.AlignVCenter
                 height: 24
-                implicitWidth: internetContent.implicitWidth + 14
-                radius: 8
+                implicitWidth: internetContent.implicitWidth + 16
+                radius: height / 2
                 color: internetHover.hovered
                     ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-                    : "transparent"
+                    : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7)
+                border.width: 1
+                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                 Behavior on color { ColorAnimation { duration: 150 } }
 
-                RowLayout {
+                Accessible.role: Accessible.Button
+                Accessible.name: "Network · " + barRoot.internetStatusText
+                Accessible.onPressAction: barRoot.requestSideDrawer("wifi")
+
+                Row {
                     id: internetContent
                     anchors.centerIn: parent
-                    spacing: 5
+                    spacing: 6
 
                     Text {
-                        text: Networking.connectivity === NetworkConnectivity.Full ? "󰤨" : "󰤮"
-                        font.pixelSize: 12
-                        color: barRoot.internetStatusColor
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: ""
+                        font.pixelSize: 13
+                        color: Tokens.text_primary
                     }
 
-                    Text {
-                        text: barRoot.internetStatusText
-                        font.pixelSize: 10
-                        font.bold: true
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 6
+                        height: width
+                        radius: width / 2
                         color: barRoot.internetStatusColor
                     }
                 }
@@ -172,6 +181,31 @@ PanelWindow {
                 HoverHandler { id: internetHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: barRoot.requestSideDrawer("wifi")
+                }
+
+                PopupWindow {
+                    anchor.item: internetPill
+                    anchor.edges: Edges.Bottom
+                    anchor.gravity: Edges.Bottom
+                    visible: internetPill.visible && internetHover.hovered
+                    implicitWidth: internetTooltip.implicitWidth + 16
+                    implicitHeight: 26
+                    color: "transparent"
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 8
+                        color: Tokens.surface_high
+                        border.color: Tokens.outline
+
+                        Text {
+                            id: internetTooltip
+                            anchors.centerIn: parent
+                            text: internetPill.Accessible.name
+                            font.pixelSize: 11
+                            color: Tokens.text_primary
+                        }
+                    }
                 }
             }
 
