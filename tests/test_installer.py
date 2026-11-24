@@ -394,7 +394,7 @@ class InstallerSafetyTest(unittest.TestCase):
         self.assertFalse((self.home / '.config/systemd').exists(), 'Default install should not link systemd')
         # Core configs should be linked
         self.assertTrue((self.home / '.config/hypr').is_symlink())
-        self.assertTrue((self.home / '.config/noctalia').is_symlink())
+        self.assertFalse((self.home / '.config/noctalia').is_symlink())
         self.assertTrue((self.home / '.local/bin/toggle-desktop').is_symlink())
 
         # When explicitly requested or with --all, systemd is linked
@@ -550,7 +550,7 @@ class InstallerSafetyTest(unittest.TestCase):
         default_lines = [line for line in help_text.splitlines() if 'Mặc định' in line]
         self.assertTrue(len(default_lines) >= 1)
         for line in default_lines:
-            self.assertEqual(line.count('noctalia'), 1, f"Duplicated noctalia in default help line: {line}")
+            self.assertNotIn('noctalia', line)
             self.assertFalse(line.rstrip().endswith('bin).'), f"Default line suggests literal 'bin' selector: {line}")
         # Literal 'bin' must not be suggested as a selector; scripts in bin/ should be distinguished
         self.assertIn('bin/', help_text)

@@ -91,13 +91,13 @@ echo "notifications=${ENABLE_NOTIFICATIONS:-unset}" >> "$TRACE"
         self.assertNotIn("--no-duplicate", trace)
         self.assertNotIn("noctalia", trace)
 
-    def test_failed_start_falls_back_only_after_rice_instance_is_gone(self):
+    def test_failed_start_does_not_launch_legacy_shell(self):
         with tempfile.TemporaryDirectory(prefix="rice-autostart-fallback-") as directory:
             base = Path(directory)
             self.make_stubs(base)
             result, trace = self.run_start(base, {"RICE_TEST_START_MODE": "missing"})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("noctalia -d", trace)
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("noctalia", trace)
 
         with tempfile.TemporaryDirectory(prefix="rice-autostart-unhealthy-") as directory:
             base = Path(directory)
@@ -118,7 +118,7 @@ echo "notifications=${ENABLE_NOTIFICATIONS:-unset}" >> "$TRACE"
         self.assertIn("notifications=0", trace)
         self.assertNotIn("noctalia", trace)
 
-    def test_missing_quickshell_uses_noctalia_fallback(self):
+    def test_missing_quickshell_fails_without_legacy_shell(self):
         with tempfile.TemporaryDirectory(prefix="rice-autostart-missing-") as directory:
             base = Path(directory)
             stubs = self.make_stubs(base)
@@ -129,8 +129,8 @@ echo "notifications=${ENABLE_NOTIFICATIONS:-unset}" >> "$TRACE"
                 (no_quickshell / name).chmod(0o755)
             (no_quickshell / "bash").symlink_to(shutil.which("bash"))
             result, trace = self.run_start(base, path=str(no_quickshell))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("noctalia -d", trace)
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("noctalia", trace)
 
     @unittest.skipUnless(shutil.which("quickshell"), "Quickshell required")
     def test_notification_loader_defaults_on_and_can_be_disabled(self):

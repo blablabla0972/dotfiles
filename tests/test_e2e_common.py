@@ -34,7 +34,7 @@ class E2EEnvironment:
         (templates / "builtin.toml").write_text(
             '[templates.hyprland]\n'
             'input_path = "hyprland/hyprland.lua"\n'
-            'output_path = "$XDG_CONFIG_HOME/hypr/noctalia.lua"\n',
+            'output_path = "$XDG_CONFIG_HOME/hypr/rice-theme.lua"\n',
             encoding="utf-8",
         )
         (templates / "hyprland/hyprland.lua").write_text("-- rendered template\n", encoding="utf-8")
@@ -120,7 +120,7 @@ if len(cmd) > 0 and cmd[0] == "theme":
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 with open(dst, "w", encoding="utf-8") as df:
                     df.write("-- rendered template\n")
-    target_lua = os.path.join(home, ".config/hypr/noctalia.lua")
+    target_lua = os.path.join(home, ".config/hypr/rice-theme.lua")
     if os.path.exists(os.path.dirname(target_lua)):
         with open(target_lua, "w", encoding="utf-8") as lf:
             lf.write("-- rendered template\n")
@@ -155,7 +155,7 @@ if cmd[:2] == ["msg", "wallpaper-set"]:
             wf.write(cmd[2])
     sys.exit(0)
 if cmd[:2] == ["msg", "templates-apply"]:
-    target_lua = os.path.join(home, ".config/hypr/noctalia.lua")
+    target_lua = os.path.join(home, ".config/hypr/rice-theme.lua")
     if os.path.exists(os.path.dirname(target_lua)):
         with open(target_lua, "w", encoding="utf-8") as lf:
             lf.write("-- rendered template\n")
@@ -254,7 +254,7 @@ if "--config" in sys.argv:
         if out_p:
             os.makedirs(os.path.dirname(out_p), exist_ok=True)
             ref_content = None
-            ref = os.path.join(os.environ.get("DOTFILES_REPO", ""), "config/noctalia/palettes/matugen.json")
+            ref = os.path.join(os.environ.get("DOTFILES_REPO", ""), "config/rice/theme/matugen.json")
             if os.path.exists(ref):
                 try:
                     with open(ref, "r", encoding="utf-8") as rf:

@@ -71,7 +71,7 @@ PanelWindow {
 
     FileView {
         id: paletteFile
-        path: root.configHome + "/noctalia/palettes/matugen.json"
+        path: root.configHome + "/rice/theme/matugen.json"
         watchChanges: true
         printErrors: false
         onLoaded: root.loadPalette()

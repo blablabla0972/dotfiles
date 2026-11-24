@@ -29,7 +29,7 @@ class ThemeSyncTest(unittest.TestCase):
         self.wallpaper = root / 'wallpaper.png'
         self.wallpaper.write_bytes(b'image fixture')
         self.outputs = [self.config / p for p in ('hypr/colors.conf', 'micro/colorschemes/adaptive.micro',
-                        'noctalia/palettes/matugen.json', 'kitty/themes/noctalia.conf')]
+                        'rice/theme/matugen.json', 'kitty/themes/rice.conf')]
         for p in self.outputs:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text('dark')
@@ -55,19 +55,8 @@ class ThemeSyncTest(unittest.TestCase):
         # token derivation/transaction boundary is covered in test_adaptive_transaction.
         patch.object(theme, 'stage_adaptive_theme', side_effect=lambda w, c, mode: (
             json.dumps({'mode': mode}).encode(), hashlib.sha256(mode.encode()).hexdigest())).start()
-        patch.object(theme, 'stage_native', side_effect=self.stage_native).start()
-        patch.object(theme, 'quiesce_shell', return_value=False).start()
 
     def command(self, argv):
-        if argv[:3] == ['noctalia', 'config', 'export']:
-            return f'[theme]\nmode = "{self.mode}"\nsource = "wallpaper"\nmatugen_palette = "matugen"\n'
-        if argv[:2] == ['noctalia', 'msg']:
-            if argv[2] == 'wallpaper-get': return self.selected
-            if argv[2] == 'theme-mode-get': return self.mode
-            if argv[2] == 'templates-apply':
-                self.outputs[-1].write_text(self.mode)
-                if self.fail_templates: raise RuntimeError('injected template failure')
-            return ''
         if argv[0] in ('swww', 'awww', 'magick'):
             self.backend_changes.append(argv)
             raise AssertionError('Mode sync must not change wallpaper or thumbnail')
@@ -75,12 +64,11 @@ class ThemeSyncTest(unittest.TestCase):
         if argv[0] == 'hyprctl': return ''
         raise AssertionError(f'Unexpected external command: {argv}')
 
-    def palette_for(self, wallpaper, config):
-        for p in self.outputs[:-1]: p.write_text(self.mode)
+    def palette_for(self, wallpaper, config, **kwargs):
+        for p in self.outputs: p.write_text(self.mode)
+        if self.fail_templates: raise RuntimeError("injected render failure")
         return {}, {'theme': {'source': 'wallpaper', 'matugen_palette': 'matugen'}}, [], True, self.mode
 
-    def stage_native(self, *args):
-        return {str(self.outputs[-1]): hashlib.sha256(self.mode.encode()).hexdigest()}
 
     def run_mode_event(self):
         # Missing CLI support must fail as a result, not as a test import error.
@@ -94,84 +82,11 @@ class ThemeSyncTest(unittest.TestCase):
         self.assertEqual((self.config / 'hypr/current_wallpaper').resolve(), self.wallpaper)
         self.assertEqual(self.backend_changes, [])
 
-    def test_mode_event_is_not_suppressed_by_a_wallpaper_transaction(self):
-        request = {'wallpaper': str(self.wallpaper), 'mode': 'dark', 'expires': theme.time.time() + 45,
-                   'palette': hashlib.sha256(self.outputs[-2].read_bytes()).hexdigest()}
-        (self.runtime / 'noctalia-matugen-request.json').write_text(json.dumps(request))
-        self.assertEqual(self.run_mode_event(), 0)
-        self.assertEqual(self.outputs[-1].read_text(), 'light')
 
-    def test_wallpaper_request_in_another_mode_does_not_skip_sync(self):
-        request = {'wallpaper': str(self.wallpaper), 'mode': 'dark', 'expires': theme.time.time() + 45,
-                   'palette': hashlib.sha256(self.outputs[-2].read_bytes()).hexdigest()}
-        (self.runtime / 'noctalia-matugen-request.json').write_text(json.dumps(request))
-        theme.wallpaper_changed(self.config, self.state, self.runtime)
-        self.assertEqual(self.outputs[-1].read_text(), 'light')
 
-    def test_malformed_wallpaper_requests_do_not_block_theme_sync(self):
-        marker = self.runtime / 'noctalia-matugen-request.json'
-        invalid = [[], None, 'invalid'] + [
-            {'wallpaper': str(self.wallpaper), 'expires': value} for value in ('broken', None, [], {})]
-        for request in invalid:
-            with self.subTest(request=request):
-                for output in self.outputs:
-                    output.write_text('dark')
-                marker.write_text(json.dumps(request))
-                with patch('sys.argv', [str(SCRIPT), '--wallpaper-changed']), contextlib.redirect_stderr(io.StringIO()):
-                    self.assertEqual(theme.main(), 0)
-                self.assertEqual([p.read_text() for p in self.outputs], ['light'] * len(self.outputs))
 
-    def test_matching_wallpaper_transaction_marker_skips_duplicate_theme_work(self):
-        request = {'wallpaper': str(self.wallpaper), 'mode': self.mode, 'expires': theme.time.time() + 45,
-                   'palette': hashlib.sha256(self.outputs[-2].read_bytes()).hexdigest()}
-        (self.runtime / 'noctalia-matugen-request.json').write_text(json.dumps(request))
-        with (self.runtime / 'noctalia-wallpaper-apply.lock').open('a') as owner:
-            theme.fcntl.flock(owner, theme.fcntl.LOCK_EX)
-            theme.wallpaper_changed(self.config, self.state, self.runtime)
-        self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
 
-    def test_orphan_wallpaper_marker_does_not_skip_sync(self):
-        # An interrupted apply prepared the palette but never applied templates.
-        self.palette_for(self.wallpaper, self.config)
-        request = {'wallpaper': str(self.wallpaper), 'mode': self.mode,
-                   'expires': theme.time.time() + 45,
-                   'palette': hashlib.sha256(self.outputs[-2].read_bytes()).hexdigest()}
-        (self.runtime / 'noctalia-matugen-request.json').write_text(json.dumps(request))
-        theme.wallpaper_changed(self.config, self.state, self.runtime)
-        self.assertEqual([p.read_text() for p in self.outputs], ['light'] * len(self.outputs))
 
-    def test_queued_mode_event_reconciles_a_different_native_wallpaper(self):
-        newer = self.wallpaper.parent / 'newer.png'
-        newer.write_bytes(b'new selection')
-        self.selected = str(newer)
-        # A superseded apply restored the old backend/link, preserving native intent.
-        for native_enabled in (True, False):
-            with self.subTest(native_enabled=native_enabled):
-                link = self.config / 'hypr/current_wallpaper'
-                theme.atomic_link(link, str(self.wallpaper))
-                backend = []
-
-                def command(argv):
-                    if argv[:2] == ['swww', 'img']:
-                        backend.append(argv[2])
-                        return ''
-                    return self.command(argv)
-
-                def palette_for(*args):
-                    palette, config, argv, changed, mode = self.palette_for(*args)
-                    config['wallpaper'] = {'enabled': native_enabled}
-                    return palette, config, argv, changed, mode
-
-                with patch.object(theme, 'command', side_effect=command), \
-                     patch.object(theme, 'palette_for', side_effect=palette_for):
-                    self.assertEqual(self.run_mode_event(), 0)
-                    self.assertEqual(backend, [] if native_enabled else [str(newer)])
-                    backend.clear()
-                    self.assertEqual(self.run_mode_event(), 0)
-                self.assertEqual(link.resolve(), newer)
-                self.assertEqual(backend, [])
-                self.assertEqual(self.selected, str(newer))
-                self.assertEqual(self.settings.read_text(), 'mode = "light"\n')
 
     def test_repeated_mode_switches_leave_the_latest_palette(self):
         for mode in ['light', 'dark', 'light']:
@@ -213,11 +128,6 @@ class ThemeSyncTest(unittest.TestCase):
                 self.assertEqual(ini[section]['gtk-icon-theme-name' if app.startswith('gtk') else 'icon_theme'], 'Papirus')
                 self.assertEqual(target.stat().st_mode & 0o777, 0o640)
 
-    def test_failed_mode_event_restores_files_without_reverting_user_mode(self):
-        self.fail_templates = True
-        self.assertEqual(self.run_mode_event(), 1)
-        self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
-        self.assertEqual(self.settings.read_text(), 'mode = "light"\n')
 
     def test_failed_event_removes_a_new_micro_colorscheme(self):
         micro = self.config / 'micro/colorschemes/adaptive.micro'
@@ -246,7 +156,6 @@ class ThemeSyncTest(unittest.TestCase):
 
                 diagnostics = io.StringIO()
                 with patch.object(theme, 'command', side_effect=command), \
-                     patch.object(theme, 'quiesce_shell', return_value=True), \
                      patch.object(theme.subprocess, 'Popen') as restart, \
                      contextlib.redirect_stderr(diagnostics):
                     with self.assertRaises(RuntimeError) as caught:
@@ -255,72 +164,27 @@ class ThemeSyncTest(unittest.TestCase):
                 self.assertEqual(loaded, ['dark', 'light', 'dark'])
                 self.assertEqual(checks, ['light'] if recovery_error == 'reload' else ['light', 'dark'])
                 self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
-                restart.assert_called_once()
+                restart.assert_not_called()
                 if recovery_error:
                     self.assertIn(f'recovery {recovery_error} failed', diagnostics.getvalue())
 
     def test_event_rollback_without_compositor_session_does_not_reload(self):
         self.fail_templates = True
-        with patch.dict(os.environ), patch.object(theme, 'command', side_effect=self.command) as command:
+        with patch.dict(os.environ), patch.object(theme, 'command', side_effect=self.command) as command, patch('shutil.which', return_value=None):
             os.environ.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
-            with self.assertRaisesRegex(RuntimeError, 'injected template failure'):
+            with self.assertRaisesRegex(RuntimeError, 'injected render failure'):
                 theme.wallpaper_changed(self.config, self.state, self.runtime, mode_changed=True)
         self.assertFalse(any(call.args[0][0] == 'hyprctl' for call in command.call_args_list))
         self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
 
-    def test_failed_snapshot_restore_skips_reload_but_still_restarts_shell(self):
-        self.fail_templates = True
-        with patch.object(theme, 'command', side_effect=self.command) as command, \
-             patch.object(theme, 'quiesce_shell', return_value=True), \
-             patch.object(theme.Snapshot, 'restore', side_effect=OSError('restore failed')), \
-             patch.object(theme.subprocess, 'Popen') as restart:
-            with self.assertRaisesRegex(OSError, 'restore failed'):
-                theme.wallpaper_changed(self.config, self.state, self.runtime, mode_changed=True)
-        self.assertFalse(any(call.args[0][0] == 'hyprctl' for call in command.call_args_list))
-        restart.assert_called_once()
 
-    def test_wallpaper_rollback_preserves_a_newer_user_mode(self):
-        self.mode = 'dark'
-        self.settings.write_text('mode = "dark"\n')
-        original = self.command
-        def command(argv):
-            if argv[0] == 'swww': return ''
-            return original(argv)
-        def change_mode(*args):
-            self.mode = 'light'
-            self.settings.write_text('mode = "light"\n')
-            raise RuntimeError('newer mode selected')
-        with patch.object(theme, 'command', side_effect=command), \
-             patch.object(theme, 'wait_for_templates', side_effect=change_mode), \
-             patch.object(theme.time, 'sleep'):
-            with self.assertRaises(RuntimeError):
-                theme.apply(self.wallpaper, self.config, self.state, self.runtime)
-        self.assertEqual(self.settings.read_text(), 'mode = "light"\n')
 
-    def test_queued_old_wallpaper_event_leaves_outputs_untouched(self):
-        self.selected = str(self.wallpaper.parent / 'newer.png')
-        Path(self.selected).write_bytes(b'new selection')
-        theme.wallpaper_changed(self.config, self.state, self.runtime)
-        self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
 
     def test_missing_wallpaper_does_not_write_theme_files(self):
         self.wallpaper.unlink()
         self.assertEqual(self.run_mode_event(), 1)
         self.assertEqual([p.read_text() for p in self.outputs], ['dark'] * len(self.outputs))
 
-    def test_rollback_handles_a_shell_that_has_already_exited(self):
-        original = self.command
-        cause = subprocess.CalledProcessError(1, ['pgrep'])
-        error = RuntimeError('Command failed with exit code 1')
-        error.__cause__ = cause
-        def command(argv):
-            if argv[0] == 'pgrep': raise error
-            return original(argv)
-        real_spec = importlib.util.spec_from_file_location('real_theme_sync', SCRIPT)
-        real = importlib.util.module_from_spec(real_spec)
-        real_spec.loader.exec_module(real)
-        with patch.object(real, 'command', side_effect=command):
-            self.assertFalse(real.quiesce_shell())
 
     def test_snapshot_retention_prunes_old_directories(self):
         root = self.state / 'desktop-wallpaper/backups'
@@ -343,28 +207,6 @@ class ThemeSyncTest(unittest.TestCase):
         # Oldest directory should have been pruned
         self.assertFalse(created[0].exists())
 
-    def test_wait_for_templates_retries_on_command_runtime_error(self):
-        attempts = 0
-        digest = hashlib.sha256(b'template_content').hexdigest()
-        target = self.config / 'target_template'
-        target.write_bytes(b'template_content')
-        expected = {str(target): digest}
-
-        def flaky_command(argv):
-            nonlocal attempts
-            attempts += 1
-            if argv[1:] == ['msg', 'wallpaper-get']:
-                if attempts < 3:
-                    raise RuntimeError('IPC socket temporarily unavailable')
-                return str(self.wallpaper)
-            if argv[1:] == ['msg', 'theme-mode-get']:
-                return 'dark'
-            return ''
-
-        with patch.object(theme, 'command', side_effect=flaky_command), \
-             patch.object(theme.time, 'sleep'):
-            theme.wait_for_templates(self.wallpaper, expected, mode='dark')
-        self.assertGreaterEqual(attempts, 3)
 
     def test_theme_mode_changed_without_noctalia(self):
         with patch.dict(os.environ, {'NOCTALIA_WALLPAPER_PATH': ''}, clear=False), \

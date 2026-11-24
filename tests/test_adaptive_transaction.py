@@ -25,7 +25,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.root = Path(temp.name)
         self.config, self.state, self.runtime = [self.root / p for p in ('config', 'state', 'runtime')]
         self.runtime.mkdir()
-        for app in ('hypr', 'noctalia/palettes', 'micro/colorschemes', 'kitty/themes'):
+        for app in ('hypr', 'rice/theme', 'micro/colorschemes', 'kitty/themes'):
             (self.config / app).mkdir(parents=True)
         self.old = self.root / 'old.png'
         self.old.write_bytes(b'old wallpaper')
@@ -33,10 +33,10 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.wallpaper.write_bytes(b'new wallpaper')
         self.link = self.config / 'hypr/current_wallpaper'
         self.link.symlink_to(self.old)
-        self.raw = self.config / 'noctalia/palettes/matugen.json'
-        self.palette = json.loads((ROOT / 'config/noctalia/palettes/matugen.json').read_text())
+        self.raw = self.config / 'rice/theme/matugen.json'
+        self.palette = json.loads((ROOT / 'config/rice/theme/matugen.json').read_text())
         self.raw.write_text(json.dumps(self.palette))
-        self.native = self.config / 'kitty/themes/noctalia.conf'
+        self.native = self.config / 'kitty/themes/rice.conf'
         self.native.write_text('old native')
         self.tokens = self.state / 'desktop-wallpaper/adaptive-theme.json'
         self.tokens.parent.mkdir(parents=True)
@@ -52,8 +52,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
         })
         self.env.start()
         self.addCleanup(self.env.stop)
-        for name, value in [('command', self.command), ('render_matugen', self.render),
-                            ('stage_native', self.stage), ('quiesce_shell', lambda: False)]:
+        for name, value in [('command', self.command), ('render_matugen', self.render)]:
             p = patch.object(theme, name, side_effect=value)
             p.start()
             self.addCleanup(p.stop)
@@ -68,31 +67,13 @@ class AdaptiveTransactionTest(unittest.TestCase):
         if self.failure == 'matugen':
             raise RuntimeError('injected matugen failure after partial output')
 
-    def stage(self, *args):
-        if self.failure == 'stage':
-            raise RuntimeError('injected native template staging failure')
-        return {str(self.native): hashlib.sha256(self.mode.encode()).hexdigest()}
 
     def command(self, argv, **kwargs):
         self.calls.append(argv)
-        if argv[:3] == ['noctalia', 'config', 'export']:
-            return f'[theme]\nmode="{self.mode}"\nsource="wallpaper"\nmatugen_palette="matugen"\n[wallpaper]\nenabled=false\n'
-        if argv[:2] == ['noctalia', 'theme']:
-            return json.dumps({mode: {k: '#ffffff' for k in (
-                'primary', 'surface', 'on_surface', 'secondary', 'on_secondary', 'error', 'on_error')}
-                for mode in ('dark', 'light')})
-        if argv[:2] == ['noctalia', 'msg']:
-            if argv[2] == 'theme-mode-get': return self.mode
-            if argv[2] == 'wallpaper-get': return self.selected
-            if argv[2] == 'wallpaper-set': self.selected = argv[3]
-            if argv[2] == 'templates-apply':
-                self.native.write_text(self.mode)
-                if self.failure == 'templates': raise RuntimeError('injected native apply failure')
-            return ''
         if argv[0] == 'hyprctl':
             if self.failure == 'hyprland' and argv[1] == 'configerrors': return 'injected config error'
             return ''
-        if argv[0] == 'gsettings': return "'prefer-dark'"
+        if argv[0] == 'gsettings': return "'prefer-" + self.mode + "'"
         if argv[0] == 'swww': return ''
         raise AssertionError(argv)
 
@@ -134,7 +115,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.assertFalse(self.calls)
 
     def test_failed_steps_restore_old_palette_tokens_and_wallpaper_link(self):
-        for failure in ('matugen', 'stage', 'templates'):
+        for failure in ('matugen',):
             with self.subTest(failure=failure):
                 before = self.raw.read_bytes()
                 self.failure = failure
@@ -155,102 +136,9 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.assertIn('Rollback incomplete', self.diagnostics)
         self.assertNotIn('RESTORED_SNAPSHOT', self.diagnostics)
 
-    def test_restart_failures_make_rollback_incomplete(self):
-        self.failure = 'templates'
-        for failure in ('launch', 'exit', 'exit_after_ipc', 'socket', 'invalid_status', 'timeout'):
-            with self.subTest(failure=failure):
-                launcher = Mock()
-                launcher.poll.return_value = 17 if failure == 'exit' else 0
-                if failure == 'exit_after_ipc': launcher.poll.side_effect = [None, 17]
-                attempts = []
-                def ipc(argv, **kwargs):
-                    if argv == ['noctalia', 'msg', 'status']:
-                        attempts.append(kwargs.get('timeout'))
-                        if failure in ('exit', 'exit_after_ipc'): return '{"locked": false}'
-                        if failure == 'invalid_status': return '[]'
-                        if failure == 'timeout':
-                            raise theme.subprocess.TimeoutExpired(argv, .5)
-                        raise RuntimeError('socket unavailable')
-                    return self.command(argv, **kwargs)
-                with patch.object(theme, 'quiesce_shell', return_value=True), \
-                     patch.object(theme.subprocess, 'Popen', return_value=launcher,
-                                  side_effect=OSError('launch denied') if failure == 'launch' else None), \
-                     patch.object(theme, 'command', side_effect=ipc):
-                    code, record = self.invoke()
-                self.assertEqual((code, record['status'], record['error_code']),
-                                 (1, 'failed', 'rollback_incomplete'))
-                self.assertIsNone(record['palette_revision'])
-                self.assertIn('Rollback incomplete', self.diagnostics)
-                self.assertNotIn('RESTORED_SNAPSHOT', self.diagnostics)
-                self.assertEqual(self.tokens.read_text(), 'old adaptive')
-                if failure in ('socket', 'invalid_status', 'timeout'):
-                    self.assertGreater(len(attempts), 0)
-                    self.assertLessEqual(len(attempts), 20)
-                    self.assertTrue(all(0 < timeout <= 1 for timeout in attempts))
 
-    def test_compositor_is_verified_after_restart_readiness(self):
-        self.failure = 'templates'
-        launcher = Mock()
-        launcher.poll.return_value = 0
-        ready = False
-        def ipc(argv, **kwargs):
-            nonlocal ready
-            if argv == ['noctalia', 'msg', 'status']:
-                ready = True
-                return '{"locked": false}'
-            if ready and argv == ['hyprctl', 'configerrors']:
-                return 'restart triggered config error'
-            return self.command(argv, **kwargs)
-        with patch.object(theme, 'quiesce_shell', return_value=True), \
-             patch.object(theme.subprocess, 'Popen', return_value=launcher), \
-             patch.object(theme, 'command', side_effect=ipc):
-            code, record = self.invoke()
-        self.assertEqual((code, record['status'], record['error_code']),
-                         (1, 'failed', 'rollback_incomplete'))
-        self.assertIn('restart triggered config error', self.diagnostics)
-        self.assertNotIn('RESTORED_SNAPSHOT', self.diagnostics)
 
-    def test_restart_waits_for_socket_with_running_or_daemonized_launcher(self):
-        self.failure = 'templates'
-        for exit_code in (None, 0):
-            with self.subTest(exit_code=exit_code):
-                launcher = Mock()
-                launcher.poll.return_value = exit_code
-                replies = iter([RuntimeError('socket unavailable'), '{"locked": false}'])
-                def ipc(argv, **kwargs):
-                    if argv == ['noctalia', 'msg', 'status']:
-                        reply = next(replies)
-                        if isinstance(reply, Exception): raise reply
-                        return reply
-                    return self.command(argv, **kwargs)
-                with patch.object(theme, 'quiesce_shell', return_value=True), \
-                     patch.object(theme.subprocess, 'Popen', return_value=launcher), \
-                     patch.object(theme, 'command', side_effect=ipc):
-                    code, record = self.invoke()
-                self.assertEqual((code, record['status']), (1, 'rolled_back'))
-                self.assertEqual(list(replies), [], 'recovery must wait for socket readiness')
-                self.assertIn('RESTORED_SNAPSHOT', self.diagnostics)
-                self.assertNotIn('Rollback incomplete', self.diagnostics)
 
-    def test_restart_still_attempted_after_file_recovery_failure(self):
-        self.failure = 'templates'
-        launcher = Mock()
-        launcher.poll.return_value = 0
-        ready = []
-        def ipc(argv, **kwargs):
-            if argv == ['noctalia', 'msg', 'status']:
-                ready.append(True)
-                return '{"locked": false}'
-            return self.command(argv, **kwargs)
-        with patch.object(theme, 'quiesce_shell', return_value=True), \
-             patch.object(theme.Snapshot, 'restore', side_effect=OSError('restore denied')), \
-             patch.object(theme.subprocess, 'Popen', return_value=launcher), \
-             patch.object(theme, 'command', side_effect=ipc):
-            code, record = self.invoke()
-        self.assertEqual((code, record['status'], record['error_code']),
-                         (1, 'failed', 'rollback_incomplete'))
-        self.assertIn('restore denied', self.diagnostics)
-        self.assertTrue(ready)
 
     def test_token_publication_error_rolls_back_all_managed_outputs(self):
         original = theme.atomic_write
@@ -270,37 +158,10 @@ class AdaptiveTransactionTest(unittest.TestCase):
         self.assertEqual(self.tokens.read_text(), 'old adaptive')
         self.assertEqual(self.link.resolve(), self.old)
 
-    def test_request_cleanup_failure_preserves_committed_acknowledgment(self):
-        request = self.runtime / 'noctalia-matugen-request.json'
-        unlink = Path.unlink
-        def fail_cleanup(path, *args, **kwargs):
-            if path == request:
-                raise PermissionError('injected request cleanup failure')
-            return unlink(path, *args, **kwargs)
-        with patch.object(Path, 'unlink', new=fail_cleanup):
-            code, record = self.invoke()
-        self.assertEqual((code, record['status'], record['error_code']), (0, 'applied', None))
-        self.assertEqual(record['palette_revision'], hashlib.sha256(self.raw.read_bytes()).hexdigest())
-        self.assertEqual(self.link.resolve(), self.wallpaper)
-        self.assertEqual(json.loads(self.tokens.read_text())['source_palette_sha256'], record['palette_revision'])
-        self.assertIn('injected request cleanup failure', self.diagnostics)
 
-    def test_request_cleanup_failure_preserves_verified_rollback_acknowledgment(self):
-        self.failure = 'templates'
-        request = self.runtime / 'noctalia-matugen-request.json'
-        unlink = Path.unlink
-        def fail_cleanup(path, *args, **kwargs):
-            if path == request:
-                raise PermissionError('injected request cleanup failure')
-            return unlink(path, *args, **kwargs)
-        with patch.object(Path, 'unlink', new=fail_cleanup):
-            code, record = self.invoke()
-        self.assertEqual((code, record['status'], record['error_code']), (1, 'rolled_back', 'apply_failed'))
-        self.assertEqual(self.link.resolve(), self.old)
-        self.assertEqual(self.tokens.read_text(), 'old adaptive')
 
     def test_incomplete_rollback_is_never_reported_as_rolled_back(self):
-        self.failure = 'templates'
+        self.failure = 'matugen'
         with patch.object(theme.Snapshot, 'restore', side_effect=OSError('restore denied')):
             code, record = self.invoke()
         self.assertEqual((code, record['status'], record['error_code']), (1, 'failed', 'rollback_incomplete'))
@@ -308,7 +169,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
 
     def test_unknown_previous_wallpaper_cannot_claim_complete_rollback(self):
         self.old.unlink()
-        self.failure = 'templates'
+        self.failure = 'matugen'
         code, record = self.invoke()
         self.assertEqual((code, record['status'], record['error_code']), (1, 'failed', 'rollback_incomplete'))
         self.assertEqual(self.tokens.read_text(), 'old adaptive')
@@ -333,7 +194,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
 
     def test_failure_removes_a_new_artifact_instead_of_leaving_partial_state(self):
         self.tokens.unlink()
-        self.failure = 'templates'
+        self.failure = 'matugen'
         code, record = self.invoke()
         self.assertEqual((code, record['status']), (1, 'rolled_back'))
         self.assertFalse(self.tokens.exists())
@@ -366,7 +227,7 @@ class AdaptiveTransactionTest(unittest.TestCase):
                         self.mode, self.wallpaper = mode, image
                         self.palette = copy.deepcopy(self.palette)
                         self.palette[mode]['mPrimary'] = ('#88ccaa', '#aaccee', '#cc99aa')[index]
-                        code, record = self.invoke('--request-id', f'competing_{index}')
+                        code, record = self.invoke('--request-id', f'competing_{index}', '--mode', mode)
                         result_path.write_text(json.dumps({'code': code, 'record': record}))
                         os._exit(0)
                     except BaseException as error:
@@ -401,15 +262,14 @@ class AdaptiveTransactionTest(unittest.TestCase):
             self.assertEqual(noctalia_calls, [], f'Expected zero noctalia calls, got: {noctalia_calls}')
             tokens = json.loads(self.tokens.read_text())
             self.assertEqual(tokens['mode'], self.mode)
-            lua_path = self.config / 'hypr/noctalia.lua'
+            lua_path = self.config / 'hypr/rice-theme.lua'
             self.assertTrue(lua_path.is_file())
             self.assertIn('apply_theme', lua_path.read_text())
 
-    def test_quickshell_mode_rolls_back_without_restarting_noctalia(self):
+    def test_quickshell_mode_rolls_back_without_legacy_shell(self):
         self.failure = 'matugen'
         with patch.dict(os.environ, {'NOCTALIA_WALLPAPER_PATH': ''}, clear=False), \
-             patch('shutil.which', side_effect=lambda cmd: None if cmd == 'noctalia' else '/usr/bin/' + cmd), \
-             patch.object(theme, 'restart_shell') as mock_restart:
+             patch('shutil.which', side_effect=lambda cmd: None if cmd == 'noctalia' else '/usr/bin/' + cmd):
             code, record = self.invoke('--backend', 'quickshell')
             self.assertEqual(code, 1)
             self.assertEqual(record['status'], 'rolled_back')
@@ -417,7 +277,6 @@ class AdaptiveTransactionTest(unittest.TestCase):
             self.assertEqual(self.tokens.read_text(), 'old adaptive')
             noctalia_calls = [c for c in self.calls if c[0] == 'noctalia']
             self.assertEqual(noctalia_calls, [], f'Expected zero noctalia calls, got: {noctalia_calls}')
-            mock_restart.assert_not_called()
 
 
 if __name__ == '__main__':

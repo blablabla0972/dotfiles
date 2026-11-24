@@ -21,7 +21,7 @@ from config.rice.theme.derive_tokens import (
 
 WALLPAPER_SHA = "a" * 64
 PALETTE_SHA = "b" * 64
-PALETTE = json.loads((ROOT / "config/noctalia/palettes/matugen.json").read_text())
+PALETTE = json.loads((ROOT / "config/rice/theme/matugen.json").read_text())
 NATIVE_ROLES = {
     "mPrimary": "primary", "mOnPrimary": "on_primary",
     "mSurface": "surface", "mOnSurface": "on_surface",

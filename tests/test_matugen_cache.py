@@ -193,7 +193,7 @@ class MatugenCacheTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('matugen'), 'Matugen is required for client template rendering')
 class MatugenClientTemplatesTest(unittest.TestCase):
-    def test_quickshell_clients_render_and_noctalia_skips_them(self):
+    def test_rice_clients_render_in_both_modes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = root / 'config'
@@ -215,16 +215,16 @@ class MatugenClientTemplatesTest(unittest.TestCase):
                 results = {name: (config / name).read_text()
                            for name in theme.MATUGEN_QUICKSHELL_OUTPUTS}
                 self.assertTrue(all('{{' not in value for value in results.values()))
-                alacritty = tomllib.loads(results['alacritty/themes/noctalia.toml'])
+                alacritty = tomllib.loads(results['alacritty/themes/rice.toml'])
                 self.assertTrue(alacritty['colors']['normal']['red'].startswith('#'))
-                self.assertIn('color15 #', results['kitty/themes/noctalia.conf'])
+                self.assertIn('color15 #', results['kitty/themes/rice.conf'])
                 self.assertIn('@define-color window_bg_color #', results['gtk-3.0/gtk.css'])
                 self.assertEqual(results['gtk-3.0/gtk.css'], results['gtk-4.0/gtk.css'])
-                self.assertIn('theme[main_bg]="#', results['btop/themes/noctalia.theme'])
-                self.assertIn('theme[proc_start]="#', results['btop/themes/noctalia.theme'])
+                self.assertIn('theme[main_bg]="#', results['btop/themes/rice.theme'])
+                self.assertIn('theme[proc_start]="#', results['btop/themes/rice.theme'])
                 for app in ('qt5ct', 'qt6ct'):
                     palette = configparser.ConfigParser()
-                    palette.read_string(results[f'{app}/colors/noctalia.conf'])
+                    palette.read_string(results[f'{app}/colors/rice.conf'])
                     for state in ('active_colors', 'disabled_colors', 'inactive_colors'):
                         colors = palette['ColorScheme'][state].split(',')
                         self.assertEqual(len(colors), 21)
@@ -232,12 +232,8 @@ class MatugenClientTemplatesTest(unittest.TestCase):
 
                 theme.render_matugen(image, config, 'light', backend='quickshell')
                 lighter = {name: (config / name).read_text() for name in results}
-                self.assertNotEqual(lighter['kitty/themes/noctalia.conf'],
-                                    results['kitty/themes/noctalia.conf'])
-
-                # Switching back to Noctalia must not overwrite its native client themes.
-                theme.render_matugen(image, config, 'dark', backend='noctalia')
-                self.assertEqual({name: (config / name).read_text() for name in results}, lighter)
+                self.assertNotEqual(lighter['kitty/themes/rice.conf'],
+                                    results['kitty/themes/rice.conf'])
 
     def test_client_outputs_are_snapshot_protected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -270,7 +266,7 @@ class MatugenClientTemplatesTest(unittest.TestCase):
                 appearance = ini['Appearance']
                 self.assertEqual(appearance['style'], 'Fusion')
                 self.assertEqual(appearance['custom_palette'], 'true')
-                self.assertEqual(appearance['color_scheme_path'], str(config / app / 'colors/noctalia.conf'))
+                self.assertEqual(appearance['color_scheme_path'], str(config / app / 'colors/rice.conf'))
 
 
 if __name__ == '__main__':

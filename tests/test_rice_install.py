@@ -31,7 +31,7 @@ class RiceInstallTest(unittest.TestCase):
                 # --all may request daemon-reload: keep every process in this fixture.
                 (stub / 'systemctl').write_text('#!/bin/sh\nexit 0\n')
                 (stub / 'systemctl').chmod(0o700)
-                for name in ('hypr', 'noctalia', 'rice'):
+                for name in ('hypr', 'quickshell', 'rice'):
                     (repo / 'config' / name).mkdir(parents=True)
                 (repo / 'state/noctalia').mkdir(parents=True)
                 (repo / 'state/noctalia/settings.toml').write_text('snapshot settings')
@@ -45,7 +45,7 @@ class RiceInstallTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(state.read_text(), 'live lock layout')
                 self.assertFalse(state.is_symlink())
-                for name in ('hypr', 'noctalia', 'rice'):
+                for name in ('hypr', 'quickshell', 'rice'):
                     self.assertEqual((home / '.config' / name).resolve(), repo / 'config' / name)
 
     def test_selected_no_state_preview_preserves_native_settings(self):
@@ -54,12 +54,12 @@ class RiceInstallTest(unittest.TestCase):
             state = home / '.local/state/noctalia/settings.toml'
             state.parent.mkdir(parents=True)
             state.write_text('user native lock settings')
-            result = subprocess.run(['bash', str(ROOT / 'install.sh'), '--no-state', 'hypr', 'noctalia', 'rice'],
+            result = subprocess.run(['bash', str(ROOT / 'install.sh'), '--no-state', 'hypr', 'quickshell', 'rice'],
                                     env={**os.environ, 'HOME': str(home)}, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(state.read_text(), 'user native lock settings')
             self.assertFalse(state.is_symlink())
-            for name in ('hypr', 'noctalia', 'rice'):
+            for name in ('hypr', 'quickshell', 'rice'):
                 self.assertEqual((home / '.config' / name).resolve(), ROOT / 'config' / name)
 
 

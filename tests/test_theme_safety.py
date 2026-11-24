@@ -44,122 +44,6 @@ class TransitionFpsTest(unittest.TestCase):
             self.assertEqual(theme.transition_fps(), 60)
 
 
-class NativeAssetDiscoveryTest(unittest.TestCase):
-    def test_exited_process_does_not_hide_live_assets_but_permission_errors_fail(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            assets = root / 'assets'
-            (assets / 'templates/hyprland').mkdir(parents=True)
-            (assets / 'templates/builtin.toml').write_text('[templates.hyprland]\n')
-            (assets / 'templates/hyprland/hyprland.lua').write_text('-- source\n')
-            config = root / 'config'
-            (config / 'hypr').mkdir(parents=True)
-            real_read = Path.read_bytes
-
-            def command(argv):
-                if argv[0] == 'pgrep':
-                    return '101 102'
-                Path(argv[-1].split(':', 1)[1]).write_text('-- rendered\n')
-                return ''
-
-            for failure in (FileNotFoundError(), ProcessLookupError(), PermissionError()):
-                def read_bytes(path):
-                    if path == Path('/proc/101/environ'):
-                        raise failure
-                    if path == Path('/proc/102/environ'):
-                        return b'NOCTALIA_ASSETS_DIR=' + os.fsencode(assets) + b'\0'
-                    return real_read(path)
-
-                with self.subTest(failure=type(failure).__name__), \
-                     patch.object(theme, 'command', side_effect=command), \
-                     patch.object(Path, 'read_bytes', read_bytes):
-                    if isinstance(failure, PermissionError):
-                        with self.assertRaisesRegex(RuntimeError, 'Could not identify'):
-                            theme.stage_native([], {}, config, root / 'data', root)
-                    else:
-                        expected = theme.stage_native(['noctalia', 'theme'],
-                            {'theme': {'templates': {'builtin_ids': ['hyprland']}}},
-                            config, root / 'data', root)
-                        self.assertEqual(list(expected), [str(config / 'hypr/noctalia.lua')])
-
-    def test_no_running_shell_uses_installed_assets(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            assets = root / 'assets'
-            (assets / 'templates/hyprland').mkdir(parents=True)
-            (assets / 'templates/builtin.toml').write_text('[templates.hyprland]\n')
-            (assets / 'templates/hyprland/hyprland.lua').write_text('-- source\n')
-            config = root / 'config'
-            (config / 'hypr').mkdir(parents=True)
-            lookup_error = subprocess.CalledProcessError(1, ['pgrep'])
-
-            def command(argv):
-                if argv[0] == 'pgrep':
-                    raise RuntimeError('no processes') from lookup_error
-                self.assertEqual(argv[0], 'noctalia')
-                Path(argv[-1].split(':', 1)[1]).write_text('-- rendered\n')
-
-            def path(value, *parts):
-                return assets if value == '/usr/share/noctalia/assets' else Path(value, *parts)
-
-            with patch.object(theme, 'command', side_effect=command), patch.object(theme, 'Path', side_effect=path):
-                expected = theme.stage_native(['noctalia', 'theme'],
-                                              {'theme': {'templates': {'builtin_ids': ['hyprland']}}},
-                                              config, root / 'data', root)
-            self.assertEqual(list(expected), [str(config / 'hypr/noctalia.lua')])
-
-    def test_duplicate_builtin_ids_preserve_staged_outputs_and_hashes(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            assets = root / 'assets'
-            (assets / 'templates/hyprland').mkdir(parents=True)
-            (assets / 'templates/builtin.toml').write_text(
-                '[templates.hyprland]\n[templates.kitty]\n'
-                'input_path="kitty.conf"\n'
-                'output_path="$XDG_CONFIG_HOME/kitty/theme.conf"\n')
-            hyprland, kitty = b'-- hyprland\n', b'# kitty\n'
-            (assets / 'templates/hyprland/hyprland.lua').write_bytes(hyprland)
-            (assets / 'templates/kitty.conf').write_bytes(kitty)
-            config = root / 'config'
-            (config / 'hypr').mkdir(parents=True)
-            (config / 'kitty').mkdir()
-            staged_names = []
-
-            def command(argv):
-                if argv[0] == 'pgrep':
-                    raise RuntimeError('no processes') from subprocess.CalledProcessError(1, argv)
-                self.assertEqual(argv[:2], ['noctalia', 'theme'])
-                for index in range(2, len(argv), 2):
-                    self.assertEqual(argv[index], '-r')
-                    source, target = map(Path, argv[index + 1].split(':', 1))
-                    staged_names.append(target.name)
-                    target.write_bytes(source.read_bytes())
-
-            def path(value, *parts):
-                return assets if value == '/usr/share/noctalia/assets' else Path(value, *parts)
-
-            for ids in (['hyprland', 'kitty'], ['hyprland', 'hyprland', 'kitty']):
-                with self.subTest(builtin_ids=ids), patch.object(theme, 'command', side_effect=command), \
-                        patch.object(theme, 'Path', side_effect=path):
-                    staged_names.clear()
-                    expected = theme.stage_native(
-                        ['noctalia', 'theme'], {'theme': {'templates': {'builtin_ids': ids}}},
-                        config, root / 'data', root)
-                    self.assertEqual(expected, {
-                        str(config / 'hypr/noctalia.lua'): hashlib.sha256(hyprland).hexdigest(),
-                        str(config / 'kitty/theme.conf'): hashlib.sha256(kitty).hexdigest(),
-                    })
-                    self.assertEqual(staged_names, [f'expected-{index}' for index in range(len(ids))])
-
-    def test_process_lookup_errors_are_not_treated_as_an_absent_shell(self):
-        error = subprocess.CalledProcessError(2, ['pgrep'], stderr='lookup failed')
-
-        def command(argv):
-            raise RuntimeError('lookup failed') from error
-
-        with patch.object(theme, 'command', side_effect=command):
-            with self.assertRaisesRegex(RuntimeError, 'lookup failed'):
-                theme.stage_native([], {}, Path('/unused'), Path('/unused'), Path('/unused'))
 
 
 class SnapshotSafetyTest(unittest.TestCase):
@@ -195,10 +79,10 @@ class SnapshotSafetyTest(unittest.TestCase):
             self.assertFalse(target.exists())
 
 
-@unittest.skipUnless(all(shutil.which(name) for name in ('matugen', 'magick', 'noctalia')),
-                     'Real Matugen, ImageMagick and Noctalia are required')
+@unittest.skipUnless(all(shutil.which(name) for name in ('matugen', 'magick')),
+                     'Real Matugen and ImageMagick are required')
 class MatugenSafetyTest(unittest.TestCase):
-    outputs = ('hypr/colors.conf', 'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro')
+    outputs = ('hypr/colors.conf', 'rice/theme/matugen.json', 'micro/colorschemes/adaptive.micro')
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -216,7 +100,7 @@ class MatugenSafetyTest(unittest.TestCase):
                    XDG_CACHE_HOME=str(self.root / 'cache'),
                    XDG_STATE_HOME=str(self.root / 'state'), XDG_DATA_HOME=str(self.root / 'data'),
                    XDG_RUNTIME_DIR=str(self.root / 'runtime'),
-                   THEME_BACKEND='noctalia')
+                   THEME_BACKEND='quickshell')
         for key in ('HYPRLAND_INSTANCE_SIGNATURE', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'):
             env.pop(key, None)
         self.env_patch = patch.dict(os.environ, env, clear=True)
@@ -230,11 +114,9 @@ class MatugenSafetyTest(unittest.TestCase):
 
     def command(self, argv):
         if argv[0] == 'gsettings': return "'dark'" if argv[1] == 'get' else ''
-        if argv[:3] == ['noctalia', 'config', 'export']:
-            return '[theme]\nmode="dark"\nsource="wallpaper"\nmatugen_palette="matugen"\n'
-        if argv[:2] == ['noctalia', 'msg']: return ''  # Never contact the desktop.
-        if self.fail_resolver and argv[:2] == ['noctalia', 'theme']:
-            raise RuntimeError('injected resolver failure')
+        if self.fail_resolver and argv[0] == 'matugen':
+            result = self.real_command(argv)
+            raise RuntimeError('injected failure after partial render')
         return self.real_command(argv)
 
     def write_sentinels(self, config):
@@ -277,7 +159,7 @@ class MatugenSafetyTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'must stay inside the managed config directory'):
             theme.palette_for(self.image, self.config)
         self.assertEqual(outside.read_bytes(), b'PRESERVE')
-        self.assertFalse((self.config / 'noctalia/palettes/matugen.json').exists())
+        self.assertFalse((self.config / 'rice/theme/matugen.json').exists())
 
     def test_matugen_wallpaper_setter_is_rejected_before_rendering(self):
         config_file = self.config / 'matugen/config.toml'
@@ -311,7 +193,7 @@ class MatugenSafetyTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'hooks.*backup paths'):
                     theme.palette_for(self.image, self.config)
                 self.assertEqual(outside.read_bytes(), b'PRESERVE')
-                self.assertFalse((self.config / 'noctalia/palettes/matugen.json').exists())
+                self.assertFalse((self.config / 'rice/theme/matugen.json').exists())
 
     def test_plain_regeneration_rolls_back_existing_and_new_micro_output(self):
         self.config = self.home_config

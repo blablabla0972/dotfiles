@@ -1,5 +1,5 @@
 [general]
-import = ["~/.config/alacritty/themes/noctalia.toml"]
+import = ["~/.config/alacritty/themes/rice.toml"]
 working_directory = "None"
 live_config_reload = true
 
@@ -28,7 +28,7 @@ bold_italic = { family = "JetBrainsMono Nerd Font", style = "Bold Italic" }
 size = 12.0
 
 # [colors]
-# Note: Colors are dynamically managed by Noctalia via ~/.config/alacritty/themes/noctalia.toml
+# Note: Colors are dynamically managed by Rice via ~/.config/alacritty/themes/rice.toml
 # draw_bold_text_with_bright_colors = true
 # [colors.primary]
 # background = "0x2E3440"
