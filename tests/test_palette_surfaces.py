@@ -1,12 +1,7 @@
 """Regressions for transparent bars with independently painted capsules."""
 import copy
-import importlib.util
-from pathlib import Path
 import unittest
-
-spec = importlib.util.spec_from_file_location('palette_matrix', Path(__file__).with_name('check_palette_matrix.py'))
-matrix = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(matrix)
+import palette_surface_helpers as matrix
 
 
 class CapsuleContrastTest(unittest.TestCase):
