@@ -20,7 +20,7 @@ STATE_TARGET="$HOME/.local/state"
 BIN_TARGET="$HOME/.local/bin"
 
 # Core live desktop targets (mặc định chỉ cài những mục này để đảm bảo tính an toàn & khả chuyển)
-CORE_CONFIGS=(hypr noctalia quickshell matugen rice kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop micro starship.toml)
+CORE_CONFIGS=(hypr quickshell matugen rice kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop micro starship.toml)
 CORE_ROOTS=(kdeglobals)
 CORE_STATES=()
 
@@ -38,7 +38,7 @@ for arg in "$@"; do
             echo "  Mặc định: Chỉ cài các cấu hình desktop live (${CORE_CONFIGS[*]} ${CORE_ROOTS[*]})."
             echo "  --all:    Cài toàn bộ cấu hình, bao gồm cả systemd và cấu hình riêng máy (snapshot)."
             echo "  --dry-run: Chỉ in thao tác dự kiến, không thay đổi file."
-            echo "  --no-state: Giữ nguyên session/lock settings, kể cả khi chọn noctalia hoặc --all."
+            echo "  --no-state: Giữ nguyên state hiện tại, kể cả khi chọn --all."
             echo "  Mục chọn: Tên component (config/, root/, state/) hoặc tên script trong bin/ (không truyền 'bin')."
             exit 0
             ;;

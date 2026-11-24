@@ -1,6 +1,6 @@
 .pragma library
 
-// Keep apps outside the shell/IDE cgroup, as Noctalia does. A failed service
+// Keep apps outside the shell/IDE cgroup. A failed service
 // registration falls back to exec; positional arguments never become shell code.
 function launchContext(app, terminal, home) {
     if (!app || !app.command || app.command.length === 0) return null;

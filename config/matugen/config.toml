@@ -7,9 +7,9 @@ set = false
 input_path = '~/.config/matugen/templates/hyprland-colors.conf'
 output_path = '~/.config/hypr/colors.conf'
 
-[templates.noctalia]
-input_path = '~/.config/matugen/templates/noctalia-palette.json'
-output_path = '~/.config/noctalia/palettes/matugen.json'
+[templates.rice]
+input_path = '~/.config/matugen/templates/rice-palette.json'
+output_path = '~/.config/rice/theme/matugen.json'
 
 [config.custom_colors]
 ansi_red = { color = "#ff0000", blend = true }
@@ -25,11 +25,11 @@ output_path = "~/.config/micro/colorschemes/adaptive.micro"
 
 [templates.kitty]
 input_path = '~/.config/matugen/templates/kitty.conf'
-output_path = '~/.config/kitty/themes/noctalia.conf'
+output_path = '~/.config/kitty/themes/rice.conf'
 
 [templates.alacritty]
 input_path = '~/.config/matugen/templates/alacritty.toml'
-output_path = '~/.config/alacritty/themes/noctalia.toml'
+output_path = '~/.config/alacritty/themes/rice.toml'
 
 [templates.gtk3]
 input_path = '~/.config/matugen/templates/gtk.css'
@@ -41,12 +41,12 @@ output_path = '~/.config/gtk-4.0/gtk.css'
 
 [templates.qt5ct]
 input_path = '~/.config/matugen/templates/qtct.conf'
-output_path = '~/.config/qt5ct/colors/noctalia.conf'
+output_path = '~/.config/qt5ct/colors/rice.conf'
 
 [templates.qt6ct]
 input_path = '~/.config/matugen/templates/qtct.conf'
-output_path = '~/.config/qt6ct/colors/noctalia.conf'
+output_path = '~/.config/qt6ct/colors/rice.conf'
 
 [templates.btop]
 input_path = '~/.config/matugen/templates/btop.theme'
-output_path = '~/.config/btop/themes/noctalia.theme'
+output_path = '~/.config/btop/themes/rice.theme'

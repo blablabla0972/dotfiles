@@ -30,18 +30,9 @@ is_rice_healthy() {
     quickshell ipc -p "$rice_config" call rice health >/dev/null 2>&1
 }
 
-start_noctalia_fallback() {
-    [[ "$notifications" == "0" ]] && return 1
-    command -v noctalia >/dev/null 2>&1 || return 1
-    if command -v pgrep >/dev/null 2>&1 && pgrep -x noctalia >/dev/null 2>&1; then
-        return 0
-    fi
-    noctalia -d
-}
 
 if ! command -v quickshell >/dev/null 2>&1; then
-    if start_noctalia_fallback; then exit 0; fi
-    echo "Quickshell is unavailable; no shell fallback was started." >&2
+    echo "Quickshell is unavailable." >&2
     exit 1
 fi
 
@@ -65,10 +56,9 @@ for _ in {1..20}; do
 done
 
 if has_rice_instance; then
-    echo "Rice Shell started without IPC health; skipping Noctalia to avoid a second notification owner." >&2
+    echo "Rice Shell started without IPC health; keeping the sole notification owner." >&2
     exit 1
 fi
 
-if start_noctalia_fallback; then exit 0; fi
-echo "Rice Shell failed to start and no safe fallback is available." >&2
+echo "Rice Shell failed to start ." >&2
 exit 1

@@ -107,15 +107,15 @@ class TestTier1FeatureCoverage(E2EBaseTestCase):
         # Setup basic config skeleton
         wallpaper = self.e2e.create_test_image("current_wall.png", b"sample_wallpaper_image_data")
         (self.e2e.config / "hypr").mkdir(parents=True, exist_ok=True)
-        (self.e2e.config / "noctalia/palettes").mkdir(parents=True, exist_ok=True)
+        (self.e2e.config / "rice/theme").mkdir(parents=True, exist_ok=True)
         (self.e2e.config / "micro/colorschemes").mkdir(parents=True, exist_ok=True)
         (self.e2e.config / "hypr/current_wallpaper").symlink_to(wallpaper)
         (self.e2e.config / "hypr/colors.conf").write_text("# initial colors\n")
         (self.e2e.config / "micro/colorschemes/adaptive.micro").write_text("# initial micro\n")
 
         # Copy authentic matugen.json palette template from repo
-        palette_template = (REPO_ROOT / "config/noctalia/palettes/matugen.json").read_text()
-        (self.e2e.config / "noctalia/palettes/matugen.json").write_text(palette_template)
+        palette_template = (REPO_ROOT / "config/rice/theme/matugen.json").read_text()
+        (self.e2e.config / "rice/theme/matugen.json").write_text(palette_template)
 
         # Provide a minimal matugen config.toml in config
         matugen_conf = self.e2e.config / "matugen/config.toml"
@@ -129,9 +129,9 @@ command = ""
 input_path = "colors.conf"
 output_path = "~/.config/hypr/colors.conf"
 
-[templates.noctalia]
+[templates.rice]
 input_path = "matugen.json"
-output_path = "~/.config/noctalia/palettes/matugen.json"
+output_path = "~/.config/rice/theme/matugen.json"
 
 [templates.micro]
 input_path = "adaptive.micro"

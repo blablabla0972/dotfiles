@@ -84,18 +84,10 @@ jobs:
             PYTHONDONTWRITEBYTECODE=1 \
             python3 -m unittest discover -s tests -v
 
-      - name: Run palette matrix when native dependencies are available
+      - name: Check real Matugen clients when installed
         run: |
-          if command -v matugen >/dev/null && command -v magick >/dev/null && \
-             command -v noctalia >/dev/null && command -v lua >/dev/null && \
-             command -v luac >/dev/null && \
-             python3 -c 'import gi; gi.require_version("Gtk", "4.0")' 2>/dev/null; then
-            env -i \
-              HOME="$RUNNER_TEMP/dotfiles-home" \
-              LANG=C.UTF-8 \
-              PATH="$PATH" \
-              PYTHONDONTWRITEBYTECODE=1 \
-              python3 tests/check_palette_matrix.py --no-desktop
+          if command -v matugen >/dev/null; then
+            python3 -m unittest discover -s tests -p 'test_matugen_cache.py' -v
           else
-            echo "SKIP palette matrix: Noctalia, Matugen, ImageMagick 7, Lua or GTK4 Python bindings unavailable"
+            echo "SKIP real Matugen rendering: Matugen unavailable"
           fi

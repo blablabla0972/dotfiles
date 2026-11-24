@@ -42,14 +42,14 @@ class TestTier3CrossFeature(E2EBaseTestCase):
 
         # 2. Setup config files for generate-theme.py
         (self.e2e.config / "hypr").mkdir(parents=True, exist_ok=True)
-        (self.e2e.config / "noctalia/palettes").mkdir(parents=True, exist_ok=True)
+        (self.e2e.config / "rice/theme").mkdir(parents=True, exist_ok=True)
         (self.e2e.config / "micro/colorschemes").mkdir(parents=True, exist_ok=True)
         (self.e2e.config / "hypr/current_wallpaper").symlink_to(wallpaper)
         (self.e2e.config / "hypr/colors.conf").write_text("# initial\n")
         (self.e2e.config / "micro/colorschemes/adaptive.micro").write_text("# initial\n")
 
-        palette_template = (REPO_ROOT / "config/noctalia/palettes/matugen.json").read_text()
-        (self.e2e.config / "noctalia/palettes/matugen.json").write_text(palette_template)
+        palette_template = (REPO_ROOT / "config/rice/theme/matugen.json").read_text()
+        (self.e2e.config / "rice/theme/matugen.json").write_text(palette_template)
 
         matugen_conf = self.e2e.config / "matugen/config.toml"
         matugen_conf.parent.mkdir(parents=True, exist_ok=True)
@@ -62,9 +62,9 @@ command = ""
 input_path = "colors.conf"
 output_path = "~/.config/hypr/colors.conf"
 
-[templates.noctalia]
+[templates.rice]
 input_path = "matugen.json"
-output_path = "~/.config/noctalia/palettes/matugen.json"
+output_path = "~/.config/rice/theme/matugen.json"
 
 [templates.micro]
 input_path = "adaptive.micro"
@@ -74,8 +74,8 @@ output_path = "~/.config/micro/colorschemes/adaptive.micro"
         proc_theme = self.e2e.run_generate_theme("--theme-mode-changed")
         self.assertEqual(proc_theme.returncode, 0, f"Theme generation failed: {proc_theme.stderr}")
 
-        # 3. Verify that noctalia/palettes/matugen.json has valid primary color
-        generated_palette = json.loads((self.e2e.config / "noctalia/palettes/matugen.json").read_text())
+        # 3. Verify that rice/theme/matugen.json has valid primary color
+        generated_palette = json.loads((self.e2e.config / "rice/theme/matugen.json").read_text())
         dark_primary = generated_palette["dark"]["mPrimary"].lower()
         self.assertTrue(dark_primary.startswith("#"), f"mPrimary must be valid hex color: {dark_primary}")
 

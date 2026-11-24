@@ -2,7 +2,7 @@
 
 -- Unload cached config modules on reload
 for k, _ in pairs(package.loaded) do
-    if k:sub(1, 7) == "config." or k == "noctalia" then
+    if k:sub(1, 7) == "config." or k == "rice-theme" then
         package.loaded[k] = nil
     end
 end
@@ -18,8 +18,8 @@ require("config.monitors")
 require("config.windowrules")
 require("config.workspaces")
 
--- Apply Noctalia's generated Matugen color template.
-require("noctalia").apply_theme()
+-- Apply Rice's generated Matugen color template.
+require("rice-theme").apply_theme()
 
 -- Rice Settings loads only explicitly kept display modes after the base rules.
 require("config.rice-settings-outputs")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Matugen's Noctalia palette and synchronize desktop theme outputs."""
+"""Generate the Matugen palette and synchronize desktop theme outputs."""
 import argparse
 import configparser
 import contextlib
@@ -22,7 +22,10 @@ import tomllib
 import uuid
 
 
-MATUGEN_OUTPUTS = ('hypr/colors.conf', 'noctalia/palettes/matugen.json', 'micro/colorschemes/adaptive.micro')
+MATUGEN_OUTPUTS = ('hypr/colors.conf', 'rice/theme/matugen.json', 'micro/colorschemes/adaptive.micro')
+MATUGEN_QUICKSHELL_OUTPUTS = ('kitty/themes/rice.conf', 'alacritty/themes/rice.toml',
+    'gtk-3.0/gtk.css', 'gtk-4.0/gtk.css', 'qt5ct/colors/rice.conf',
+    'qt6ct/colors/rice.conf', 'btop/themes/rice.theme')
 MATUGEN_FLAGS = ('--prefer', 'less-saturation', '--source-color-index', '0', '--quiet')
 
 
@@ -52,7 +55,7 @@ def stage_adaptive_theme(wallpaper, config_dir, mode):
         _DERIVE_TOKENS_MODULE = module
     else:
         module = _DERIVE_TOKENS_MODULE
-    palette = (config_dir / 'noctalia/palettes/matugen.json').read_bytes()
+    palette = (config_dir / 'rice/theme/matugen.json').read_bytes()
     revision = hashlib.sha256(palette).hexdigest()
     with wallpaper.open('rb') as stream:
         wallpaper_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -231,9 +234,9 @@ def cached_matugen_outputs(cache, names):
 def configured_matugen_outputs(config_dir):
     """Resolve every configured Matugen output so transaction backups stay complete."""
     source = config_dir / 'matugen/config.toml'
-    settings = tomllib.loads(source.read_text())
+    settings = tomllib.loads(source.read_text()) if source.is_file() else {}
     home_config = Path.home() / '.config'
-    outputs = set(MATUGEN_OUTPUTS)
+    outputs = set(MATUGEN_OUTPUTS + MATUGEN_QUICKSHELL_OUTPUTS)
     for template in settings.get('templates', {}).values():
         output = template.get('output_path')
         if not output:
@@ -251,7 +254,7 @@ def configured_matugen_outputs(config_dir):
     return tuple(sorted(outputs))
 
 
-def render_matugen(wallpaper, config_dir, mode):
+def render_matugen(wallpaper, config_dir, mode, backend=None):
     source = config_dir / 'matugen/config.toml'
     settings = tomllib.loads(source.read_text())
     wallpaper_options = settings.get('config', {}).get('wallpaper')
@@ -308,41 +311,10 @@ def render_matugen(wallpaper, config_dir, mode):
         pass
 
 
-_CURRENT_BACKEND = 'auto'
 _CURRENT_MODE = None
 
 
-def is_noctalia_running():
-    try:
-        uid = os.getuid()
-        for entry in Path('/proc').iterdir():
-            if entry.name.isdigit():
-                try:
-                    stat = entry.stat()
-                    if stat.st_uid == uid:
-                        comm = (entry / 'comm').read_text().strip()
-                        if comm == 'noctalia':
-                            return True
-                except (OSError, ProcessLookupError):
-                    continue
-    except Exception:
-        pass
-    return False
-
-
 def detect_backend(backend_opt=None):
-    backend = backend_opt if backend_opt is not None else _CURRENT_BACKEND
-    if backend in ('quickshell', 'noctalia'):
-        return backend
-    env_backend = os.environ.get('THEME_BACKEND')
-    if env_backend in ('quickshell', 'noctalia'):
-        return env_backend
-    if not shutil.which('noctalia'):
-        return 'quickshell'
-    if os.environ.get('NOCTALIA_WALLPAPER_PATH'):
-        return 'noctalia'
-    if is_noctalia_running():
-        return 'noctalia'
     return 'quickshell'
 
 
@@ -416,123 +388,46 @@ return {{
 
 
 def palette_for(wallpaper, config_dir, backend=None, target_mode=None):
-    resolved_backend = backend or detect_backend()
-    if resolved_backend == 'quickshell':
-        mode = target_mode or _CURRENT_MODE
-        if mode not in {'dark', 'light'}:
-            if shutil.which('gsettings'):
-                try:
-                    scheme = command(['gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme'])
-                    if 'prefer-light' in scheme:
-                        mode = 'light'
-                    elif 'prefer-dark' in scheme:
-                        mode = 'dark'
-                except Exception:
-                    pass
-        if mode not in {'dark', 'light'}:
-            state_dir = Path(os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state')))
-            ad_file = adaptive_path(state_dir)
-            if ad_file.is_file():
-                try:
-                    data = json.loads(ad_file.read_text())
-                    mode = data.get('mode')
-                except Exception:
-                    pass
-        if mode not in {'dark', 'light'}:
-            mode = 'dark'
-
-        palette_path = config_dir / 'noctalia/palettes/matugen.json'
-        previous_palette = palette_path.read_bytes() if palette_path.is_file() else None
-        render_matugen(wallpaper, config_dir, mode)
-
-        try:
-            palette_json = json.loads(palette_path.read_text())
-        except (OSError, ValueError):
-            palette_json = {}
-
-        if isinstance(palette_json, dict) and all(isinstance(palette_json.get(k), dict) for k in ('dark', 'light')):
-            lua_code = generate_hyprland_lua(palette_json, mode)
-            atomic_write(config_dir / 'hypr/noctalia.lua', lua_code.encode())
-
-        changed = previous_palette != (palette_path.read_bytes() if palette_path.is_file() else None)
-        config = {'theme': {'source': 'wallpaper', 'matugen_palette': 'matugen', 'mode': mode}}
-        return palette_json, config, [], changed, mode
-
-    config = tomllib.loads(command(['noctalia', 'config', 'export', 'full']))
-    theme_config = config.get('theme', {})
-    if theme_config.get('source') != 'wallpaper' or theme_config.get('matugen_palette') != 'matugen':
-        raise RuntimeError('Noctalia must use source=wallpaper with matugen_palette=matugen')
-    allowed = {'hyprland', 'kitty', 'gtk3', 'gtk4', 'qt', 'kcolorscheme', 'btop', 'alacritty'}
-    configured = theme_config.get('templates', {})
-    if (set(configured.get('builtin_ids', [])).difference(allowed) or configured.get('community_ids', [])
-            or configured.get('user_templates', [])):
-        raise RuntimeError('Additional theme templates need backup paths before transactional wallpaper switching')
-    if config.get('accessibility', {}).get('high_contrast', False):
-        raise RuntimeError('High-contrast theme needs a matching Matugen template before wallpaper switching')
-
-    mode = theme_config.get('mode', 'dark')
-    if mode == 'auto':
-        try:
-            mode = command(['noctalia', 'msg', 'theme-mode-get'])
-        except (RuntimeError, subprocess.SubprocessError, OSError):
-            mode = 'dark'
+    mode = target_mode or _CURRENT_MODE
     if mode not in {'dark', 'light'}:
-        raise ValueError(f'Unsupported Noctalia theme mode: {mode}')
+        if shutil.which('gsettings'):
+            try:
+                scheme = command(['gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme'])
+                if 'prefer-light' in scheme:
+                    mode = 'light'
+                elif 'prefer-dark' in scheme:
+                    mode = 'dark'
+            except Exception:
+                pass
+    if mode not in {'dark', 'light'}:
+        state_dir = Path(os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state')))
+        ad_file = adaptive_path(state_dir)
+        if ad_file.is_file():
+            try:
+                data = json.loads(ad_file.read_text())
+                mode = data.get('mode')
+            except Exception:
+                pass
+    if mode not in {'dark', 'light'}:
+        mode = 'dark'
 
-    palette_path = config_dir / 'noctalia/palettes/matugen.json'
+    palette_path = config_dir / 'rice/theme/matugen.json'
     previous_palette = palette_path.read_bytes() if palette_path.is_file() else None
     render_matugen(wallpaper, config_dir, mode)
-    palette_json = json.loads(palette_path.read_text())
-    required_fixed_roles = {
-        'mPrimary', 'mOnPrimary', 'mSecondary', 'mOnSecondary', 'mTertiary', 'mOnTertiary',
-        'mError', 'mOnError', 'mSurface', 'mOnSurface', 'mSurfaceVariant', 'mOnSurfaceVariant',
-        'mOutline', 'mHover', 'mOnHover',
-    }
-    if not isinstance(palette_json, dict) or not all(
-            isinstance(palette_json.get(key), dict) and required_fixed_roles.issubset(palette_json[key])
-            for key in ('dark', 'light')):
-        raise ValueError('Matugen returned an incomplete Noctalia custom palette')
 
-    required_terminal_roles = {'foreground', 'background', 'cursor', 'cursorText', 'selectionFg', 'selectionBg'}
-    required_terminal_colors = {'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'}
+    try:
+        palette_json = json.loads(palette_path.read_text())
+    except (OSError, ValueError):
+        palette_json = {}
 
-    def has_terminal_palette(mode_palette):
-        terminal = mode_palette.get('terminal') if isinstance(mode_palette, dict) else None
-        if not isinstance(terminal, dict) or not required_terminal_roles.issubset(terminal):
-            return False
-        return all(
-            isinstance(terminal.get(group), dict) and required_terminal_colors.issubset(terminal[group])
-            for group in ('normal', 'bright')
-        )
+    if isinstance(palette_json, dict) and all(isinstance(palette_json.get(k), dict) for k in ('dark', 'light')):
+        lua_code = generate_hyprland_lua(palette_json, mode)
+        atomic_write(config_dir / 'hypr/rice-theme.lua', lua_code.encode())
 
-    if not all(has_terminal_palette(palette_json[mode_name]) for mode_name in ('dark', 'light')):
-        raise ValueError('Matugen returned an incomplete Noctalia terminal palette')
+    changed = previous_palette != (palette_path.read_bytes() if palette_path.is_file() else None)
+    config = {'theme': {'source': 'wallpaper', 'matugen_palette': 'matugen', 'mode': mode}}
+    return palette_json, config, [], changed, mode
 
-    theme_command = [
-        'noctalia', 'theme', str(wallpaper), '--theme-json', str(palette_path), '--both',
-        '--default-mode', mode,
-    ]
-    palette = json.loads(command(theme_command))
-    if not isinstance(palette, dict) or not all(isinstance(palette.get(key), dict) for key in ('dark', 'light')):
-        raise ValueError('Noctalia could not resolve the Matugen custom palette')
-    required = {'primary', 'surface', 'on_surface', 'secondary', 'on_secondary', 'error', 'on_error'}
-    if not all(required.issubset(palette[key]) for key in ('dark', 'light')):
-        raise ValueError('Noctalia returned an incomplete palette')
-    for mode_name in ('dark', 'light'):
-        for key, value in palette[mode_name].items():
-            if not re.fullmatch(r'[a-z][a-z0-9_]*', key) or not isinstance(value, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', value):
-                raise ValueError(f'Invalid palette token: {key}')
-    changed = previous_palette != palette_path.read_bytes()
-    return palette, config, theme_command, changed, mode
-
-
-def reload_matugen_palette(config, changed):
-
-    theme = config.get('theme', {})
-    if theme.get('source') != 'wallpaper' or theme.get('matugen_palette') != 'matugen':
-        raise RuntimeError('Refusing to change Noctalia palette source; expected wallpaper + Matugen override')
-    if changed:
-        command(['noctalia', 'msg', 'color-palette-reload'])
 
 
 def sync_toolkit_settings(config_dir, mode):
@@ -557,6 +452,9 @@ def sync_toolkit_settings(config_dir, mode):
         if app.startswith('gtk'):
             ini[section]['gtk-theme-name'] = 'adw-gtk3-dark' if mode == 'dark' else 'adw-gtk3'
             ini[section]['gtk-application-prefer-dark-theme'] = str(int(mode == 'dark'))
+        if app.startswith('qt'):
+            ini[section]['custom_palette'] = 'true'
+            ini[section]['color_scheme_path'] = str(config_dir / app / 'colors/rice.conf')
         if icon_available:
             ini[section]['gtk-icon-theme-name' if app.startswith('gtk') else 'icon_theme'] = icons
         output = io.StringIO()
@@ -576,397 +474,89 @@ def sync_toolkit_settings(config_dir, mode):
             pass
 
 
-def stage_native(theme_command, config, config_dir, data_dir, directory):
-    # The running shell may use a different asset bundle from the system package.
-    try:
-        pids = command(['pgrep', '-u', str(os.getuid()), '-x', 'noctalia']).split()
-    except RuntimeError as error:
-        if not isinstance(error.__cause__, subprocess.CalledProcessError) or error.__cause__.returncode != 1:
-            raise
-        pids = []  # No running shell: use the installed asset bundle below.
-    try:
-        roots = set()
-        for pid in pids:
-            try:
-                environment = Path('/proc', pid, 'environ').read_bytes()
-            except (FileNotFoundError, ProcessLookupError):
-                continue  # Short-lived CLI processes may exit after pgrep.
-            for item in environment.split(b'\0'):
-                if item.startswith(b'NOCTALIA_ASSETS_DIR='):
-                    roots.add(os.fsdecode(item.split(b'=', 1)[1]))
-        if len(roots) > 1:
-            raise RuntimeError('Running Noctalia processes use different asset bundles')
-        base = Path(next(iter(roots), '/usr/share/noctalia/assets')) / 'templates'
-    except (OSError, subprocess.SubprocessError) as error:
-        raise RuntimeError('Could not identify the running Noctalia asset bundle') from error
-    catalog = tomllib.loads((base / 'builtin.toml').read_text())['templates']
-    specs, expected = [], {}
-    ids = config['theme'].get('templates', {}).get('builtin_ids', [])
-    for name in ids:
-        entry = catalog[name]
-        if name == 'hyprland':
-            source, outputs = base / 'hyprland/hyprland.lua', [str(config_dir / 'hypr/noctalia.lua')]
-        else:
-            source = base / entry['input_path']
-            values = entry['output_path']
-            outputs = values if isinstance(values, list) else [values]
-            outputs = [v.replace('$XDG_CONFIG_HOME', str(config_dir)).replace('$XDG_DATA_HOME', str(data_dir)) for v in outputs]
-        for output in outputs:
-            target = Path(output)
-            # Match native templates' installed-client gate, without creating new apps' configs.
-            if target.is_relative_to(config_dir) and not (config_dir / target.relative_to(config_dir).parts[0]).is_dir():
-                continue
-            staged = directory / ('expected-' + str(len(specs) // 2))
-            expected[str(target)] = staged
-            specs += ['-r', str(source) + ':' + str(staged)]
-    if not expected:
-        raise RuntimeError('No enabled native templates to verify')
-    # Individual --render does not execute catalog hooks or touch live files.
-    command(theme_command + specs)
-    return {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in expected.items()}
-
-
-def wait_for_templates(wallpaper, expected, mode=None):
-    # Wait for Noctalia's native templates to match the Matugen-backed palette.
-    deadline = time.monotonic() + 30
-    while True:
-        try:
-            if (command(['noctalia', 'msg', 'wallpaper-get']) == str(wallpaper)
-                    and (mode is None or command(['noctalia', 'msg', 'theme-mode-get']) == mode) and all(
-                    hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest
-                    for name, digest in expected.items())):
-                return
-        except (RuntimeError, OSError, subprocess.SubprocessError):
-            pass
-        if time.monotonic() >= deadline:
-            raise TimeoutError('Noctalia did not apply the native templates for the selected wallpaper')
-        time.sleep(0.15)
-
-
-def quiesce_shell():
-    """Emergency rollback only: drain native writers before restoring their files."""
-    try: pids = command(['pgrep', '-u', str(os.getuid()), '-x', 'noctalia']).split()
-    except RuntimeError as error:
-        if isinstance(error.__cause__, subprocess.CalledProcessError) and error.__cause__.returncode == 1:
-            return False
-        raise
-    if not pids: return False
-    if json.loads(command(['noctalia', 'msg', 'status'])).get('locked', True):
-        raise RuntimeError('Will not stop Noctalia while it is locking the session')
-    for value in pids: os.kill(int(value), signal.SIGTERM)
-    deadline = time.monotonic() + 30
-    while any(Path('/proc/' + value).exists() for value in pids):
-        if time.monotonic() >= deadline:
-            raise TimeoutError('Noctalia has not finished draining writers; snapshot retained')
-        time.sleep(0.1)
-    return True
-
-
-def restart_shell():
-    launcher = subprocess.Popen(['noctalia', '-d'], stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, start_new_session=True)
-    # -d may exit zero after daemonizing; only a responding IPC proves readiness.
-    for _ in range(20):
-        if launcher.poll() not in (None, 0):
-            raise RuntimeError('Noctalia restart launcher failed')
-        try:
-            ready = isinstance(json.loads(command(['noctalia', 'msg', 'status'], timeout=.5)), dict)
-        except (RuntimeError, OSError, subprocess.SubprocessError, ValueError):
-            ready = False
-        if launcher.poll() not in (None, 0):
-            raise RuntimeError('Noctalia restart launcher failed')
-        if ready:
-            return
-        time.sleep(.1)
-    raise TimeoutError('Noctalia restart IPC did not become ready')
-
-
 def theme_snapshot_paths(config_dir, state_dir):
-    share = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
-    names = ['hypr/current_wallpaper', 'hypr/noctalia.lua', 'hypr/hyprland.lua',
-             'kitty/kitty.conf', 'kitty/themes/noctalia.conf',
-             'gtk-3.0/gtk.css', 'gtk-3.0/noctalia.css', 'gtk-4.0/gtk.css', 'gtk-4.0/noctalia.css',
-             'gtk-3.0/settings.ini', 'gtk-4.0/settings.ini', 'qt5ct/qt5ct.conf', 'qt6ct/qt6ct.conf',
-             'qt5ct/colors/noctalia.conf', 'qt6ct/colors/noctalia.conf', 'kdeglobals',
-             'btop/btop.conf', 'btop/themes/noctalia.theme', 'alacritty/alacritty.toml', 'alacritty/themes/noctalia.toml']
-    return (
-        [config_dir / p for p in (*names, *configured_matugen_outputs(config_dir))]
-        + [state_dir / 'noctalia/settings.toml', share / 'color-schemes/noctalia.colors', adaptive_path(state_dir)]
-    )
+    names = ['hypr/current_wallpaper', 'hypr/rice-theme.lua', 'hypr/hyprland.lua',
+             'kitty/kitty.conf', 'alacritty/alacritty.toml', 'btop/btop.conf',
+             'gtk-3.0/settings.ini', 'gtk-4.0/settings.ini', 'gtk-4.0/gtk-dark.css',
+             'qt5ct/qt5ct.conf', 'qt6ct/qt6ct.conf', 'kdeglobals']
+    outputs = configured_matugen_outputs(config_dir)
+    return [config_dir / p for p in (*names, *outputs)] + [adaptive_path(state_dir)]
 
 
-def apply(wallpaper, config_dir, state_dir, runtime, backend='auto', target_mode=None):
-    global _CURRENT_BACKEND, _CURRENT_MODE
-    backend = detect_backend(backend)
-    _CURRENT_BACKEND = backend
+def reload_compositor():
+    if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') or shutil.which('hyprctl'):
+        command(['hyprctl', 'reload', 'config-only'])
+        errors = command(['hyprctl', 'configerrors'])
+        if errors:
+            raise RuntimeError(errors)
+
+
+def apply(wallpaper, config_dir, state_dir, runtime, backend='quickshell', target_mode=None):
+    global _CURRENT_MODE
     _CURRENT_MODE = target_mode
-    share = Path(os.environ.get('XDG_DATA_HOME', str(Path(os.path.expanduser('~')) / '.local/share')))
     link = config_dir / 'hypr/current_wallpaper'
     old_wallpaper = link.resolve() if link.exists() else None
-    settings = state_dir / 'noctalia/settings.toml'
-    # Capture managed settings contents while preserving the outer dotfiles symlink.
-    settings_target = settings.resolve()
-    snapshot = Snapshot([settings_target if p == settings else p
-                         for p in theme_snapshot_paths(config_dir, state_dir)], state_dir, link_only=(link,))
-    changed_backend = False
-    changed_noctalia = False
-    request = runtime / 'noctalia-matugen-request.json'
-    mode = None
-    palette_path = config_dir / 'noctalia/palettes/matugen.json'
+    snapshot = Snapshot(theme_snapshot_paths(config_dir, state_dir), state_dir, link_only=(link,))
+    palette_path = config_dir / 'rice/theme/matugen.json'
     previous_revision = hashlib.sha256(palette_path.read_bytes()).hexdigest() if palette_path.is_file() else None
+    changed_backend = False
     try:
-        # Start the wallpaper transition while palette and theme files are prepared.
-        duration_sec = 1.8
         changed_backend = True
+        duration_sec = 1.8
         command(['swww', 'img', str(wallpaper), '--transition-type', 'grow', '--transition-pos', 'center',
                  '--transition-fps', str(transition_fps()), '--transition-duration', str(duration_sec), '--transition-bezier', '.54,0,.34,.99'])
         deadline = time.monotonic() + duration_sec + 0.05
-
-        _, config, theme_command, palette_changed, mode = palette_for(wallpaper, config_dir)
-        changed_noctalia = palette_changed if backend == 'noctalia' else False
+        _, _, _, _, mode = palette_for(wallpaper, config_dir, target_mode=target_mode)
         adaptive, revision = stage_adaptive_theme(wallpaper, config_dir, mode)
-
-        if backend == 'noctalia':
-            reload_matugen_palette(config, palette_changed)
-            expected = stage_native(theme_command, config, config_dir, share, snapshot.directory)
-            atomic_write(request, json.dumps({
-                'wallpaper': str(wallpaper),
-                'mode': mode,
-                'palette': hashlib.sha256((config_dir / 'noctalia/palettes/matugen.json').read_bytes()).hexdigest(),
-                'expires': time.time() + 45,
-            }).encode())
-
-            # Wait only for whatever remains of the transition after theme preparation.
-            now = time.monotonic()
-            if now < deadline:
-                time.sleep(deadline - now)
-
-            # Mark before IPC: a command may persist settings before reporting failure.
-            changed_noctalia = True
-            command(['noctalia', 'msg', 'wallpaper-set', str(wallpaper)])
-            command(['noctalia', 'msg', 'templates-apply'])
-            wait_for_templates(wallpaper, expected, mode)
-            sync_toolkit_settings(config_dir, mode)
-            command(['hyprctl', 'reload', 'config-only'])
-            errors = command(['hyprctl', 'configerrors'])
-            if errors: raise RuntimeError(errors)
-            if (command(['noctalia', 'msg', 'wallpaper-get']) != str(wallpaper)
-                    or command(['noctalia', 'msg', 'theme-mode-get']) != mode):
-                raise RuntimeError('Theme transaction superseded by a newer native selection')
-        else:
-            now = time.monotonic()
-            if now < deadline:
-                time.sleep(deadline - now)
-            sync_toolkit_settings(config_dir, mode)
-            if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') or shutil.which('hyprctl'):
-                command(['hyprctl', 'reload', 'config-only'])
-                errors = command(['hyprctl', 'configerrors'])
-                if errors: raise RuntimeError(errors)
-
+        now = time.monotonic()
+        if now < deadline:
+            time.sleep(deadline - now)
+        sync_toolkit_settings(config_dir, mode)
+        reload_compositor()
         atomic_link(link, str(wallpaper))
         atomic_write(adaptive_path(state_dir), adaptive)
         print('WALLPAPER_AND_THEME_OK', wallpaper, '\nBACKUP', snapshot.directory)
         return revision
     except Exception as cause:
-        if backend == 'noctalia':
-            try:
-                preserve_selection = (command(['noctalia', 'msg', 'theme-mode-get']) != mode
-                                      or command(['noctalia', 'msg', 'wallpaper-get']) != str(wallpaper))
-            except Exception:
-                preserve_selection = True  # Unknown native state must not erase newer user intent.
-            if preserve_selection:
-                snapshot.entries.pop(str(settings_target), None)
-                snapshot.appearance.clear()
-        stopped = False
         restored = False
         try:
-            stopped = quiesce_shell() if (backend == 'noctalia' and changed_noctalia) else False
             snapshot.restore()
             if changed_backend:
                 if not old_wallpaper or not old_wallpaper.is_file():
-                    raise RuntimeError('Previous wallpaper is unknown; managed files restored but backend recovery cannot be verified')
+                    raise RuntimeError('Previous wallpaper is unknown; backend recovery cannot be verified')
                 command(['swww', 'img', str(old_wallpaper), '--transition-type', 'none'])
+            reload_compositor()
             restored = True
         except Exception as error:
             print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
-        if stopped:
-            try:
-                restart_shell()
-            except Exception as error:
-                restored = False
-                print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
-        if restored:
-            try:
-                if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') or shutil.which('hyprctl'):
-                    command(['hyprctl', 'reload', 'config-only'])
-                    errors = command(['hyprctl', 'configerrors'])
-                    if errors: raise RuntimeError(errors)
-            except Exception as error:
-                restored = False
-                print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
         if restored:
             print('RESTORED_SNAPSHOT', snapshot.directory, file=sys.stderr)
         raise TransactionError(str(cause), restored, previous_revision) from cause
-    finally:
-        try:
-            request.unlink(missing_ok=True)
-        except OSError as error:
-            # The expiring event marker must not replace a proven transaction outcome.
-            print('Wallpaper request cleanup needs attention:', error, file=sys.stderr)
 
 
-def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False, backend='auto', target_mode=None):
-    global _CURRENT_BACKEND, _CURRENT_MODE
-    backend = detect_backend(backend)
-    _CURRENT_BACKEND = backend
+def wallpaper_changed(config_dir, state_dir, runtime, mode_changed=False, backend='quickshell', target_mode=None):
+    global _CURRENT_MODE
     _CURRENT_MODE = target_mode
-
-    if backend == 'quickshell':
-        link = config_dir / 'hypr/current_wallpaper'
-        raw_path = os.environ.get('NOCTALIA_WALLPAPER_PATH')
-        if not raw_path and link.exists():
-            raw_path = str(link.resolve())
-        if not raw_path:
-            raise ValueError('No current wallpaper found')
-        wallpaper = Path(raw_path).expanduser().resolve(strict=True)
-        if not wallpaper.is_file():
-            raise ValueError('Wallpaper path is invalid')
-
-        runtime.mkdir(parents=True, exist_ok=True)
-        with (runtime / 'noctalia-wallpaper-apply.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            old_wallpaper = link.resolve() if link.exists() else None
-            paths = [p for p in theme_snapshot_paths(config_dir, state_dir)
-                     if p != state_dir / 'noctalia/settings.toml']
-            snapshot = Snapshot(paths, state_dir, link_only=(link,))
-            changed_backend = False
-            try:
-                _, config, _, _, mode = palette_for(wallpaper, config_dir)
-                adaptive, _ = stage_adaptive_theme(wallpaper, config_dir, mode)
-                sync_toolkit_settings(config_dir, mode)
-                if old_wallpaper != wallpaper:
-                    changed_backend = True
-                    command(['swww', 'img', str(wallpaper), '--transition-type', 'fade', '--transition-duration', '0.3'])
-                    atomic_link(link, str(wallpaper))
-                if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') or shutil.which('hyprctl'):
-                    command(['hyprctl', 'reload', 'config-only'])
-                    errors = command(['hyprctl', 'configerrors'])
-                    if errors:
-                        raise RuntimeError(errors)
-                atomic_write(adaptive_path(state_dir), adaptive)
-            except Exception:
-                try:
-                    snapshot.restore()
-                    if changed_backend and old_wallpaper and old_wallpaper.is_file():
-                        try:
-                            command(['swww', 'img', str(old_wallpaper), '--transition-type', 'none'])
-                        except Exception as error:
-                            print('Wallpaper recovery needs attention:', error, file=sys.stderr)
-                    if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') or shutil.which('hyprctl'):
-                        try:
-                            command(['hyprctl', 'reload', 'config-only'])
-                            errors = command(['hyprctl', 'configerrors'])
-                            if errors: raise RuntimeError(errors)
-                        except Exception as error:
-                            print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
-                except Exception:
-                    pass
-                raise
-        return
-
-    raw_path = (None if mode_changed else os.environ.get('NOCTALIA_WALLPAPER_PATH')) or command(['noctalia', 'msg', 'wallpaper-get'])
-    wallpaper = Path(raw_path).expanduser().resolve(strict=True)
-    if not wallpaper.is_file() or '\n' in str(wallpaper) or '\r' in str(wallpaper):
-        raise ValueError('Noctalia supplied an invalid wallpaper path')
-
-    request = runtime / 'noctalia-matugen-request.json'
-    palette_path = config_dir / 'noctalia/palettes/matugen.json'
-    try:
-        data = json.loads(request.read_text())
-        if (not mode_changed and isinstance(data, dict)
-                and data.get('wallpaper') == str(wallpaper)
-                and type(data.get('expires')) in (int, float) and data['expires'] > time.time()
-                and data.get('mode') == command(['noctalia', 'msg', 'theme-mode-get'])
-                and data.get('palette') == hashlib.sha256(palette_path.read_bytes()).hexdigest()):
-            # A leftover marker cannot promise that its transaction will finish.
-            with (runtime / 'noctalia-wallpaper-apply.lock').open('a') as owner:
-                try:
-                    fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    return
-    except (OSError, ValueError):
-        pass
-
+    link = config_dir / 'hypr/current_wallpaper'
+    wallpaper = link.resolve(strict=True)
+    if not wallpaper.is_file():
+        raise ValueError('Wallpaper path is invalid')
     runtime.mkdir(parents=True, exist_ok=True)
-    with (runtime / 'noctalia-wallpaper-apply.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        # Discard queued events superseded by a newer native selection.
-        if Path(command(['noctalia', 'msg', 'wallpaper-get'])).expanduser().resolve(strict=True) != wallpaper:
-            return
-        link = config_dir / 'hypr/current_wallpaper'
-        old_wallpaper = link.resolve() if link.exists() else None
-        # Native wallpaper selection belongs to the user, including newer selections.
-        paths = [p for p in theme_snapshot_paths(config_dir, state_dir)
-                 if p != state_dir / 'noctalia/settings.toml']
-        snapshot = Snapshot(paths, state_dir, link_only=(link,))
-        palette_changed = False
-        changed_native = False
-        changed_backend = False
-        mode = None
-
-        def check_selection():
-            if Path(command(['noctalia', 'msg', 'wallpaper-get'])).expanduser().resolve(strict=True) != wallpaper:
-                raise RuntimeError('Wallpaper event superseded by a newer selection')
-            if mode is not None and command(['noctalia', 'msg', 'theme-mode-get']) != mode:
-                raise RuntimeError('Theme event superseded by a newer mode')
+    with (runtime / 'rice-wallpaper-apply.lock').open('a') as lock:
+        acquire_request_lock(lock)
+        snapshot = Snapshot(theme_snapshot_paths(config_dir, state_dir), state_dir, link_only=(link,))
         try:
-            _, config, theme_command, palette_changed, mode = palette_for(wallpaper, config_dir)
+            _, _, _, _, mode = palette_for(wallpaper, config_dir, target_mode=target_mode)
             adaptive, _ = stage_adaptive_theme(wallpaper, config_dir, mode)
-            check_selection()
-            changed_native = palette_changed
-            reload_matugen_palette(config, palette_changed)
-            expected = stage_native(
-                theme_command, config, config_dir,
-                Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))), snapshot.directory
-            )
-            changed_native = True
-            command(['noctalia', 'msg', 'templates-apply'])
-            check_selection()
-            wait_for_templates(wallpaper, expected, mode)
-            check_selection()
             sync_toolkit_settings(config_dir, mode)
-            if old_wallpaper != wallpaper:
-                if not config.get('wallpaper', {}).get('enabled', True):
-                    changed_backend = True
-                    command(['swww', 'img', str(wallpaper), '--transition-type', 'fade', '--transition-duration', '0.3'])
-                check_selection()
-                atomic_link(link, str(wallpaper))
-            if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE'):
-                command(['hyprctl', 'reload', 'config-only'])
-                errors = command(['hyprctl', 'configerrors'])
-                if errors:
-                    raise RuntimeError(errors)
-            check_selection()
+            reload_compositor()
             atomic_write(adaptive_path(state_dir), adaptive)
         except Exception:
-            stopped = quiesce_shell() if changed_native else False
             try:
                 snapshot.restore()
-                if changed_backend and old_wallpaper and old_wallpaper.is_file():
-                    try:
-                        command(['swww', 'img', str(old_wallpaper), '--transition-type', 'none'])
-                    except Exception as error:
-                        print('Wallpaper recovery needs attention:', error, file=sys.stderr)
-                if os.environ.get('HYPRLAND_INSTANCE_SIGNATURE'):
-                    try:
-                        command(['hyprctl', 'reload', 'config-only'])
-                        errors = command(['hyprctl', 'configerrors'])
-                        if errors: raise RuntimeError(errors)
-                    except Exception as error:
-                        print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
-            finally:
-                if stopped:
-                    subprocess.Popen(['noctalia', '-d'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                reload_compositor()
+            except Exception as error:
+                print(f'Rollback incomplete; snapshot retained at {snapshot.directory}: {error}', file=sys.stderr)
             raise
 
 
@@ -980,7 +570,7 @@ def main():
     parser.add_argument('wallpaper', nargs='?')
     parser.add_argument('--request-id', default=None, help='Opaque carousel request identifier')
     parser.add_argument('--json', action='store_true', help='Emit one final transaction outcome as JSON')
-    parser.add_argument('--backend', choices=['auto', 'quickshell', 'noctalia'], default='auto',
+    parser.add_argument('--backend', choices=['auto', 'quickshell'], default='quickshell',
                         help='Desktop shell backend for theme synchronization')
     parser.add_argument('--mode', choices=['dark', 'light'], default=None,
                         help='Target theme mode (dark or light)')
@@ -1010,7 +600,7 @@ def main():
         if not wallpaper.is_file() or '\n' in str(wallpaper) or '\r' in str(wallpaper):
             raise ValueError('Wallpaper must be a regular image file with a single-line path')
         runtime.mkdir(parents=True, exist_ok=True)
-        with (runtime / 'noctalia-wallpaper-apply.lock').open('a') as lock:
+        with (runtime / 'rice-wallpaper-apply.lock').open('a') as lock:
             if args.apply_wallpaper:
                 record['error_code'] = 'transaction_busy'
             acquire_request_lock(lock)
@@ -1020,22 +610,13 @@ def main():
                     record['palette_revision'] = apply(wallpaper, config_dir, state_dir, runtime, backend=backend, target_mode=args.mode)
                 record.update(status='applied', error_code=None)
             else:
-                snap = Snapshot([config_dir / name for name in configured_matugen_outputs(config_dir)]
-                                + [state_dir / 'noctalia/settings.toml', adaptive_path(state_dir)], state_dir)
-                palette_changed = False
+                snap = Snapshot(theme_snapshot_paths(config_dir, state_dir), state_dir, link_only=(config_dir / 'hypr/current_wallpaper',))
                 try:
-                    _, config, _, palette_changed, mode = palette_for(wallpaper, config_dir, backend=backend, target_mode=args.mode)
+                    _, _, _, _, mode = palette_for(wallpaper, config_dir, target_mode=args.mode)
                     adaptive, _ = stage_adaptive_theme(wallpaper, config_dir, mode)
-                    if backend == 'noctalia':
-                        reload_matugen_palette(config, palette_changed)
                     atomic_write(adaptive_path(state_dir), adaptive)
                 except Exception:
                     snap.restore()
-                    if backend == 'noctalia' and palette_changed:
-                        try:
-                            command(['noctalia', 'msg', 'color-palette-reload'])
-                        except Exception as error:
-                            print('Noctalia palette rollback needs attention:', error, file=sys.stderr)
                     raise
         return 0
     except Exception as error:

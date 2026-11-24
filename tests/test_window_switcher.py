@@ -48,7 +48,7 @@ assert.deepEqual(activationCommands([b], 'abc', true), []);
 
 @unittest.skipUnless(shutil.which("lua"), "lua required")
 class WindowSwitcherKeybindTest(unittest.TestCase):
-    def test_real_lua_binds_native_first_with_fallback(self):
+    def test_real_lua_binds_native_only(self):
         check = r"""
 local binds = {}
 local actions = {}
@@ -69,11 +69,10 @@ hl = {
 TERMINAL, FILE_MANAGER, CALCULATOR, BROWSER = 'terminal', 'files', 'calc', 'browser'
 NUM_WPM, MONITOR1 = 5, 'test'
 dofile(arg[1])
-local fallback = 'qs ipc -p ~/.config/quickshell/rice-shell prop get rice windowSwitcherShortcuts >/dev/null 2>&1 || noctalia msg window-switcher'
 binds['SUPER + Tab'][1]()
 binds['SUPER + SHIFT + Tab'][1]()
-assert(actions[1] == 'rice:window-switcher-next' and actions[2] == fallback)
-assert(actions[3] == 'rice:window-switcher-prev' and actions[4] == fallback)
+assert(actions[1] == 'rice:window-switcher-next')
+assert(actions[2] == 'rice:window-switcher-prev' and #actions == 2)
 assert(binds['code:133'][1] == 'rice:window-switcher-super-left')
 assert(binds['code:134'][1] == 'rice:window-switcher-super-right')
 assert(binds['code:133'][2].non_consuming and binds['code:134'][2].non_consuming)

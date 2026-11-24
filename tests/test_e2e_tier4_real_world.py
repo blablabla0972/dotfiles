@@ -61,7 +61,7 @@ class TestTier4RealWorld(E2EBaseTestCase):
 
         # Setup initial configuration state
         (self.e2e.config / "hypr").mkdir(parents=True, exist_ok=True)
-        (self.e2e.config / "noctalia/palettes").mkdir(parents=True, exist_ok=True)
+        (self.e2e.config / "rice/theme").mkdir(parents=True, exist_ok=True)
         (self.e2e.config / "micro/colorschemes").mkdir(parents=True, exist_ok=True)
         (self.e2e.state / "noctalia").mkdir(parents=True, exist_ok=True)
 
@@ -69,8 +69,8 @@ class TestTier4RealWorld(E2EBaseTestCase):
         colors_file.write_text("# ORIGINAL COLORS CONF CONTENT\n", encoding="utf-8")
         original_colors_bytes = colors_file.read_bytes()
 
-        palette_file = self.e2e.config / "noctalia/palettes/matugen.json"
-        authentic_palette = (REPO_ROOT / "config/noctalia/palettes/matugen.json").read_text()
+        palette_file = self.e2e.config / "rice/theme/matugen.json"
+        authentic_palette = (REPO_ROOT / "config/rice/theme/matugen.json").read_text()
         palette_file.write_text(authentic_palette, encoding="utf-8")
         original_palette_bytes = palette_file.read_bytes()
 
@@ -93,9 +93,9 @@ command = ""
 input_path = "colors.conf"
 output_path = "~/.config/hypr/colors.conf"
 
-[templates.noctalia]
+[templates.rice]
 input_path = "matugen.json"
-output_path = "~/.config/noctalia/palettes/matugen.json"
+output_path = "~/.config/rice/theme/matugen.json"
 """)
 
         # Inject failure trigger for matugen to simulate mid-transaction failure
@@ -164,9 +164,9 @@ command = ""
 input_path = "colors.conf"
 output_path = "~/.config/hypr/colors.conf"
 
-[templates.noctalia]
+[templates.rice]
 input_path = "matugen.json"
-output_path = "~/.config/noctalia/palettes/matugen.json"
+output_path = "~/.config/rice/theme/matugen.json"
 
 [templates.micro]
 input_path = "adaptive.micro"

@@ -66,7 +66,6 @@ hl.window_rule({ match = { class = "^(.*[Cc]alc.*)$" }, float = true, size = { "
 hl.window_rule({ match = { class = "^(org\\.kde\\.keditfiletype)$" }, float = true })
 hl.window_rule({ match = { class = "^(org\\.kde\\.ark)$" }, size = { "max(monitor_w, monitor_h)*0.40", "min(monitor_w, monitor_h)*0.40" } })
 hl.window_rule({ match = { class = "^(.*swash)$", title = "^(Swash)$" }, min_size = { "max(monitor_w, monitor_h)*0.35", "min(monitor_w, monitor_h)*0.35" }, float = true })
-hl.window_rule({ match = { class = "^(dev\\.)?(noctalia\\.Noctalia(\\.Settings)?)$" }, float = true, size = { "70%", "70%" } })
 hl.window_rule({ name = "rice-settings", match = { class = "^org\\.quickshell$", title = "^Rice Settings$" }, float = true, center = true })
 hl.window_rule({
     match = {
@@ -175,16 +174,4 @@ hl.layer_rule({
     name = "cod29-workspace-capture",
     match = { namespace = "^cod29-workspace-strip$" },
     no_screen_share = true,
-})
-
--- Noctalia layer rule
-hl.layer_rule({
-  name = "noctalia",
-  match = {
-    namespace = "^noctalia-(bar-.+|notification|dock|panel|attached-panel|osd|window-switcher)$",
-  },
-  no_anim = true,
-  ignore_alpha = 0.5,
-  blur = true,
-  blur_popups = true,
 })

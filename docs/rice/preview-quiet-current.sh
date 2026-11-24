@@ -3,7 +3,7 @@
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 main="$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")"
-components=(hypr noctalia quickshell matugen rice micro kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals)
+components=(hypr quickshell matugen rice micro kitty alacritty gtk-3.0 gtk-4.0 qt5ct qt6ct btop kdeglobals)
 
 rollback() {
     # Restore only the validated directory/file symlinks, never state/bin/prompt.
@@ -27,8 +27,6 @@ for name in sys.argv[3:]:
         temporary.unlink(missing_ok=True)
 PY
     hyprctl reload config-only || return
-    noctalia msg config-reload || return
-    noctalia msg color-palette-reload || return
     local errors
     errors="$(hyprctl configerrors)" || return
     [[ -z "$errors" ]] || { printf '%s\n' "$errors" >&2; return 1; }
@@ -59,17 +57,14 @@ case "${1:---dry-run}" in
         [[ -f "$wallpaper" ]] || { echo 'Current wallpaper is missing.' >&2; exit 1; }
         errors="$(hyprctl configerrors)"
         [[ -z "$errors" ]] || { printf '%s\n' "$errors" >&2; exit 1; }
-        noctalia config validate "$repo/config/noctalia/config.toml"
         umask 077
         evidence="${XDG_STATE_HOME:-$HOME/.local/state}/quiet-current-validation"
         mkdir -p "$evidence"
         # Every generated theme target follows the worktree before the owner writes.
         trap 'trap - ERR; echo "Preview failed; restoring main configuration." >&2; rollback || echo "Manual recovery required: see installer backups." >&2; exit 1' ERR
         (cd "$repo" && bash ./install.sh --no-state "${components[@]}")
-        noctalia msg config-reload
         python3 "$repo/config/hypr/scripts/generate-theme.py" --apply-wallpaper \
             --request-id "quiet-preview-$(date +%s)" --json "$wallpaper" > "$evidence/apply-result.json"
-        noctalia config export full > "$evidence/effective-config.toml"
         errors="$(hyprctl configerrors)"
         [[ -z "$errors" ]] || { printf '%s\n' "$errors" >&2; false; }
         if command -v grim >/dev/null 2>&1; then grim "$evidence/after.png"; fi

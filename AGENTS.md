@@ -5,15 +5,15 @@ This is an installable CachyOS/Hyprland dotfiles snapshot. Read [README.md](READ
 ## Layout and live files
 
 - `config/` maps to `~/.config/<name>`; `root/` maps individual files there; `state/` maps app state under `~/.local/state`; `bin/` maps utilities to `~/.local/bin`.
-- The configured desktop is Lua-based: `config/hypr/hyprland.lua` loads `config/hypr/config/*.lua`. Noctalia and the Quickshell wallpaper picker are separate programs.
+- The configured desktop is Lua-based: `config/hypr/hyprland.lua` loads `config/hypr/config/*.lua`. Rice Shell and the Quickshell wallpaper picker are separate programs.
 - On this host, active components are symlinks into checkouts. Resolve the affected `~/.config/<name>` link before editing; all managed live config links resolved to `main` at the 2026-11-11 stabilization checkpoint, but later previews may change that. Editing the resolved source changes live configuration immediately. Other repository files are snapshots until installed.
-- `install.sh --dry-run` previews link changes; selected installs create backups under `~/.config/backups/`. Selecting `noctalia` or `--all` can also install `state/noctalia/settings.toml`; pass `--no-state` when preserving the host's runtime state.
+- `install.sh --dry-run` previews link changes; selected installs create backups under `~/.config/backups/`. Pass `--no-state` when preserving runtime state.
 - For configuration or behavior work, use an isolated Git worktree. `wt-prep.sh <new-worktree>` copies machine-specific `current_wallpaper` and GPU files and replaces those destinations there; use it only on a newly created worktree. Preview only the changed components and follow the documented rollback procedure.
 
 ## Ownership and constraints
 
-- Generate theme outputs through `config/hypr/scripts/generate-theme.py`. Do not hand-edit `config/hypr/colors.conf`, `config/hypr/noctalia.lua`, `config/noctalia/palettes/matugen.json`, or `config/micro/colorschemes/adaptive.micro`.
-- Noctalia writes `state/noctalia/settings.toml`; inspect and preserve existing user changes. `config/hypr/current_wallpaper`, GPU selections, input-method state, and cache files can be host-specific. Never stage unrelated `git status` entries.
+- Generate theme outputs through `config/hypr/scripts/generate-theme.py`. Do not hand-edit `config/hypr/colors.conf`, `config/hypr/rice-theme.lua`, `config/rice/theme/matugen.json`, or `config/micro/colorschemes/adaptive.micro`.
+- `config/hypr/current_wallpaper`, GPU selections, input-method state, and cache files can be host-specific. Never stage unrelated `git status` entries.
 - Preserve the dark default and original lock-screen clock layout unless the user requests otherwise. Keep the existing wallpaper transaction owner and rollback/acknowledgment behavior when changing theme generation.
 - Check for a nearer `AGENTS.md` before editing within a subtree. Do not index CodeGraph yourself; when `.codegraph/` exists, use its available index before searching source for symbols.
 - There is no root build system, package manifest, linter, formatter, or type checker. CI runs the dependency-free tracked-file validator and isolated unit tests documented in `docs/DEVELOPMENT.md`; do not invent additional tooling.
