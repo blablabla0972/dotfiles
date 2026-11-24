@@ -10,13 +10,21 @@ Item {
 
     property alias path: stateFile.path
     property var favorites: []
-    property var recents: []
-    property var frequency: ({})
-    property var calculations: []
-    readonly property bool rememberApps: Quickshell.env("RICE_LAUNCHER_MRU") !== "0"
-    readonly property bool rememberCalculations: Quickshell.env("RICE_LAUNCHER_CALC_HISTORY") !== "0"
+    property var savedRecents: []
+    property var savedFrequency: ({})
+    property var savedCalculations: []
+    property bool recordApps: true
+    property bool recordCalculations: true
+    readonly property bool appsAllowed: Quickshell.env("RICE_LAUNCHER_MRU") !== "0"
+    readonly property bool calculationsAllowed: Quickshell.env("RICE_LAUNCHER_CALC_HISTORY") !== "0"
+    readonly property var recents: appsAllowed ? savedRecents : []
+    readonly property var frequency: appsAllowed ? savedFrequency : ({})
+    readonly property var calculations: calculationsAllowed ? savedCalculations : []
+    readonly property bool rememberApps: appsAllowed && recordApps
+    readonly property bool rememberCalculations: calculationsAllowed && recordCalculations
     property bool ready: false
     property bool writable: true
+    property bool saveFailed: false
     property bool saving: false
     property bool dirty: false
     property var beforeLoad: []
@@ -28,23 +36,23 @@ Item {
             if (!Array.isArray(data.favorites) || !Array.isArray(data.recents)
                     || !Array.isArray(data.calculations)) throw new Error("Invalid fields");
             favorites = Array.from(new Set(data.favorites.filter(value => typeof value === "string")));
-            if (rememberApps) {
-                recents = Array.from(new Set(data.recents.filter(value => typeof value === "string"))).slice(0, 32);
-                const counts = Object.create(null);
-                for (const id of recents) {
-                    const count = data.frequency?.[id];
-                    if (Number.isInteger(count) && count > 0) counts[id] = Math.min(count, 10000);
-                }
-                frequency = counts;
+            recordApps = data.history?.apps !== false;
+            recordCalculations = data.history?.calculations !== false;
+            savedRecents = Array.from(new Set(data.recents.filter(value => typeof value === "string"))).slice(0, 32);
+            const counts = Object.create(null);
+            for (const id of savedRecents) {
+                const count = data.frequency?.[id];
+                if (Number.isInteger(count) && count > 0) counts[id] = Math.min(count, 10000);
             }
-            if (rememberCalculations) calculations = data.calculations.filter(entry => entry
+            savedFrequency = counts;
+            savedCalculations = data.calculations.filter(entry => entry
                 && typeof entry.expression === "string" && typeof entry.value === "string").slice(0, 20);
         } catch (error) {
             writable = false;
             console.warn("Could not read launcher state:", error.message);
         }
         ready = true;
-        for (const operation of beforeLoad) operation();
+        for (const operation of beforeLoad) update(operation);
         beforeLoad = [];
     }
 
@@ -62,7 +70,18 @@ Item {
         if (!writable || !dirty || saving) return;
         saving = true;
         dirty = false;
-        stateFile.setText(JSON.stringify({favorites, recents, frequency, calculations}));
+        stateFile.setText(JSON.stringify({
+            favorites, recents: savedRecents, frequency: savedFrequency, calculations: savedCalculations,
+            history: { apps: recordApps, calculations: recordCalculations }
+        }));
+    }
+
+    function setHistoryRecording(kind: string, enabled: bool): void {
+        if (!ready || !writable) return;
+        if (kind === "apps" && appsAllowed && enabled !== recordApps)
+            update(() => { recordApps = enabled; });
+        else if (kind === "calculations" && calculationsAllowed && enabled !== recordCalculations)
+            update(() => { recordCalculations = enabled; });
     }
 
     function toggleFavorite(id: string): void {
@@ -73,20 +92,21 @@ Item {
 
     function recordLaunch(id: string): void {
         if (id && rememberApps) update(() => {
-            recents = [id].concat(recents.filter(value => value !== id)).slice(0, 32);
+            if (!rememberApps) return;
+            savedRecents = [id].concat(savedRecents.filter(value => value !== id)).slice(0, 32);
             const counts = Object.create(null);
-            for (const recent of recents) counts[recent] = frequency[recent] || 0;
+            for (const recent of savedRecents) counts[recent] = savedFrequency[recent] || 0;
             counts[id] = Math.min(10000, counts[id] + 1);
-            frequency = counts;
+            savedFrequency = counts;
         });
     }
 
     function clearHistory(calculator: bool): void {
         update(() => {
-            if (calculator) calculations = [];
+            if (calculator) savedCalculations = [];
             else {
-                recents = [];
-                frequency = Object.create(null);
+                savedRecents = [];
+                savedFrequency = Object.create(null);
             }
         });
     }
@@ -94,8 +114,9 @@ Item {
     function recordCalculation(expression: string, value: string): void {
         if (!rememberCalculations || !expression || !value) return;
         update(() => {
-            calculations = [{expression, value}].concat(
-                calculations.filter(entry => entry.expression !== expression)).slice(0, 20);
+            if (!rememberCalculations) return;
+            savedCalculations = [{expression, value}].concat(
+                savedCalculations.filter(entry => entry.expression !== expression)).slice(0, 20);
         });
     }
 
@@ -110,11 +131,13 @@ Item {
             store.load('{"favorites":[],"recents":[],"calculations":[]}');
         }
         onSaved: {
+            store.saveFailed = false;
             store.saving = false;
             store.save();
         }
         onSaveFailed: (error) => {
             console.warn("Could not save launcher state:", error);
+            store.saveFailed = true;
             store.saving = false;
             store.dirty = true;
         }

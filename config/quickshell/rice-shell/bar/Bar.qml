@@ -14,6 +14,7 @@ PanelWindow {
     id: barRoot
 
     required property ShellScreen targetScreen
+    required property ShellPresentation presentation
     screen: targetScreen
     color: "transparent"
     implicitHeight: 40
@@ -130,12 +131,16 @@ PanelWindow {
 
             // Status Tray
             StatusTray {
+                objectName: "bar-system-tray"
+                visible: barRoot.presentation.showTray
                 Layout.alignment: Qt.AlignVCenter
                 parentWindow: barRoot
             }
 
             // Internet connectivity
             Rectangle {
+                objectName: "bar-connectivity"
+                visible: barRoot.presentation.showConnectivity
                 Layout.alignment: Qt.AlignVCenter
                 height: 24
                 implicitWidth: internetContent.implicitWidth + 14
@@ -171,7 +176,8 @@ PanelWindow {
             }
 
             RowLayout {
-                visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
+                objectName: "bar-battery"
+                visible: barRoot.presentation.showBattery && UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 5
 
@@ -191,6 +197,8 @@ PanelWindow {
 
             // Divider between network status and clock
             Rectangle {
+                visible: barRoot.presentation.showTray || barRoot.presentation.showConnectivity
+                    || (barRoot.presentation.showBattery && UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery)
                 width: 1
                 height: 14
                 color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
@@ -209,7 +217,7 @@ PanelWindow {
 
                 SystemClock {
                     id: minuteClock
-                    precision: SystemClock.Minutes
+                    precision: barRoot.presentation.showClockSeconds ? SystemClock.Seconds : SystemClock.Minutes
                 }
 
                 RowLayout {
@@ -225,7 +233,8 @@ PanelWindow {
 
                     Text {
                         id: clockText
-                        text: Qt.formatDateTime(minuteClock.date, "hh:mm")
+                        objectName: "bar-clock-text"
+                        text: Qt.formatDateTime(minuteClock.date, barRoot.presentation.showClockSeconds ? "hh:mm:ss" : "hh:mm")
                         font.pixelSize: 12
                         font.bold: true
                         color: clockHover.hovered ? Tokens.accent : Tokens.text_primary
@@ -234,7 +243,7 @@ PanelWindow {
 
                 HoverHandler { id: clockHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
-                    onTapped: barRoot.requestDashboard("Home")
+                    onTapped: barRoot.requestDashboard("")
                 }
 
             }

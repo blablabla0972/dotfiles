@@ -70,7 +70,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: 26
-        color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.97)
+        color: Tokens.surface
         border.width: 1
         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.38)
         clip: true
@@ -81,51 +81,12 @@ Item {
         anchors.margins: 16
         spacing: 10
 
-        RowLayout {
+        DrawerHeader {
             Layout.fillWidth: true
-            Layout.preferredHeight: 32
-            Layout.maximumHeight: 32
-            Layout.fillHeight: false
-            spacing: 8
-
-            Text {
-                Layout.fillWidth: true
-                text: root.pageTitle
-                font.pixelSize: 15
-                font.weight: Font.DemiBold
-                color: Tokens.text_primary
-            }
-
-            Rectangle {
-                Layout.preferredWidth: 28
-                Layout.preferredHeight: 28
-                radius: 14
-                color: closeHover.hovered ? Tokens.surface_high : "transparent"
-                activeFocusOnTab: true
-                Accessible.role: Accessible.Button
-                Accessible.name: qsTr("Close %1 menu").arg(root.pageTitle)
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "󰅖"
-                    font.pixelSize: 14
-                    color: Tokens.text_secondary
-                }
-
-                HoverHandler { id: closeHover }
-                TapHandler {
-                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                    onTapped: root.closeRequested()
-                }
-                Keys.onReturnPressed: function(event) {
-                    root.closeRequested();
-                    event.accepted = true;
-                }
-                Keys.onSpacePressed: function(event) {
-                    root.closeRequested();
-                    event.accepted = true;
-                }
-            }
+            title: root.pageTitle
+            icon: root.activePage === "wifi" ? "󰤨"
+                : root.activePage === "bluetooth" ? "󰂯" : "󰖩"
+            onCloseRequested: root.closeRequested()
         }
 
         Item {

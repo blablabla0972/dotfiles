@@ -7,9 +7,10 @@ rice_qml="${rice_config}/shell.qml"
 notifications=${ENABLE_NOTIFICATIONS:-1}
 
 load_workspace_drag() {
-    local repo plugin
-    repo=$(realpath "$rice_config/../../.." 2>/dev/null) || return 0
-    plugin="$repo/build/libcod29_top_edge_drag.so"
+    local script repo plugin
+    script=$(realpath "${BASH_SOURCE[0]}" 2>/dev/null) || return 0
+    repo=$(dirname "${script}")/../../..
+    plugin=$(realpath "$repo/build/libcod29_top_edge_drag.so" 2>/dev/null) || return 0
     [[ -r "$plugin" ]] || return 0
     if ! hyprctl plugin list | grep -q 'Plugin cod29_top_edge_drag '; then
         hyprctl plugin load "$plugin" >&2

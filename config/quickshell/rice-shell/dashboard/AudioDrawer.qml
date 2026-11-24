@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell.Io
 import Quickshell.Services.Pipewire
@@ -116,61 +117,23 @@ Rectangle {
     }
 
     radius: 26
-    color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.97)
+    color: Tokens.surface
     border.width: 1
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.38)
     clip: true
     Accessible.role: Accessible.Pane
-    Accessible.name: qsTr("Audio devices")
+    Accessible.name: qsTr("Sound")
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
         spacing: 10
 
-        RowLayout {
+        DrawerHeader {
             Layout.fillWidth: true
-
-            Text {
-                Layout.fillWidth: true
-                text: qsTr("Audio devices")
-                color: Tokens.text_primary
-                font.pixelSize: 16
-                font.weight: Font.DemiBold
-                elide: Text.ElideRight
-            }
-
-            Rectangle {
-                Layout.preferredWidth: 28
-                Layout.preferredHeight: 28
-                radius: 14
-                color: closeHover.hovered || activeFocus ? Tokens.surface_high : "transparent"
-                activeFocusOnTab: true
-                Accessible.role: Accessible.Button
-                Accessible.name: qsTr("Close audio menu")
-                Accessible.onPressAction: root.closeRequested()
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "󰅖"
-                    font.pixelSize: 14
-                    color: Tokens.text_secondary
-                }
-
-                HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler {
-                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                    onTapped: root.closeRequested()
-                }
-                Keys.onReturnPressed: (event) => {
-                    root.closeRequested();
-                    event.accepted = true;
-                }
-                Keys.onSpacePressed: (event) => {
-                    root.closeRequested();
-                    event.accepted = true;
-                }
-            }
+            title: qsTr("Sound")
+            icon: "󰕾"
+            onCloseRequested: root.closeRequested()
         }
 
         Text {
@@ -190,21 +153,12 @@ Rectangle {
             contentHeight: controls.height
             boundsBehavior: Flickable.StopAtBounds
             clip: true
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
             ColumnLayout {
                 id: controls
                 width: scroll.width
                 spacing: 8
-
-                DeviceSection {
-                    Layout.fillWidth: true
-                    output: true
-                }
-
-                DeviceSection {
-                    Layout.fillWidth: true
-                    output: false
-                }
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -236,6 +190,16 @@ Rectangle {
                         onActivated: Audio.toggleMicMute()
                     }
                 }
+
+                DeviceSection {
+                    Layout.fillWidth: true
+                    output: true
+                }
+
+                DeviceSection {
+                    Layout.fillWidth: true
+                    output: false
+                }
             }
         }
     }
@@ -245,10 +209,11 @@ Rectangle {
         required property bool output
         readonly property PwNode current: output ? Audio.sink : Audio.source
         readonly property list<PwNode> devices: Audio.devices.filter(node => node.isSink === output)
+            .sort((first, second) => Number(second === current) - Number(first === current))
 
         Text {
             Layout.fillWidth: true
-            text: section.output ? qsTr("Output") : qsTr("Input")
+            text: section.output ? qsTr("Output devices") : qsTr("Input devices")
             color: Tokens.text_secondary
             font.pixelSize: 12
             font.weight: Font.DemiBold

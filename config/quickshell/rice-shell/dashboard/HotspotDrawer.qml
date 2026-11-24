@@ -8,11 +8,13 @@ import "../theme"
 
 Item {
     id: root
+    property bool settingsPage: false
 
-    anchors.fill: parent
+    anchors.fill: settingsPage ? undefined : parent
     implicitWidth: 360
-    implicitHeight: 500
-    focus: visible
+    implicitHeight: settingsPage ? hotspotContent.implicitHeight : 500
+    focus: visible && !settingsPage
+    activeFocusOnTab: settingsPage
 
     Accessible.role: Accessible.Pane
     Accessible.name: qsTr("Hotspot settings")
@@ -76,60 +78,19 @@ Item {
         anchors.fill: parent
         clip: true
         contentWidth: availableWidth
+        ScrollBar.vertical.policy: root.settingsPage ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded
 
         ColumnLayout {
+            id: hotspotContent
             width: scroll.availableWidth
             spacing: 14
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 10
-
-                Rectangle {
-                    Layout.preferredWidth: 42
-                    Layout.preferredHeight: 42
-                    radius: 14
-                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.14)
-                    Text {
-                        anchors.centerIn: parent
-                        text: "󰖩"
-                        color: Tokens.accent
-                        font.pixelSize: 21
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 3
-
-                    Text {
-                        text: qsTr("Hotspot")
-                        color: Tokens.text_primary
-                        font.pixelSize: 21
-                        font.weight: Font.DemiBold
-                    }
-
-                    Text {
-                        text: qsTr("Share your internet connection")
-                        color: Tokens.text_secondary
-                        font.pixelSize: 11
-                        wrapMode: Text.Wrap
-                    }
-                }
-
-                BusyIndicator {
-                    Layout.preferredWidth: 22
-                    Layout.preferredHeight: 22
-                    running: Hotspot.busy
-                    visible: running
-                }
-            }
-
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: stateContent.implicitHeight + 20
-                radius: 12
-                color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
+                implicitHeight: root.settingsPage ? Math.max(68, stateContent.implicitHeight + 24)
+                    : stateContent.implicitHeight + 24
+                radius: root.settingsPage ? 9 : 12
+                color: root.settingsPage ? Tokens.surface_low : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
                                Tokens.surface_high.b, 0.78)
                 border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
                                       Tokens.outline.b, 0.22)
@@ -143,21 +104,46 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 8
+                        spacing: 10
 
                         Rectangle {
+                            visible: !root.settingsPage
                             Layout.preferredWidth: 8
                             Layout.preferredHeight: 8
                             radius: 4
                             color: Hotspot.active ? Tokens.accent : Tokens.text_secondary
                         }
 
-                        Text {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            text: Hotspot.tileStatus
-                            color: Tokens.text_primary
-                            font.pixelSize: 14
-                            font.weight: Font.DemiBold
+                            Layout.minimumWidth: 0
+                            spacing: 3
+
+                            Text {
+                                visible: root.settingsPage
+                                text: qsTr("Share connection")
+                                color: Tokens.text_primary
+                                font.pixelSize: 15
+                                font.weight: Font.DemiBold
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.settingsPage && Hotspot.tileStatus === "Turn Wi-Fi on"
+                                    ? qsTr("Turn on Wi-Fi before starting a hotspot.") : Hotspot.tileStatus
+                                color: root.settingsPage ? Tokens.text_secondary : Tokens.text_primary
+                                font.pixelSize: root.settingsPage ? 13 : 14
+                                font.weight: root.settingsPage ? Font.Normal : Font.DemiBold
+                                wrapMode: Text.Wrap
+                                textFormat: Text.PlainText
+                            }
+                        }
+
+                        BusyIndicator {
+                            Layout.preferredWidth: 22
+                            Layout.preferredHeight: 22
+                            running: Hotspot.busy
+                            visible: running
                         }
 
                         Switch {
@@ -183,7 +169,7 @@ Item {
                                 implicitHeight: 24
                                 width: 44
                                 height: 24
-                                radius: 12
+                                radius: height / 2
                                 color: activeSwitch.checked
                                     ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.85)
                                     : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
@@ -210,7 +196,7 @@ Item {
                         visible: Hotspot.errorMessage.length > 0
                         text: Hotspot.errorMessage
                         color: Tokens.text_secondary
-                        font.pixelSize: 11
+                        font.pixelSize: root.settingsPage ? 13 : 11
                         wrapMode: Text.Wrap
                         textFormat: Text.PlainText
                     }
@@ -220,7 +206,7 @@ Item {
                         visible: !Hotspot.profileConfigured && !Hotspot.active
                         text: qsTr("Save a network name and WPA2 password before starting.")
                         color: Tokens.text_secondary
-                        font.pixelSize: 11
+                        font.pixelSize: root.settingsPage ? 13 : 11
                         wrapMode: Text.Wrap
                     }
                 }
@@ -229,8 +215,8 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: configurationContent.implicitHeight + 24
-                radius: 12
-                color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
+                radius: root.settingsPage ? 9 : 12
+                color: root.settingsPage ? Tokens.surface_low : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
                                Tokens.surface_high.b, 0.62)
                 border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
                                       Tokens.outline.b, 0.18)
@@ -243,7 +229,7 @@ Item {
                     spacing: 9
 
                     Text {
-                        text: qsTr("Network settings")
+                        text: root.settingsPage ? qsTr("Hotspot profile") : qsTr("Network settings")
                         color: Tokens.text_primary
                         font.pixelSize: 14
                         font.weight: Font.DemiBold
@@ -252,7 +238,7 @@ Item {
                     Text {
                         text: qsTr("Network name")
                         color: Tokens.text_secondary
-                        font.pixelSize: 11
+                        font.pixelSize: root.settingsPage ? 13 : 11
                         font.weight: Font.Medium
                     }
 
@@ -269,7 +255,7 @@ Item {
                         font.pixelSize: 12
                         onTextEdited: root.networkName = text
                         background: Rectangle {
-                            radius: 14
+                            radius: root.settingsPage ? 8 : 14
                             color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.75)
                             border.color: ssidField.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                             border.width: ssidField.activeFocus ? 2 : 1
@@ -279,7 +265,7 @@ Item {
                     Text {
                         text: qsTr("Password")
                         color: Tokens.text_secondary
-                        font.pixelSize: 11
+                        font.pixelSize: root.settingsPage ? 13 : 11
                         font.weight: Font.Medium
                     }
 
@@ -305,7 +291,7 @@ Item {
                             font.pixelSize: 12
                             onTextEdited: root.passwordText = text
                             background: Rectangle {
-                                radius: 14
+                                radius: root.settingsPage ? 8 : 14
                                 color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.75)
                                 border.color: passwordField.activeFocus ? Tokens.accent : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.3)
                                 border.width: passwordField.activeFocus ? 2 : 1
@@ -324,14 +310,14 @@ Item {
                             onClicked: root.revealPassword = !root.revealPassword
                             contentItem: Text {
                                 text: showPassBtn.text
-                                font.pixelSize: 11
+                                font.pixelSize: root.settingsPage ? 13 : 11
                                 font.weight: Font.Medium
                                 color: showPassBtn.hovered ? Tokens.text_primary : Tokens.text_secondary
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
                             background: Rectangle {
-                                radius: 14
+                                radius: root.settingsPage ? 8 : 14
                                 color: showPassBtn.hovered ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.75) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45)
                                 border.color: showPassBtn.hovered ? Tokens.outline : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                                 border.width: 1
@@ -343,7 +329,7 @@ Item {
                         Layout.fillWidth: true
                         text: qsTr("Your saved password stays private and cannot be displayed here.")
                         color: Tokens.text_secondary
-                        font.pixelSize: 10
+                        font.pixelSize: root.settingsPage ? 12 : 10
                         wrapMode: Text.Wrap
                     }
 
@@ -355,7 +341,7 @@ Item {
                             Layout.fillWidth: true
                             text: root.formMessage
                             color: Tokens.text_secondary
-                            font.pixelSize: 10
+                            font.pixelSize: root.settingsPage ? 12 : 10
                             wrapMode: Text.Wrap
                         }
 
@@ -369,14 +355,14 @@ Item {
                             onClicked: root.saveProfile()
                             contentItem: Text {
                                 text: saveProfileBtn.text
-                                font.pixelSize: 11
+                                font.pixelSize: root.settingsPage ? 13 : 11
                                 font.weight: Font.DemiBold
                                 color: saveProfileBtn.enabled ? Tokens.on_accent : Tokens.text_secondary
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
                             background: Rectangle {
-                                radius: 14
+                                radius: root.settingsPage ? 8 : 14
                                 color: saveProfileBtn.enabled
                                     ? (saveProfileBtn.hovered ? Qt.darker(Tokens.accent, 1.1) : Tokens.accent)
                                     : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
@@ -390,8 +376,8 @@ Item {
                 Layout.fillWidth: true
                 visible: Hotspot.active
                 implicitHeight: activeContent.implicitHeight + 24
-                radius: 12
-                color: Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
+                radius: root.settingsPage ? 9 : 12
+                color: root.settingsPage ? Tokens.surface_low : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g,
                                Tokens.surface_high.b, 0.62)
                 border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g,
                                       Tokens.outline.b, 0.18)
@@ -404,9 +390,9 @@ Item {
                     spacing: 7
 
                     Text {
-                        text: qsTr("ACTIVE DETAILS")
+                        text: root.settingsPage ? qsTr("Active connection") : qsTr("ACTIVE DETAILS")
                         color: Tokens.text_secondary
-                        font.pixelSize: 10
+                        font.pixelSize: root.settingsPage ? 12 : 10
                         font.weight: Font.DemiBold
                     }
 
@@ -436,7 +422,7 @@ Item {
                         Layout.fillWidth: true
                         text: Hotspot.upstreamStatus
                         color: Tokens.text_secondary
-                        font.pixelSize: 11
+                        font.pixelSize: root.settingsPage ? 13 : 11
                         wrapMode: Text.Wrap
                         textFormat: Text.PlainText
                     }

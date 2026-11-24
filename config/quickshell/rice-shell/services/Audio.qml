@@ -15,7 +15,8 @@ QtObject {
     readonly property bool micAvailable: ready && source !== null && source.ready && source.audio !== null
     readonly property real micVolume: micAvailable ? source.audio.volume : 0
     readonly property bool micMuted: micAvailable && source.audio.muted
-    readonly property bool micBusy: micTimeout.running
+    readonly property bool changeBusy: commandTimeout.running || audioCommand.running
+    readonly property bool micBusy: changeBusy
     readonly property list<PwNode> devices: ready
         ? Pipewire.nodes.values.filter(node => node.audio !== null && !node.isStream && node.name.length > 0)
         : []
@@ -26,8 +27,16 @@ QtObject {
         ? Math.max(0, Math.min(1.5, sink.audio.volume)) : 0.0
     readonly property bool muted: available ? sink.audio.muted : false
 
-    onSinkChanged: checkDeviceSelection()
-    onSourceChanged: checkDeviceSelection()
+    onSinkChanged: {
+        checkDeviceSelection();
+        confirmAudioChange();
+    }
+    onSourceChanged: {
+        checkDeviceSelection();
+        confirmAudioChange();
+    }
+    onMicVolumeChanged: confirmAudioChange()
+    onMicMutedChanged: confirmAudioChange()
     onDevicesChanged: checkDeviceSelection()
 
     // Quickshell 0.3.2 can miss first defaults and retain them after metadata removal.
@@ -183,46 +192,87 @@ QtObject {
 
     function setMicVolume(value: real): void {
         if (!isFinite(value)) return;
-        runMicCommand(["set-volume", "-l", "1"], String(Math.max(0, Math.min(1, value))));
+        if (micAvailable)
+            runAudioCommand(source, ["set-volume", "-l", "1"], String(Math.max(0, Math.min(1, value))));
     }
 
     function toggleMicMute(): void {
-        runMicCommand(["set-mute"], "toggle");
+        if (micAvailable) runAudioCommand(source, ["set-mute"], micMuted ? "0" : "1");
     }
 
-    function runMicCommand(args: list<string>, value: string): void {
-        if (!micAvailable || micBusy || micCommand.running) return;
+    function requestOutputVolume(value: real): void {
+        if (available && isFinite(value))
+            runAudioCommand(sink, ["set-volume", "-l", "1.5"], String(Math.max(0, Math.min(1.5, value))));
+    }
+
+    function requestOutputMute(): void {
+        if (available) runAudioCommand(sink, ["set-mute"], muted ? "0" : "1");
+    }
+
+    function runAudioCommand(device: PwNode, args: list<string>, value: string): void {
+        if (changeBusy) return;
         error = "";
         // The native setter can emit optimistically. Observe the server's event after wpctl writes.
-        micTimeout.restart();
-        micCommand.exec(["wpctl"].concat(args, [String(source.id), value]));
+        audioCommand.output = device === sink;
+        audioCommand.device = device;
+        audioCommand.volumeRequest = args[0] === "set-volume";
+        audioCommand.value = Number(value);
+        audioCommand.succeeded = false;
+        commandTimeout.restart();
+        audioCommand.exec(["wpctl"].concat(args, [String(device.id), value]));
     }
 
-    property Process _micCommand: Process {
-        id: micCommand
-        onExited: (code) => {
-            if (!micTimeout.running) return;
-            micTimeout.stop();
-            if (code !== 0) root.error = qsTr("Could not change microphone settings");
+    function confirmAudioChange(): void {
+        if (!commandTimeout.running || !audioCommand.succeeded) return;
+        const device = audioCommand.device;
+        if (!device || device !== (audioCommand.output ? sink : source)) {
+            error = qsTr("Audio device changed before the update could be confirmed");
+            commandTimeout.stop();
+        } else if (device.audio && (audioCommand.volumeRequest
+                ? Math.abs(device.audio.volume - audioCommand.value) < 0.005
+                : device.audio.muted === Boolean(audioCommand.value))) {
+            commandTimeout.stop();
         }
     }
 
-    property Timer _micTimeout: Timer {
-        id: micTimeout
+    property Process _audioCommand: Process {
+        id: audioCommand
+        property bool output: false
+        property PwNode device: null
+        property bool volumeRequest: false
+        property real value: 0
+        property bool succeeded: false
+        onExited: (code) => {
+            if (!commandTimeout.running) return;
+            if (code !== 0) {
+                commandTimeout.stop();
+                root.error = output ? qsTr("Could not change output settings")
+                    : qsTr("Could not change microphone settings");
+            } else {
+                succeeded = true;
+                root.confirmAudioChange();
+            }
+        }
+    }
+
+    property Timer _commandTimeout: Timer {
+        id: commandTimeout
         interval: 2500
         onTriggered: {
-            micCommand.running = false;
-            root.error = qsTr("Microphone command did not complete");
+            audioCommand.running = false;
+            root.error = qsTr("Audio change could not be confirmed");
         }
     }
 
     // Watch volume and mute changes reactively
     onVolumeChanged: {
+        confirmAudioChange();
         var icon = root.muted ? "󰝟" : (root.volume > 0.5 ? "󰕾" : (root.volume > 0.05 ? "󰖀" : "󰕿"));
         if (root.available) root.osdRequested(icon, root.muted ? 0.0 : root.volume);
     }
 
     onMutedChanged: {
+        confirmAudioChange();
         var icon = root.muted ? "󰝟" : (root.volume > 0.5 ? "󰕾" : "󰖀");
         if (root.available) root.osdRequested(icon, root.muted ? 0.0 : root.volume);
     }

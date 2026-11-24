@@ -20,3 +20,7 @@ require("config.workspaces")
 
 -- Apply Noctalia's generated Matugen color template.
 require("noctalia").apply_theme()
+
+-- Rice Settings loads only explicitly kept display modes after the base rules.
+require("config.rice-settings-outputs")
+require("config.rice-settings-window-layout")

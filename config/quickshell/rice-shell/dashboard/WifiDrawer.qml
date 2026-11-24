@@ -9,11 +9,13 @@ import "../theme"
 
 Item {
     id: root
+    property bool settingsPage: false
 
-    anchors.fill: parent
+    anchors.fill: settingsPage ? undefined : parent
     implicitWidth: 360
-    implicitHeight: 480
-    focus: visible
+    implicitHeight: settingsPage ? pageContent.implicitHeight : 480
+    focus: visible && !settingsPage
+    activeFocusOnTab: settingsPage
     property bool drawerOpen: true
 
     Accessible.role: Accessible.Pane
@@ -652,148 +654,148 @@ Item {
     }
 
     ColumnLayout {
+        id: pageContent
         anchors.fill: parent
-        spacing: 10
+        spacing: root.settingsPage ? 17 : 10
 
-        RowLayout {
+        Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 38
-            spacing: 10
+            implicitHeight: root.settingsPage ? Math.max(68, radioControls.implicitHeight + 20)
+                : Math.max(38, radioControls.implicitHeight)
+            radius: 10
+            color: root.settingsPage ? Tokens.surface_low : "transparent"
+            border.width: root.settingsPage ? 1 : 0
+            border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
 
-            Rectangle {
-                Layout.preferredWidth: 36
-                Layout.preferredHeight: 36
-                radius: 10
-                color: root.hotspotBlocksSelectedWifi
-                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-                    : (Networking.wifiEnabled ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.15) : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45))
-                border.color: Networking.wifiEnabled ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.35) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
-                border.width: 1
+            RowLayout {
+                id: radioControls
+                anchors.fill: parent
+                anchors.leftMargin: root.settingsPage ? 14 : 0
+                anchors.rightMargin: anchors.leftMargin
+                spacing: 10
 
-                Text {
-                    anchors.centerIn: parent
-                    text: "󰤨"
-                    font.pixelSize: 18
-                    color: root.hotspotBlocksSelectedWifi ? Tokens.accent : (Networking.wifiEnabled ? Tokens.accent : Tokens.text_secondary)
-                    Accessible.ignored: true
-                }
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 2
-
-                Text {
-                    text: "Wi-Fi"
-                    font.pixelSize: 15
-                    font.bold: true
-                    color: Tokens.text_primary
-                }
-
-                Text {
+                ColumnLayout {
                     Layout.fillWidth: true
-                    text: !root.wifiDevice ? "Adapter unavailable"
-                        : (root.hotspotBlocksSelectedWifi ? root.hotspotStatusMessage()
-                            : (!Networking.wifiHardwareEnabled ? "Blocked by hardware switch"
-                                : (root.radioOffBlocked ? "Radio locked while Hotspot is active"
-                                    : (Networking.wifiEnabled ? "On" : "Off"))))
-                    font.pixelSize: 10
-                    color: root.hotspotBlocksSelectedWifi ? Tokens.accent : Tokens.text_secondary
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
+                    Layout.minimumWidth: 0
+                    spacing: 3
+                    Text {
+                        visible: root.settingsPage
+                        text: qsTr("Wi-Fi radio")
+                        font.pixelSize: 15
+                        font.weight: Font.DemiBold
+                        color: Tokens.text_primary
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: !root.wifiDevice ? "Adapter unavailable"
+                            : root.hotspotBlocksSelectedWifi ? root.hotspotStatusMessage()
+                            : !Networking.wifiHardwareEnabled ? "Blocked by hardware switch"
+                            : root.radioOffBlocked ? "Radio locked while Hotspot is active"
+                            : Networking.wifiEnabled ? (root.settingsPage ? (root.connectedNetwork
+                                ? root.connectivityLabel() : qsTr("No network connected")) : "Wi-Fi is on")
+                                : (root.settingsPage ? qsTr("Wireless radio is off") : "Wi-Fi is off")
+                        font.pixelSize: root.settingsPage ? 13 : 12
+                        color: !root.settingsPage && (root.hotspotBlocksSelectedWifi || Networking.wifiEnabled)
+                            ? Tokens.accent : Tokens.text_secondary
+                        maximumLineCount: 2
+                        wrapMode: Text.Wrap
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                    }
                 }
-            }
 
-            Item {
-                Layout.preferredWidth: 84
-                Layout.preferredHeight: 30
-                Layout.alignment: Qt.AlignVCenter
+                Item {
+                    Layout.preferredWidth: root.settingsPage ? (refreshButton.visible ? 153 : 44) : 84
+                    Layout.preferredHeight: 30
+                    Layout.alignment: Qt.AlignVCenter
 
-                Row {
-                    anchors.fill: parent
-                    spacing: 10
+                    Row {
+                        anchors.fill: parent
+                        spacing: 10
 
-                    Switch {
-                        id: wifiSwitch
-                        width: 44
-                        height: 24
-                        implicitWidth: 44
-                        implicitHeight: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        checked: Networking.wifiEnabled
-                        enabled: root.wifiDevice !== null
-                            && Networking.wifiHardwareEnabled
-                            && !root.radioOffBlocked
-                            && !root.operationPending
-                        Accessible.name: "Wi-Fi power"
-                        onClicked: root.setWifiEnabled(checked)
-
-                        indicator: Rectangle {
-                            implicitWidth: 44
-                            implicitHeight: 24
+                        Switch {
+                            id: wifiSwitch
                             width: 44
                             height: 24
-                            radius: 12
-                            color: wifiSwitch.checked
-                                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.85)
-                                : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
-                            border.color: wifiSwitch.activeFocus ? Tokens.accent : "transparent"
+                            implicitWidth: 44
+                            implicitHeight: 24
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: Networking.wifiEnabled
+                            enabled: root.wifiDevice !== null
+                                && Networking.wifiHardwareEnabled
+                                && !root.radioOffBlocked
+                                && !root.operationPending
+                            Accessible.name: "Wi-Fi power"
+                            onClicked: root.setWifiEnabled(checked)
+
+                            indicator: Rectangle {
+                                implicitWidth: 44
+                                implicitHeight: 24
+                                width: 44
+                                height: 24
+                                radius: 12
+                                color: wifiSwitch.checked
+                                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.85)
+                                    : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
+                                border.color: wifiSwitch.activeFocus ? Tokens.accent : "transparent"
+                                border.width: 1
+                                Behavior on color { ColorAnimation { duration: 160 } }
+
+                                Rectangle {
+                                    width: 18
+                                    height: 18
+                                    radius: 9
+                                    y: 3
+                                    x: wifiSwitch.checked ? parent.width - width - 3 : 3
+                                    color: wifiSwitch.checked ? Tokens.on_accent : Tokens.text_secondary
+                                    Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                                }
+                            }
+                            contentItem: Item {}
+                        }
+
+                        Rectangle {
+                            id: refreshButton
+                            visible: !root.settingsPage || Networking.wifiEnabled
+                            width: root.settingsPage ? 99 : 30
+                            height: 30
+                            radius: root.settingsPage ? 8 : 14
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: refreshHover.hovered
+                                ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
+                                : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45)
+                            border.color: refreshButton.activeFocus
+                                ? Tokens.accent
+                                : (refreshHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.3) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2))
                             border.width: 1
-                            Behavior on color { ColorAnimation { duration: 160 } }
+                            enabled: root.wifiDevice !== null && Networking.wifiEnabled
+                                && Networking.wifiHardwareEnabled
+                                && !root.hotspotBlocksSelectedWifi
+                                && (!root.isScanning || root.scanOwnedDevice === root.wifiDevice)
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Refresh nearby Wi-Fi networks"
 
-                            Rectangle {
-                                width: 18
-                                height: 18
-                                radius: 9
-                                y: 3
-                                x: wifiSwitch.checked ? parent.width - width - 3 : 3
-                                color: wifiSwitch.checked ? Tokens.on_accent : Tokens.text_secondary
-                                Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                            Text {
+                                id: refreshIcon
+                                anchors.centerIn: parent
+                                text: root.settingsPage ? (root.isScanning ? qsTr("Scanning…") : qsTr("Scan networks")) : "󰑐"
+                                font.pixelSize: root.settingsPage ? 12 : 15
+                                color: refreshButton.enabled ? (root.isScanning ? Tokens.accent : Tokens.text_primary) : Tokens.text_secondary
+                                RotationAnimator {
+                                    target: refreshIcon
+                                    from: 0
+                                    to: 360
+                                    duration: 1000
+                                    loops: Animation.Infinite
+                                    running: root.isScanning && !root.settingsPage
+                                }
                             }
-                        }
-                        contentItem: Item {}
-                    }
 
-                    Rectangle {
-                        id: refreshButton
-                        width: 30
-                        height: 30
-                        radius: 14
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: refreshHover.hovered
-                            ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
-                            : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45)
-                        border.color: refreshButton.activeFocus
-                            ? Tokens.accent
-                            : (refreshHover.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.3) : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2))
-                        border.width: 1
-                        enabled: root.wifiDevice !== null && Networking.wifiEnabled
-                            && Networking.wifiHardwareEnabled
-                            && !root.hotspotBlocksSelectedWifi
-                            && (!root.isScanning || root.scanOwnedDevice === root.wifiDevice)
-                        Accessible.role: Accessible.Button
-                        Accessible.name: "Refresh nearby Wi-Fi networks"
-
-                        Text {
-                            id: refreshIcon
-                            anchors.centerIn: parent
-                            text: "󰑐"
-                            font.pixelSize: 15
-                            color: refreshButton.enabled ? (root.isScanning ? Tokens.accent : Tokens.text_primary) : Tokens.text_secondary
-                            RotationAnimator {
-                                target: refreshIcon
-                                from: 0
-                                to: 360
-                                duration: 1000
-                                loops: Animation.Infinite
-                                running: root.isScanning
+                            HoverHandler { id: refreshHover; cursorShape: refreshButton.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                            TapHandler {
+                                enabled: refreshButton.enabled
+                                onTapped: root.scan()
                             }
-                        }
-
-                        HoverHandler { id: refreshHover; cursorShape: refreshButton.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                        TapHandler {
-                            enabled: refreshButton.enabled
-                            onTapped: root.scan()
                         }
                     }
                 }
@@ -896,6 +898,7 @@ Item {
         }
 
         Rectangle {
+            visible: !root.settingsPage
             Layout.fillWidth: true
             implicitHeight: 42
             radius: 12
@@ -944,10 +947,12 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             contentWidth: width
+            Layout.preferredHeight: root.settingsPage ? contentHeight : -1
+            interactive: !root.settingsPage
             contentHeight: contentColumn.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: ScrollBar { policy: root.settingsPage ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded }
 
             ColumnLayout {
                 id: contentColumn
@@ -960,16 +965,17 @@ Item {
 
                     Text {
                         text: "Current connection"
-                        font.capitalization: Font.AllUppercase
-                        font.letterSpacing: 1.1
-                        font.pixelSize: 10
+                        font.capitalization: root.settingsPage ? Font.MixedCase : Font.AllUppercase
+                        font.letterSpacing: root.settingsPage ? 0 : 1.1
+                        font.pixelSize: root.settingsPage ? 15 : 10
                         font.bold: true
-                        color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.75)
+                        color: root.settingsPage ? Tokens.text_primary : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.75)
                     }
 
                     Item { Layout.fillWidth: true }
 
                     Text {
+                        visible: !root.settingsPage
                         text: root.wifiDevice ? root.wifiDevice.name : ""
                         font.pixelSize: 10
                         color: Tokens.text_secondary
@@ -984,12 +990,9 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: !root.connectedNetwork
-                    text: !root.wifiDevice ? "No Wi-Fi adapter is available."
-                        : (!Networking.wifiHardwareEnabled ? "Wi-Fi is blocked by the hardware switch."
-                            : (!Networking.wifiEnabled ? "Wi-Fi is off."
-                                : (root.hotspotBlocksSelectedWifi ? root.hotspotStatusMessage()
-                                    : "Not connected to a Wi-Fi network.")))
+                    visible: !root.settingsPage && !root.connectedNetwork && !!root.wifiDevice && Networking.wifiEnabled
+                        && Networking.wifiHardwareEnabled && !root.hotspotBlocksSelectedWifi
+                    text: "Not connected to a Wi-Fi network."
                     font.pixelSize: 12
                     color: Tokens.text_secondary
                     wrapMode: Text.Wrap
@@ -998,13 +1001,13 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Saved & in range"
+                    text: root.settingsPage ? qsTr("Saved networks") : "Saved & in range"
                     visible: root.knownNetworks.length > 0
-                    font.capitalization: Font.AllUppercase
-                    font.letterSpacing: 1.1
-                    font.pixelSize: 10
+                    font.capitalization: root.settingsPage ? Font.MixedCase : Font.AllUppercase
+                    font.letterSpacing: root.settingsPage ? 0 : 1.1
+                    font.pixelSize: root.settingsPage ? 15 : 10
                     font.bold: true
-                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.65)
+                    color: root.settingsPage ? Tokens.text_primary : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.65)
                 }
 
                 Repeater {
@@ -1014,7 +1017,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: Networking.wifiEnabled && root.wifiDevice
+                    visible: !root.settingsPage && Networking.wifiEnabled && root.wifiDevice
                         && root.knownNetworks.length === 0 && root.nearbyNetworks.length === 0
                         && !root.isScanning && !root.hotspotBlocksSelectedWifi
                     text: "No saved networks are currently in range."
@@ -1027,11 +1030,11 @@ Item {
                     Layout.fillWidth: true
                     visible: root.nearbyNetworks.length > 0
                     text: "Nearby networks"
-                    font.capitalization: Font.AllUppercase
-                    font.letterSpacing: 1.1
-                    font.pixelSize: 10
+                    font.capitalization: root.settingsPage ? Font.MixedCase : Font.AllUppercase
+                    font.letterSpacing: root.settingsPage ? 0 : 1.1
+                    font.pixelSize: root.settingsPage ? 15 : 10
                     font.bold: true
-                    color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.65)
+                    color: root.settingsPage ? Tokens.text_primary : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.65)
                 }
 
                 Repeater {
@@ -1058,6 +1061,17 @@ Item {
                     }
                 }
 
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.settingsPage && Networking.wifiEnabled && Networking.wifiHardwareEnabled
+                        && !!root.wifiDevice && !root.hotspotBlocksSelectedWifi && !root.isScanning
+                        && root.nearbyNetworks.length === 0
+                    text: qsTr("No other networks found. Scan to refresh.")
+                    font.pixelSize: 13
+                    color: Tokens.text_secondary
+                    wrapMode: Text.Wrap
+                }
+
                 Item { Layout.fillWidth: true; implicitHeight: 4 }
             }
         }
@@ -1078,14 +1092,15 @@ Item {
             readonly property bool ownOperation: root.operationPending && root.pendingNetwork === network
 
             Layout.fillWidth: true
-            implicitHeight: rowContents.implicitHeight + 14
-            radius: 12
-            color: isCurrent
+            implicitHeight: rowContents.implicitHeight + (root.settingsPage ? 26 : 14)
+            radius: root.settingsPage ? 9 : 12
+            color: root.settingsPage ? (rowHover.hovered ? Tokens.surface : Tokens.surface_low) : isCurrent
                 ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.10)
                 : (rowHover.hovered
                     ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45)
                     : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.22))
-            border.color: isCurrent
+            border.color: root.settingsPage && !networkRow.activeFocus
+                ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5) : isCurrent
                 ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.35)
                 : (networkRow.activeFocus ? Tokens.accent
                     : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.20))
@@ -1098,7 +1113,7 @@ Item {
             ColumnLayout {
                 id: rowContents
                 anchors.fill: parent
-                anchors.margins: 10
+                anchors.margins: root.settingsPage ? 13 : 10
                 spacing: 8
 
                 RowLayout {
@@ -1110,7 +1125,7 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
 
                         Text {
-                            visible: networkRow.network.security !== WifiSecurityType.Open
+                            visible: !root.settingsPage && networkRow.network.security !== WifiSecurityType.Open
                                 && networkRow.network.security !== WifiSecurityType.None
                             text: "󰌾"
                             font.pixelSize: 11
@@ -1120,7 +1135,8 @@ Item {
 
                         Text {
                             text: root.signalGlyph(networkRow.network)
-                            font.pixelSize: 18
+                            font.family: root.settingsPage ? "JetBrainsMono Nerd Font" : ""
+                            font.pixelSize: root.settingsPage ? 22 : 18
                             color: networkRow.isCurrent ? Tokens.accent : Tokens.text_secondary
                             anchors.verticalCenter: parent.verticalCenter
                             Accessible.ignored: true
@@ -1134,8 +1150,8 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: networkRow.network.name || "Hidden network"
-                            font.pixelSize: 13
-                            font.bold: networkRow.isCurrent
+                            font.pixelSize: root.settingsPage ? 14 : 13
+                            font.weight: root.settingsPage || networkRow.isCurrent ? Font.DemiBold : Font.Normal
                             color: Tokens.text_primary
                             elide: Text.ElideRight
                             textFormat: Text.PlainText
@@ -1144,10 +1160,10 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: root.securityLabel(networkRow.network)
-                                + (networkRow.network.known ? " · Saved" : "")
+                                + (!root.settingsPage && networkRow.network.known ? " · Saved" : "")
                                 + (networkRow.isCurrent ? " · Connected" : "")
-                            font.pixelSize: 10
-                            color: networkRow.isCurrent ? Tokens.accent : Tokens.text_secondary
+                            font.pixelSize: root.settingsPage ? 12 : 10
+                            color: !root.settingsPage && networkRow.isCurrent ? Tokens.accent : Tokens.text_secondary
                             elide: Text.ElideRight
                             textFormat: Text.PlainText
                         }
@@ -1156,7 +1172,7 @@ Item {
                     RoundedButton {
                         id: connectBtn
                         Layout.minimumWidth: 68
-                        implicitHeight: 28
+                        implicitHeight: root.settingsPage ? 34 : 28
                         text: networkRow.isCurrent ? "Disconnect"
                             : (networkRow.ownOperation
                                 ? (root.pendingAction === "cancel" ? "Cancelling…" : "Cancel")
@@ -1177,20 +1193,23 @@ Item {
                         }
                         contentItem: Text {
                             text: connectBtn.text
-                            font.pixelSize: 11
+                            font.pixelSize: root.settingsPage ? 13 : 11
                             font.weight: Font.Medium
                             color: !connectBtn.enabled ? Tokens.text_secondary
+                                : root.settingsPage ? Tokens.text_primary
                                 : (networkRow.isCurrent ? Qt.rgba(0.95, 0.45, 0.47, 1.0) : (connectBtn.down ? Tokens.text_primary : Tokens.accent))
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
                         background: Rectangle {
-                            radius: 14
-                            color: !connectBtn.enabled ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
+                            radius: root.settingsPage ? 8 : 14
+                            color: root.settingsPage ? (connectBtn.hovered ? Tokens.surface_high : Tokens.surface)
+                                : !connectBtn.enabled ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.2)
                                 : (networkRow.isCurrent
                                     ? (connectBtn.hovered ? Qt.rgba(0.92, 0.38, 0.4, 0.22) : Qt.rgba(0.92, 0.38, 0.4, 0.12))
                                     : (connectBtn.hovered ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.24) : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.10)))
-                            border.color: !connectBtn.enabled ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2)
+                            border.color: root.settingsPage ? (connectBtn.visualFocus ? Tokens.focus_ring : Tokens.outline)
+                                : !connectBtn.enabled ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.2)
                                 : (networkRow.isCurrent
                                     ? Qt.rgba(0.92, 0.38, 0.4, 0.45)
                                     : (connectBtn.hovered ? Tokens.accent : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.38)))

@@ -93,6 +93,7 @@ PanelWindow {
     }
 
     signal requestDashboard(string tab)
+    signal requestSettings()
 
     // State properties
     property string activeMode: "idle"
@@ -130,7 +131,8 @@ PanelWindow {
     }
 
     // Media bindings from native Mpris service
-    readonly property bool hasMedia: Media.hasPlayer
+    property bool showMediaPreview: true
+    readonly property bool hasMedia: showMediaPreview && Media.hasPlayer
     readonly property string mediaTitle: Media.trackTitle
 
     // OSD parameters
@@ -336,7 +338,7 @@ PanelWindow {
                 enabled: !islandWindow.dashboardShowing && (islandWindow.activeMode === IslandState.State.IDLE
                     || islandWindow.activeMode === IslandState.State.NOTIFICATION
                     || islandWindow.activeMode === IslandState.State.OSD)
-                onTapped: islandWindow.requestDashboard("Home")
+                onTapped: islandWindow.requestDashboard("")
             }
 
             TapHandler {
@@ -344,7 +346,7 @@ PanelWindow {
                 acceptedButtons: Qt.RightButton
                 onTapped: {
                     islandWindow.collapse();
-                    islandWindow.requestDashboard("Home");
+                    islandWindow.requestDashboard("");
                 }
             }
 
@@ -1118,6 +1120,7 @@ PanelWindow {
                 revealStart: 0.22
             }
             revealProgress: dashboardMotion.opacity
+            onRequestSettings: islandWindow.requestSettings()
             onExpandedChanged: {
                 if (expanded) {
                     islandWindow.collapse();

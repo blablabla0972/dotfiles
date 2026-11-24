@@ -9,6 +9,7 @@ import "."
 
 Item {
     id: dashboardWindow
+    signal requestSettings()
 
     required property Item surface
     required property Item shape
@@ -361,7 +362,9 @@ Item {
                                     anchors.fill: parent
                                     active: dashboardWindow.visible && dashboardWindow.currentTab === "Config"
                                     visible: dashboardWindow.currentTab === "Config"
-                                    sourceComponent: Config {}
+                                    sourceComponent: Config {
+                                        onRequestSettings: dashboardWindow.requestSettings()
+                                    }
                                 }
                             }
                         }

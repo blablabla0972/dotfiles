@@ -86,6 +86,7 @@ const actions = [
     {action: "audio", name: "Open Audio", aliases: "speaker sound devices", comment: "Control Center"},
     {action: "notifications", name: "Open Notifications", aliases: "notification history", comment: "Control Center"},
     {action: "home", name: "Open Home", aliases: "dashboard", comment: "Control Center"},
+    {action: "open-settings", name: "Open Settings", aliases: "rice settings preferences system cai dat", comment: "Rice Settings"},
     {action: "config", name: "Open Shell Settings", aliases: "config session preferences", comment: "Control Center"},
     {action: "clipboard", name: "Open Clipboard History", aliases: "clipboard paste", icon: "󰅇"},
     {action: "screenshot", name: "Capture Screen Region", aliases: "screenshot print screen", icon: "󰹑"},

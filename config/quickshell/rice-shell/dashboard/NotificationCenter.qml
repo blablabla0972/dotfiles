@@ -7,7 +7,6 @@ import "../theme"
 
 Item {
     id: root
-
     readonly property int notificationCount: DesktopControls.notificationHistory.length
     readonly property bool hasNotifications: notificationCount > 0
     readonly property bool dndActive: DesktopControls.doNotDisturb

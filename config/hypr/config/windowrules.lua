@@ -67,6 +67,7 @@ hl.window_rule({ match = { class = "^(org\\.kde\\.keditfiletype)$" }, float = tr
 hl.window_rule({ match = { class = "^(org\\.kde\\.ark)$" }, size = { "max(monitor_w, monitor_h)*0.40", "min(monitor_w, monitor_h)*0.40" } })
 hl.window_rule({ match = { class = "^(.*swash)$", title = "^(Swash)$" }, min_size = { "max(monitor_w, monitor_h)*0.35", "min(monitor_w, monitor_h)*0.35" }, float = true })
 hl.window_rule({ match = { class = "^(dev\\.)?(noctalia\\.Noctalia(\\.Settings)?)$" }, float = true, size = { "70%", "70%" } })
+hl.window_rule({ name = "rice-settings", match = { class = "^org\\.quickshell$", title = "^Rice Settings$" }, float = true, center = true })
 hl.window_rule({
     match = {
         class = "^(org\\.kde\\.dolphin)$",

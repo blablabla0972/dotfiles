@@ -175,7 +175,7 @@ PanelWindow {
         height: stripWindow.stripHeight - 16
         y: stripWindow.topInset + 8
         radius: 20
-        color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Math.max(0.92, Tokens.panelOpacity))
+        color: Tokens.surface
         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
         border.width: 1
         clip: true

@@ -285,10 +285,11 @@ ShellRoot {
         visible: false
         screen: Quickshell.screens.find(screen => Hyprland.focusedMonitor && screen.name === Hyprland.focusedMonitor.name) || Quickshell.screens[0]
         anchors.top: true
-        margins.top: 20
-        implicitWidth: Math.min(960, (screen?.width || 960) - 24)
-        implicitHeight: Math.min((screen?.height || 900) - 40,
-            (width < 580 ? 348 : 312) + (root.detailsOpen ? 264 : 0) + (root.error ? 28 : 0))
+        margins.top: 28
+        implicitWidth: Math.min(1000, (screen?.width || 1000) - 24)
+        implicitHeight: Math.min((screen?.height || 900) - 2 * margins.top,
+            (width < 460 ? 510 : width < 640 ? 474 : 424) + (root.detailsOpen ? 288 : 0)
+                + (root.error ? errorMessage.implicitHeight + 14 : 0))
         color: "transparent"
         exclusiveZone: 0
         WlrLayershell.layer: WlrLayer.Overlay
@@ -302,10 +303,10 @@ ShellRoot {
         Rectangle {
             id: card
             anchors.fill: parent
-            radius: 22
+            radius: 18
             color: Tokens.surface_low
             border.width: 1
-            border.color: Tokens.outline
+            border.color: Qt.alpha(Tokens.outline, 0.72)
 
             NumberAnimation on opacity {
                 id: reveal
@@ -317,115 +318,151 @@ ShellRoot {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 16
-                spacing: 12
+                anchors.margins: card.width < 480 ? 14 : 20
+                spacing: 14
 
                 RowLayout {
                     Layout.fillWidth: true
-                    UiText { text: "Lịch sử clipboard"; font.pixelSize: 19; font.weight: Font.DemiBold }
-                    UiText { text: root.filtered.length + " mục"; color: Tokens.text_secondary; font.pixelSize: 12 }
+                    spacing: 12
+                    UiText {
+                        text: "Lịch sử clipboard"
+                        font.pixelSize: 23
+                        font.weight: Font.DemiBold
+                        Accessible.role: Accessible.Heading
+                    }
                     Item { Layout.fillWidth: true }
                     ActionButton {
-                        icon.name: "window-close"
+                        text: card.width >= 420 ? "Xóa lịch sử" : ""
+                        icon.name: card.width < 420 ? "edit-delete" : ""
+                        ToolTip.text: "Xóa lịch sử"
+                        implicitHeight: 34
+                        enabled: root.entries.length > 0 && !operation.running
+                        onClicked: root.confirmation = "wipe"
+                    }
+                    ActionButton {
+                        text: "×"
+                        font.pixelSize: 22
+                        Accessible.name: "Đóng clipboard"
                         ToolTip.text: "Đóng · Esc"
-                        implicitWidth: 32
-                        implicitHeight: 32
+                        implicitWidth: 36
+                        implicitHeight: 34
                         padding: 0
                         onClicked: Qt.quit()
                     }
                 }
 
                 GridLayout {
-                    columns: card.width < 580 ? 1 : 2
-                    columnSpacing: 12
+                    columns: card.width < 640 ? 1 : 2
+                    columnSpacing: 16
                     rowSpacing: 8
                     Layout.fillWidth: true
 
-                    RowLayout {
+                    TextField {
+                        id: search
                         Layout.fillWidth: true
-                        spacing: 4
+                        implicitHeight: 42
+                        leftPadding: 40
+                        rightPadding: clearSearch.visible ? 42 : searchKey.visible ? searchKey.implicitWidth + 18 : 12
+                        font.family: "Adwaita Sans"
+                        font.pixelSize: 14
+                        placeholderText: "Tìm trong lịch sử…"
+                        color: Tokens.text_primary
+                        placeholderTextColor: Tokens.text_secondary
+                        selectByMouse: true
+                        Accessible.name: "Tìm kiếm clipboard"
 
-                        Repeater {
-                            model: [
-                                { key: "all", label: "Tất cả" },
-                                { key: "text", label: "Văn bản" },
-                                { key: "image", label: "Ảnh" }
-                            ]
-                            ActionButton {
-                                required property var modelData
-                                text: modelData.label
-                                implicitHeight: 32
-                                selected: root.typeFilter === modelData.key
-                                Accessible.checkable: true
-                                Accessible.checked: selected
-                                onClicked: {
-                                    if (root.typeFilter !== modelData.key) {
-                                        root.typeFilter = modelData.key;
-                                        root.resetSelection();
-                                    }
-                                    search.forceActiveFocus();
-                                }
-                            }
+                        UiText {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "󰍉"
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 19
+                            color: Tokens.text_secondary
+                            Accessible.ignored: true
                         }
-                        Item { Layout.fillWidth: true }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 340
-                        spacing: 6
-
-                        TextField {
-                            id: search
-                            Layout.fillWidth: true
-                            implicitHeight: 34
-                            leftPadding: 12
-                            rightPadding: searchKey.visible ? searchKey.implicitWidth + 16 : 10
-                            font.family: "Adwaita Sans"
-                            font.pixelSize: 13
-                            placeholderText: "Tìm trong lịch sử…"
-                            color: Tokens.text_primary
-                            placeholderTextColor: Tokens.text_secondary
-                            selectByMouse: true
-                            Accessible.name: "Tìm kiếm clipboard"
-                            KeyHint {
-                                id: searchKey
-                                anchors.right: parent.right
-                                anchors.rightMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                visible: search.width >= 170 && !search.text
-                                keys: "Ctrl+F"
-                            }
-                            background: Rectangle {
-                                radius: 8
-                                color: Tokens.surface
-                                border.color: search.activeFocus ? Qt.alpha(Tokens.accent, 0.46) : Tokens.outline
-                            }
-                            onTextChanged: root.resetSelection()
-                            onAccepted: { if (!root.confirmation) root.act("paste"); }
-                            Keys.onDownPressed: root.moveSelection(1)
-                            Keys.onUpPressed: root.moveSelection(-1)
-                            Keys.onPressed: event => {
-                                if (event.modifiers === Qt.NoModifier && !search.text
-                                        && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
-                                    root.moveSelection(event.key === Qt.Key_Left ? -1 : 1);
-                                    event.accepted = true;
-                                } else if (event.key === Qt.Key_Delete && event.modifiers === Qt.ShiftModifier) {
-                                    event.accepted = true;
-                                    if (root.selectedId && !root.confirmation && !operation.running)
-                                        root.confirmation = "delete";
-                                }
-                            }
+                        KeyHint {
+                            id: searchKey
+                            anchors.right: parent.right
+                            anchors.rightMargin: 9
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: search.width >= 185 && !search.text
+                            keys: "Ctrl+F"
                         }
                         ActionButton {
-                            icon.name: "edit-clear"
-                            ToolTip.text: "Xóa lịch sử"
-                            implicitWidth: 32
-                            implicitHeight: 32
+                            id: clearSearch
+                            anchors.right: parent.right
+                            anchors.rightMargin: 5
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: search.text.length > 0
+                            width: 32
+                            height: 32
                             padding: 0
-                            destructive: true
-                            enabled: root.entries.length > 0 && !operation.running
-                            onClicked: root.confirmation = "wipe"
+                            text: "×"
+                            font.pixelSize: 20
+                            Accessible.name: "Xóa tìm kiếm"
+                            onClicked: {
+                                search.clear();
+                                search.forceActiveFocus();
+                            }
+                        }
+                        background: Rectangle {
+                            radius: 9
+                            color: Tokens.background
+                            border.color: search.activeFocus ? Qt.alpha(Tokens.accent, 0.64) : Tokens.outline
+                        }
+                        onTextChanged: root.resetSelection()
+                        onAccepted: { if (!root.confirmation) root.act("paste"); }
+                        Keys.onDownPressed: root.moveSelection(1)
+                        Keys.onUpPressed: root.moveSelection(-1)
+                        Keys.onPressed: event => {
+                            if (event.modifiers === Qt.NoModifier && !search.text
+                                    && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
+                                root.moveSelection(event.key === Qt.Key_Left ? -1 : 1);
+                                event.accepted = true;
+                            } else if (event.key === Qt.Key_Delete && event.modifiers === Qt.ShiftModifier) {
+                                event.accepted = true;
+                                if (root.selectedId && !root.confirmation && !operation.running)
+                                    root.confirmation = "delete";
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.alignment: Qt.AlignLeft
+                        implicitWidth: filters.implicitWidth + 8
+                        implicitHeight: filters.implicitHeight + 8
+                        radius: 9
+                        color: Tokens.background
+
+                        RowLayout {
+                            id: filters
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            spacing: 2
+
+                            Repeater {
+                                model: [
+                                    { key: "all", label: "Tất cả" },
+                                    { key: "text", label: "Văn bản" },
+                                    { key: "image", label: "Ảnh" }
+                                ]
+                                ActionButton {
+                                    required property var modelData
+                                    text: modelData.label
+                                    implicitHeight: 34
+                                    selected: root.typeFilter === modelData.key
+                                    Accessible.checkable: true
+                                    Accessible.checked: selected
+                                    onClicked: {
+                                        if (root.typeFilter !== modelData.key) {
+                                            root.typeFilter = modelData.key;
+                                            root.resetSelection();
+                                        }
+                                        search.forceActiveFocus();
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -434,14 +471,25 @@ ShellRoot {
                     id: history
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    visible: !root.detailsOpen
                     orientation: ListView.Horizontal
                     clip: true
                     spacing: 12
+                    readonly property int visibleCards: width >= 780 ? 3 : width >= 490 ? 2 : 1
                     cacheBuffer: 0
                     model: root.filtered
                     currentIndex: -1
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.horizontal: ScrollBar {
+                        id: historyScroll
+                        policy: history.count > history.visibleCards ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        padding: 2
+                        contentItem: Rectangle {
+                            implicitHeight: 4
+                            radius: 2
+                            color: historyScroll.pressed ? Tokens.accent : Tokens.outline
+                        }
+                    }
                     onCurrentIndexChanged: {
                         if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain);
                     }
@@ -463,8 +511,8 @@ ShellRoot {
                         readonly property bool isImage: modelData.kind === "image"
                         property string thumbnail: root.thumbnails[modelData.id] || ""
 
-                        width: Math.max(170, Math.floor((history.width - 2 * history.spacing) / 3))
-                        height: history.height - 9
+                        width: Math.floor((history.width - (history.visibleCards - 1) * history.spacing) / history.visibleCards)
+                        height: history.height - 10
                         padding: 10
                         hoverEnabled: true
                         highlighted: history.currentIndex === index
@@ -492,14 +540,15 @@ ShellRoot {
 
                         background: Rectangle {
                             radius: 14
-                            color: entryCard.highlighted ? Qt.tint(Tokens.surface, Qt.alpha(Tokens.accent, 0.10))
+                            color: entryCard.highlighted ? Qt.tint(Tokens.surface_high, Qt.alpha(Tokens.accent, 0.08))
                                 : entryCard.hovered ? Tokens.surface_high : Tokens.surface
-                            border.width: entryCard.highlighted || entryCard.activeFocus ? 2 : 1
-                            border.color: entryCard.highlighted || entryCard.activeFocus ? Tokens.accent : Tokens.outline
+                            border.width: 1
+                            border.color: entryCard.highlighted || entryCard.activeFocus
+                                ? Tokens.focus_ring : Qt.alpha(Tokens.outline, 0.64)
                         }
 
                         contentItem: ColumnLayout {
-                            spacing: 4
+                            spacing: 8
                             Rectangle {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
@@ -529,7 +578,7 @@ ShellRoot {
                                     text: entryCard.modelData.kind === "binary" ? "Dữ liệu" : entryCard.modelData.preview
                                     textFormat: Text.PlainText
                                     color: entryCard.modelData.kind === "link" ? Tokens.accent : Tokens.text_primary
-                                    font.pixelSize: 14
+                                    font.pixelSize: 15
                                     wrapMode: Text.WrapAnywhere
                                     elide: Text.ElideRight
                                     maximumLineCount: Math.max(1, Math.floor(height / 20))
@@ -538,31 +587,40 @@ ShellRoot {
 
                             RowLayout {
                                 spacing: 4
-                                UiText {
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    Layout.leftMargin: 4
-                                    text: entryCard.isImage ? "Ảnh · " + entryCard.modelData.metadata
-                                        : entryCard.modelData.metadata || (entryCard.modelData.kind === "link" ? "Liên kết" : "Văn bản")
-                                    textFormat: Text.PlainText
-                                    elide: Text.ElideRight
-                                    color: Tokens.text_secondary
-                                    font.pixelSize: 11
+                                    Layout.minimumWidth: 0
+                                    Layout.leftMargin: 3
+                                    spacing: 1
+
+                                    UiText {
+                                        text: entryCard.isImage ? "Ảnh" : entryCard.modelData.kind === "link"
+                                            ? "Liên kết" : entryCard.modelData.kind === "binary" ? "Dữ liệu" : "Văn bản"
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                    }
+                                    UiText {
+                                        Layout.fillWidth: true
+                                        visible: text.length > 0
+                                        text: entryCard.modelData.metadata
+                                        textFormat: Text.PlainText
+                                        elide: Text.ElideRight
+                                        color: Tokens.text_secondary
+                                        font.pixelSize: 11
+                                    }
                                 }
                                 Item {
                                     Layout.preferredWidth: 24
-                                    Layout.preferredHeight: 22
-                                    UiText {
-                                        anchors.centerIn: parent
-                                        visible: entryCard.highlighted && !entryCard.hovered
-                                        text: "↵"
-                                        color: Tokens.accent
-                                    }
+                                    Layout.preferredHeight: 26
                                     ActionButton {
                                         anchors.fill: parent
                                         visible: entryCard.hovered || hovered || activeFocus
                                         enabled: !operation.running && !root.confirmation
                                         padding: 0
-                                        icon.name: "edit-delete"
+                                        text: "󰆴"
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 16
+                                        Accessible.name: "Xóa mục"
                                         ToolTip.text: "Xóa mục"
                                         destructive: true
                                         onClicked: {
@@ -586,7 +644,7 @@ ShellRoot {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 252
+                    Layout.fillHeight: true
                     visible: root.detailsOpen
                     spacing: 10
 
@@ -616,7 +674,7 @@ ShellRoot {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         radius: 12
-                        color: Tokens.surface_low
+                        color: Tokens.background
                         border.color: Qt.alpha(Tokens.outline, 0.72)
                         clip: true
                         Image {
@@ -666,7 +724,16 @@ ShellRoot {
                     }
                 }
 
-                UiText { Layout.fillWidth: true; visible: !!root.error; text: root.error; textFormat: Text.PlainText; color: Tokens.danger; wrapMode: Text.Wrap; font.pixelSize: 12 }
+                UiText {
+                    id: errorMessage
+                    Layout.fillWidth: true
+                    visible: !!root.error
+                    text: root.error
+                    textFormat: Text.PlainText
+                    color: Tokens.danger
+                    wrapMode: Text.Wrap
+                    font.pixelSize: 12
+                }
 
                 Rectangle {
                     Layout.fillWidth: true
@@ -678,19 +745,57 @@ ShellRoot {
                     Layout.fillHeight: false
                     currentIndex: root.confirmation ? 1 : 0
 
-                    RowLayout {
+                    GridLayout {
+                        columns: card.width < 460 ? 2 : 6
+                        rowSpacing: 4
+                        columnSpacing: 6
+
                         Row {
                             visible: card.width >= 640
-                            spacing: 12
-                            KeyHint { keys: "← →"; label: "Chọn" }
+                            spacing: 14
+                            UiText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: history.currentIndex >= 0 ? (history.currentIndex + 1) + " / " + history.count : "0 mục"
+                                color: Tokens.text_secondary
+                                font.pixelSize: 12
+                                Accessible.name: history.currentIndex >= 0
+                                    ? "Mục " + (history.currentIndex + 1) + " trên " + history.count : "0 mục"
+                            }
+                            KeyHint { keys: search.text ? "↑ ↓" : "← →"; label: "Chọn" }
                             KeyHint { keys: "Enter"; label: "Dán" }
-                            KeyHint { keys: "Shift+Del"; label: "Xóa" }
                         }
-                        Item { Layout.fillWidth: true }
-                        ActionButton { text: "Xem trước"; selected: root.detailsOpen; onClicked: root.detailsOpen = !root.detailsOpen }
-                        ActionButton { icon.name: "edit-delete"; ToolTip.text: "Xóa mục"; implicitWidth: 36; destructive: true; enabled: !!root.selectedId && !operation.running; onClicked: root.confirmation = "delete" }
-                        ActionButton { text: "Sao chép"; icon.name: "edit-copy"; enabled: !!root.selectedId && !operation.running; onClicked: root.act("copy") }
-                        ActionButton { text: "Dán"; icon.name: "edit-paste"; implicitWidth: 92; primary: true; enabled: !!root.selectedId && !operation.running; onClicked: root.act("paste") }
+                        Item { visible: card.width >= 460; Layout.fillWidth: true }
+                        ActionButton {
+                            Layout.fillWidth: card.width < 460
+                            text: root.detailsOpen ? "Ẩn xem trước" : "Xem trước"
+                            selected: root.detailsOpen
+                            enabled: root.detailsOpen || !!root.selectedId
+                            onClicked: {
+                                root.detailsOpen = !root.detailsOpen;
+                                search.forceActiveFocus();
+                            }
+                        }
+                        ActionButton {
+                            Layout.fillWidth: card.width < 460
+                            text: "Xóa mục"
+                            destructive: true
+                            enabled: !!root.selectedId && !operation.running
+                            onClicked: root.confirmation = "delete"
+                        }
+                        ActionButton {
+                            Layout.fillWidth: card.width < 460
+                            text: "Sao chép"
+                            enabled: !!root.selectedId && !operation.running
+                            onClicked: root.act("copy")
+                        }
+                        ActionButton {
+                            Layout.fillWidth: card.width < 460
+                            text: "Dán"
+                            implicitWidth: 92
+                            primary: true
+                            enabled: !!root.selectedId && !operation.running
+                            onClicked: root.act("paste")
+                        }
                     }
                     RowLayout {
                         UiText {

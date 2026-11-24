@@ -15,6 +15,7 @@ import "dashboard"
 import "launcher"
 import "launcher/LauncherSearch.js" as LauncherSearch
 import "overlays"
+import "settings"
 import "modules/cod29"
 
 ShellRoot {
@@ -22,6 +23,7 @@ ShellRoot {
     reloadableId: "riceShellRoot"
 
     LauncherStore { id: launcherStore }
+    ShellPresentation { id: presentationState }
     readonly property var launcherIndex: LauncherSearch.indexApps(DesktopEntries.applications.values)
     Variants {
         model: Quickshell.screens
@@ -85,6 +87,7 @@ ShellRoot {
     }
 
     function dispatchOsd(icon: string, progress: real, kind: string): void {
+        if (!presentationState.allowsOsd(kind)) return;
         var island = instanceOnScreen(islandInstances, null);
         if (island) island.triggerOsd(icon, progress, kind);
     }
@@ -359,6 +362,9 @@ ShellRoot {
             DesktopControls.setBrightness(action === "brightness-set" ? argument / 100
                 : DesktopControls.brightnessLevel + (action === "brightness-up" ? 0.1 : -0.1));
             break;
+        case "open-settings":
+            root.openSettings("", launcher.targetScreen);
+            break;
         case "system":
         case "power":
         case "notifications":
@@ -389,7 +395,7 @@ ShellRoot {
             const home = Quickshell.env("HOME");
             const command = action === "clipboard" ? ["qs", "-c", "clipboard-history", "-n"]
                 : action === "screenshot" ? [home + "/.config/hypr/scripts/screenshot-region.sh"]
-                : ["quickshell", "-p", home + "/.config/quickshell/wallpaper-switcher"];
+                : root.wallpaperPickerCommand();
             launcher.dismiss();
             utilityDelay.command = command;
             utilityDelay.restart();
@@ -415,10 +421,30 @@ ShellRoot {
         onTriggered: Quickshell.execDetached(command)
     }
 
+    function openSettings(route: string, screen): bool {
+        return settingsHost.open(route, screen || Quickshell.screens.find(candidate =>
+            candidate.name === (Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "")));
+    }
+
+    function wallpaperPickerCommand(): var {
+        return ["quickshell", "-p", ThemeCommandQueue.configHome + "/quickshell/wallpaper-switcher"];
+    }
+
+    SettingsHost {
+        id: settingsHost
+        launcherState: launcherStore
+        shellPresentation: presentationState
+        onOpening: root.dismissOtherModals(null)
+        onOpenWallpaper: {
+            utilityDelay.command = root.wallpaperPickerCommand();
+            utilityDelay.restart();
+        }
+    }
+
     function toggleDashboard(tab: string, screen: var): void {
         var inst = instanceOnScreen(islandInstances, screen);
         if (!inst) return;
-        var targetTab = IslandState.normalizeDashboardTab(tab || "Home");
+        var targetTab = IslandState.normalizeDashboardTab(tab || presentationState.dashboardTab);
         if (tab && targetTab !== tab)
             console.warn("Unknown Dashboard tab '" + tab + "'; opening Home");
         if (inst.dashboardExpanded && inst.dashboardCurrentTab === targetTab) {
@@ -545,6 +571,10 @@ ShellRoot {
             root.toggleDashboard("Notifications", null);
         }
 
+        function openSettings(route: string): bool {
+            return root.openSettings(route, null);
+        }
+
         function toggleSession(): void {
             toggleDashboard("Config");
         }
@@ -578,6 +608,7 @@ ShellRoot {
             Bar {
                 required property var modelData
                 targetScreen: modelData
+                presentation: presentationState
 
                 onRequestLauncher: () => {
                     root.toggleLauncher(modelData);
@@ -604,6 +635,8 @@ ShellRoot {
                 id: screenIsland
                 required property var modelData
                 targetScreen: modelData
+                showMediaPreview: presentationState.showMediaPreview
+                onRequestSettings: root.openSettings("appearance", modelData)
 
                 onRequestDashboard: (tab) => {
                     root.toggleDashboard(tab, modelData);

@@ -1,12 +1,14 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import "../services"
 import "../theme"
 
 Item {
     id: root
+    signal requestSettings()
 
     implicitWidth: 724
     implicitHeight: compactLayout ? 700 : 370
@@ -232,6 +234,37 @@ Item {
                                 : "Reload the shell and compositor"
                             font.pixelSize: 9
                             color: Tokens.text_secondary
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Button {
+                        id: openSettings
+                        Layout.fillWidth: false
+                        Layout.maximumWidth: implicitWidth
+                        objectName: "dashboard-open-settings"
+                        text: qsTr("Open Settings")
+                        leftPadding: 10
+                        rightPadding: 10
+                        implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
+                        implicitHeight: 32
+                        onClicked: root.requestSettings()
+
+                        contentItem: Text {
+                            text: openSettings.text + "  ↗"
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                            color: Tokens.accent
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        background: Rectangle {
+                            radius: 7
+                            color: openSettings.down ? Tokens.surface_high
+                                : openSettings.hovered ? Tokens.surface : "transparent"
+                            border.width: openSettings.visualFocus ? 2 : 0
+                            border.color: Tokens.focus_ring
                         }
                     }
                 }

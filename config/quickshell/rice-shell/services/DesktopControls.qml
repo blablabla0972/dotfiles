@@ -15,6 +15,7 @@ QtObject {
     property string lastBody: ""
     property var notificationHistory: []
     property real brightnessLevel: 0.8
+    property real confirmedBrightness: 0
     property bool brightnessAvailable: false
     property string brightnessError: ""
     property int pendingBrightnessPercent: -1
@@ -130,6 +131,7 @@ QtObject {
                 var value = Math.max(0, Math.min(1, Number(match[1]) / 100));
                 root.brightnessAvailable = true;
                 root.brightnessError = "";
+                root.confirmedBrightness = value;
                 root.brightnessLevel = value;
                 root.brightnessRefreshed(value, root.brightnessOsdPending);
                 root.brightnessOsdPending = false;
@@ -152,6 +154,10 @@ QtObject {
 
     property bool nightLightRequested: false
     property bool caffeineRequested: false
+    property string nightLightError: ""
+    property string caffeineError: ""
+    onNightLightRequestedChanged: if (nightLightRequested) nightLightError = ""
+    onCaffeineRequestedChanged: if (caffeineRequested) caffeineError = ""
 
     function toggleNightLight(): void { nightLightRequested = !nightLightRequested; }
     function toggleCaffeine(): void { caffeineRequested = !caffeineRequested; }
@@ -162,7 +168,8 @@ QtObject {
         onRunningChanged: {
             if (running || !root.nightLightRequested) return;
             root.nightLightRequested = false;
-            root.errorOccurred(qsTr("Night Light could not start."));
+            root.nightLightError = qsTr("Night Light could not start.");
+            root.errorOccurred(root.nightLightError);
         }
     }
 
@@ -173,7 +180,8 @@ QtObject {
         onRunningChanged: {
             if (running || !root.caffeineRequested) return;
             root.caffeineRequested = false;
-            root.errorOccurred(qsTr("Awake could not start."));
+            root.caffeineError = qsTr("Awake could not start.");
+            root.errorOccurred(root.caffeineError);
         }
     }
 }
