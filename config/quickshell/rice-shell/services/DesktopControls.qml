@@ -24,6 +24,7 @@ QtObject {
     signal errorOccurred(string message)
     signal brightnessRefreshed(real level, bool showOsd)
     signal notificationActionRequested(int notificationId, string actionId)
+    signal notificationDismissRequested(int notificationId)
     readonly property bool brightnessPending: brightnessWriter.running
         || brightnessWriteTimer.running || pendingBrightnessPercent >= 0
 
@@ -53,7 +54,21 @@ QtObject {
         notificationHistory = Array.isArray(entries) ? entries.slice(0, 50) : [];
     }
 
-    function clearNotificationHistory(): void { notificationHistory = []; }
+    function deactivateNotification(notificationId: int): void {
+        notificationHistory = notificationHistory.map(entry => entry.id === notificationId
+            ? Object.assign({}, entry, { actions: [] }) : entry);
+    }
+
+    function dismissNotification(notificationId: int): void {
+        notificationHistory = notificationHistory.filter(entry => entry.id !== notificationId);
+        notificationDismissRequested(notificationId);
+    }
+
+    function clearNotificationHistory(): void {
+        var history = notificationHistory;
+        notificationHistory = [];
+        for (var entry of history) notificationDismissRequested(entry.id);
+    }
 
     function requestNotificationAction(notificationId: int, actionId: string): void {
         notificationActionRequested(notificationId, actionId);

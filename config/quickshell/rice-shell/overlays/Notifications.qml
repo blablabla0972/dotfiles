@@ -39,6 +39,7 @@ Item {
 
     function unregisterNotification(notificationId: int): void {
         delete liveNotifications[notificationId];
+        DesktopControls.deactivateNotification(notificationId);
     }
 
     function invokeNotificationAction(notificationId: int, actionId: string): void {
@@ -59,6 +60,11 @@ Item {
         target: DesktopControls
         function onNotificationActionRequested(notificationId, actionId) {
             root.invokeNotificationAction(notificationId, actionId);
+        }
+        function onNotificationDismissRequested(notificationId) {
+            var live = root.liveNotifications[notificationId];
+            if (live && live.notification && live.notification.tracked)
+                live.notification.dismiss();
         }
     }
 

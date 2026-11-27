@@ -51,6 +51,14 @@ PanelWindow {
     readonly property bool homeMode: appMode && !searchText.trim() && !browseAll && selectedCategory === "All"
     readonly property bool reducedMotion: Quickshell.env("RICE_LAUNCHER_REDUCED_MOTION") === "1"
     property string pendingConfirmation: ""
+    Timer {
+        id: confirmationExpiry
+        interval: 5000
+        onTriggered: {
+            launcherWindow.pendingConfirmation = "";
+            launcherWindow.feedback = "Confirmation expired";
+        }
+    }
     property var store: null
     property var sharedIndex: null
     property var actionStatuses: ({})
@@ -97,9 +105,8 @@ PanelWindow {
     // Filter desktop entries based on search query and category
     readonly property var allApps: DesktopEntries.applications ? DesktopEntries.applications.values : []
     readonly property var indexedApps: sharedIndex ?? LauncherSearch.indexApps(allApps)
-    readonly property var categoryApps: indexedApps.filter(function(record) {
-        return launcherWindow.matchesCategory(record.app, launcherWindow.selectedCategory);
-    })
+    readonly property var categoryApps: selectedCategory === "All" ? indexedApps
+        : indexedApps.filter(record => matchesCategory(record.app, selectedCategory))
     readonly property var zeroStateApps: {
         var apps = categoryApps.map(function(record) { return record.app; });
         const favorites = store?.favorites || [];
@@ -305,10 +312,12 @@ PanelWindow {
             if (activationGuard.running) return;
             if (item.confirm && pendingConfirmation !== item.action) {
                 pendingConfirmation = item.action;
-                feedback = "Press Enter again to confirm " + item.name;
+                confirmationExpiry.restart();
+                feedback = "Press Enter again to confirm · 5s · " + item.name;
                 return;
             }
             pendingConfirmation = "";
+            confirmationExpiry.stop();
             activationGuard.restart();
             if (calculatorMode) copyResultRequested(item.copyValue, item.expression);
             else quickActionRequested(item.action, item.argument ?? 0);
@@ -334,7 +343,9 @@ PanelWindow {
     }
 
     onSelectedIndexChanged: {
+        if (pendingConfirmation) feedback = "";
         pendingConfirmation = "";
+        confirmationExpiry.stop();
         if (appList && selectedIndex >= 0 && selectedIndex < filteredApps.length) {
             appList.positionViewAtIndex(selectedIndex, ListView.Contain);
         }
@@ -342,6 +353,7 @@ PanelWindow {
 
     onVisibleChanged: {
         closeTimer.stop();
+        confirmationExpiry.stop();
         closing = false;
         if (visible) {
             session++;
@@ -533,6 +545,7 @@ PanelWindow {
 
                             onTextChanged: {
                                 launcherWindow.pendingConfirmation = "";
+                                confirmationExpiry.stop();
                                 if (launcherWindow.contextApp) launcherWindow.closeContext();
                                 launcherWindow.feedback = "";
                                 launcherWindow.searchText = text;
@@ -694,14 +707,14 @@ PanelWindow {
                 }
 
                 RowLayout {
-                    visible: launcherWindow.appMode
+                    visible: launcherWindow.appMode || launcherWindow.actionsMode
                     Layout.fillWidth: true
                     Layout.leftMargin: 6
                     Layout.rightMargin: 6
 
                     Text {
                         Layout.fillWidth: true
-                        text: launcherWindow.homeMode ? "Suggestions" : "Results"
+                        text: launcherWindow.actionsMode ? "Quick actions" : launcherWindow.homeMode ? "Suggestions" : "Results"
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                         color: Tokens.text_primary
@@ -733,6 +746,18 @@ PanelWindow {
                         reuseItems: true
                         cacheBuffer: 120
                         spacing: 4
+                        section.property: launcherWindow.actionsMode && launcherWindow.searchText.trim() === ":" ? "category" : ""
+                        section.delegate: Text {
+                            required property string section
+                            width: appList.width
+                            height: 28
+                            leftPadding: 12
+                            verticalAlignment: Text.AlignVCenter
+                            text: section
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                            color: Tokens.text_secondary
+                        }
                         currentIndex: launcherWindow.selectedIndex
                         boundsBehavior: Flickable.StopAtBounds
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -747,6 +772,7 @@ PanelWindow {
                             readonly property string kind: modelData.kind ?? "application"
                             readonly property bool isQuick: kind === "quick-action" || kind === "history"
                                 || kind === "calculation" || kind === "message"
+                            opacity: modelData.disabled ? 0.52 : 1
                             readonly property bool favorite: launcherWindow.appMode && launcherWindow.isFavorite(modelData)
                             readonly property bool recent: launcherWindow.appMode && !favorite && !launcherWindow.searchText.trim()
                                 && (launcherWindow.store?.recents.slice(0, 8).includes(modelData.id) ?? false)
@@ -880,6 +906,7 @@ PanelWindow {
 
                                         Text {
                                             text: appDelegate.kind === "history" ? "↵ Reuse" : launcherWindow.calculatorMode ? "↵ Copy"
+                                                : appDelegate.modelData.confirm ? (launcherWindow.pendingConfirmation === appDelegate.modelData.action ? "↵ Confirm" : "↵ Review")
                                                 : appDelegate.isCommand || launcherWindow.actionsMode ? "↵ Run" : "↵ Open"
                                             font.pixelSize: 11
                                             font.weight: Font.DemiBold
@@ -942,7 +969,7 @@ PanelWindow {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: launcherWindow.actionsMode ? "Try DND, volume, brightness, System, Power or reload."
+                                text: launcherWindow.actionsMode ? "Try :wifi, :mic 50, :media, :dark, :settings or :workspace."
                                     : launcherWindow.selectedCategory !== "All"
                                     ? ("No apps match in '" + launcherWindow.selectedCategory + "'. Press Tab to cycle categories.")
                                     : "Check the name or try a different keyword."
@@ -960,7 +987,7 @@ PanelWindow {
                     spacing: 12
                     Repeater {
                         model: [
-                            { keys: "↑↓", label: "Navigate", show: launcherWindow.appMode && launcherCard.width >= 420 },
+                            { keys: "↑↓", label: "Navigate", show: (launcherWindow.appMode || launcherWindow.actionsMode) && launcherCard.width >= 420 },
                             { keys: "Tab", label: "Category", show: launcherWindow.appMode },
                             { keys: "Alt+↵", label: "App actions", show: launcherWindow.appMode && launcherCard.width >= 540 },
                             { keys: "Ctrl+P", label: "Favorite", show: launcherWindow.appMode && launcherCard.width >= 540 },

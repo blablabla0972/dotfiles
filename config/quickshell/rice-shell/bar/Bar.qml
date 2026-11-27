@@ -6,6 +6,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Networking
+import Quickshell.Bluetooth
 import Quickshell.Services.UPower
 import "../theme"
 import "../services"
@@ -15,6 +16,7 @@ PanelWindow {
 
     required property ShellScreen targetScreen
     required property ShellPresentation presentation
+    property bool connectivityMenuOpen: false
     screen: targetScreen
     color: "transparent"
     implicitHeight: 40
@@ -22,6 +24,7 @@ PanelWindow {
     signal requestLauncher()
     signal requestDashboard(string tab)
     signal requestSideDrawer(string type)
+    signal requestConnectivityMenu(string type, Item anchorItem)
 
     anchors {
         top: true
@@ -33,18 +36,21 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    readonly property string internetStatusText: {
-        switch (Networking.connectivity) {
-        case NetworkConnectivity.Full: return "Online";
-        case NetworkConnectivity.Limited: return "Limited";
-        case NetworkConnectivity.Portal: return "Portal";
-        case NetworkConnectivity.None: return "Offline";
-        default: return "Unknown";
-        }
-    }
-    readonly property color internetStatusColor: Networking.connectivity === NetworkConnectivity.Full
-        ? Tokens.accent
-        : Tokens.text_secondary
+    readonly property bool wifiEnabled: Networking.wifiEnabled && Networking.wifiHardwareEnabled
+    readonly property bool wifiConnected: Networking.devices.values.some(
+        device => device.type === DeviceType.Wifi && device.connected)
+    readonly property string wifiStatusText: !Networking.wifiHardwareEnabled ? "Unavailable"
+        : !Networking.wifiEnabled ? "Off" : wifiConnected ? "Connected" : "On"
+    readonly property color wifiStatusColor: !wifiEnabled ? Tokens.danger
+        : wifiConnected ? Tokens.accent : Tokens.text_secondary
+    readonly property var bluetoothAdapter: Bluetooth.defaultAdapter
+    readonly property bool bluetoothEnabled: !!bluetoothAdapter && bluetoothAdapter.enabled
+    readonly property bool bluetoothConnected: bluetoothEnabled
+        && bluetoothAdapter.devices.values.some(device => device.connected)
+    readonly property string bluetoothStatusText: !bluetoothAdapter ? "Unavailable"
+        : !bluetoothEnabled ? "Off" : bluetoothConnected ? "Connected" : "On"
+    readonly property color bluetoothStatusColor: !bluetoothEnabled ? Tokens.danger
+        : bluetoothConnected ? Tokens.accent : Tokens.text_secondary
 
     Component.onCompleted: {
         if (Networking.canCheckConnectivity) Networking.checkConnectivity();
@@ -139,39 +145,147 @@ PanelWindow {
 
             // Internet connectivity
             Rectangle {
+                id: internetPill
                 objectName: "bar-connectivity"
-                visible: barRoot.presentation.showConnectivity
                 Layout.alignment: Qt.AlignVCenter
                 height: 24
-                implicitWidth: internetContent.implicitWidth + 14
-                radius: 8
+                implicitWidth: internetContent.implicitWidth + 16
+                radius: height / 2
                 color: internetHover.hovered
                     ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
-                    : "transparent"
+                    : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7)
+                border.width: 1
+                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
                 Behavior on color { ColorAnimation { duration: 150 } }
 
-                RowLayout {
+                Accessible.role: Accessible.Button
+                Accessible.name: "Wi-Fi · " + barRoot.wifiStatusText
+                Accessible.onPressAction: barRoot.requestConnectivityMenu("wifi", internetPill)
+
+                Row {
                     id: internetContent
                     anchors.centerIn: parent
-                    spacing: 5
+                    spacing: 6
 
                     Text {
-                        text: Networking.connectivity === NetworkConnectivity.Full ? "󰤨" : "󰤮"
-                        font.pixelSize: 12
-                        color: barRoot.internetStatusColor
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: ""
+                        font.pixelSize: 13
+                        color: barRoot.wifiStatusColor
                     }
 
-                    Text {
-                        text: barRoot.internetStatusText
-                        font.pixelSize: 10
-                        font.bold: true
-                        color: barRoot.internetStatusColor
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 6
+                        height: width
+                        radius: width / 2
+                        color: barRoot.wifiStatusColor
                     }
                 }
 
                 HoverHandler { id: internetHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
-                    onTapped: barRoot.requestSideDrawer("wifi")
+                    onTapped: barRoot.requestConnectivityMenu("wifi", internetPill)
+                }
+                activeFocusOnTab: true
+                Keys.onPressed: (event) => {
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                        barRoot.requestConnectivityMenu("wifi", internetPill);
+                        event.accepted = true;
+                    }
+                }
+
+                PopupWindow {
+                    anchor.item: internetPill
+                    anchor.edges: Edges.Bottom
+                    anchor.gravity: Edges.Bottom
+                    visible: internetPill.visible && internetHover.hovered && !barRoot.connectivityMenuOpen
+                    implicitWidth: internetTooltip.implicitWidth + 16
+                    implicitHeight: 26
+                    color: "transparent"
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 8
+                        color: Tokens.surface_high
+                        border.color: Tokens.outline
+
+                        Text {
+                            id: internetTooltip
+                            anchors.centerIn: parent
+                            text: internetPill.Accessible.name
+                            font.pixelSize: 11
+                            color: Tokens.text_primary
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: bluetoothPill
+                objectName: "bar-bluetooth"
+                Layout.alignment: Qt.AlignVCenter
+                height: 24
+                width: 32
+                radius: height / 2
+                color: bluetoothHover.hovered
+                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.2)
+                    : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.7)
+                border.width: 1
+                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
+                Accessible.role: Accessible.Button
+                Accessible.name: "Bluetooth · " + barRoot.bluetoothStatusText
+                Accessible.onPressAction: barRoot.requestConnectivityMenu("bluetooth", bluetoothPill)
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰂯"
+                    font.pixelSize: 14
+                    color: barRoot.bluetoothStatusColor
+                }
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.rightMargin: 3
+                    anchors.bottomMargin: 3
+                    width: 5
+                    height: width
+                    radius: width / 2
+                    color: barRoot.bluetoothStatusColor
+                }
+                HoverHandler { id: bluetoothHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: barRoot.requestConnectivityMenu("bluetooth", bluetoothPill)
+                }
+                activeFocusOnTab: true
+                Keys.onPressed: (event) => {
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                        barRoot.requestConnectivityMenu("bluetooth", bluetoothPill);
+                        event.accepted = true;
+                    }
+                }
+
+                PopupWindow {
+                    anchor.item: bluetoothPill
+                    anchor.edges: Edges.Bottom
+                    anchor.gravity: Edges.Bottom
+                    visible: bluetoothHover.hovered && !barRoot.connectivityMenuOpen
+                    implicitWidth: bluetoothTooltip.implicitWidth + 16
+                    implicitHeight: 26
+                    color: "transparent"
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 8
+                        color: Tokens.surface_high
+                        border.color: Tokens.outline
+                        Text {
+                            id: bluetoothTooltip
+                            anchors.centerIn: parent
+                            text: bluetoothPill.Accessible.name
+                            font.pixelSize: 11
+                            color: Tokens.text_primary
+                        }
+                    }
                 }
             }
 

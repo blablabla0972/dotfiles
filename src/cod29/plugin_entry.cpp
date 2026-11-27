@@ -7,10 +7,14 @@
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/desktop/view/window/WindowGroupMembership.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
+#include <hyprland/src/managers/fullscreen/handler/FullscreenHandler.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
+#include <hyprland/src/layout/target/WindowTarget.hpp>
 #include <hyprland/src/layout/supplementary/DragController.hpp>
 #include <hyprland/src/desktop/state/GlobalWindowController.hpp>
 #include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/desktop/view/window/WindowFullscreenPolicy.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
@@ -18,10 +22,14 @@
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/render/SceneResources.hpp>
+#include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
+#include <hyprland/src/render/decorations/DecorationPositioner.hpp>
+#include <hyprland/src/render/ElementRenderer.hpp>
 #include <hyprland/src/render/scene/SceneSelection.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/state/workspace/State.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
+#include <hyprutils/utils/ScopeGuard.hpp>
 
 #include "cod29/top_edge_drag_logic.hpp"
 #include "cod29/compositor_delegate.hpp"
@@ -29,6 +37,7 @@
 #include "cod29/drag_hook_adapter.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <linux/input-event-codes.h>
 #include <memory>
@@ -56,33 +65,43 @@ struct DropPlacement {
     bool floating;
     PHLWINDOWREF neighbor;
     CBox neighborBox;
-    bool clearMaximizedDestination = false;
+    PHLWINDOWREF leaveFullscreen;
 };
 
 static CBox contentBox(CBox tile, const CBox& workArea, const ::Config::CCssGapData& gaps, const PHLWINDOW& window) {
+    const auto left = STICKS(tile.x, workArea.x) ? 0 : gaps.m_left;
+    const auto top = STICKS(tile.y, workArea.y) ? 0 : gaps.m_top;
+    const auto right = STICKS(tile.x + tile.w, workArea.x + workArea.w) ? 0 : gaps.m_right;
+    const auto bottom = STICKS(tile.y + tile.h, workArea.y + workArea.h) ? 0 : gaps.m_bottom;
+    tile.round();
+    tile.x += left;
+    tile.y += top;
+    tile.w -= left + right;
+    tile.h -= top + bottom;
+
+    if (const auto target = window->layoutTarget(); target->isPseudo()) {
+        const auto requested = target->pseudoSize();
+        if (requested.x > 0 && requested.y > 0) {
+            const auto size = requested * std::min({1., tile.w / requested.x, tile.h / requested.y});
+            tile = CBox{tile.middle() - size / 2., size};
+        }
+    }
+
     const auto reserved = window->getFullWindowReservedArea();
-    const auto left = reserved.topLeft.x + (std::abs(tile.x - workArea.x) < 1 ? 0 : gaps.m_left);
-    const auto top = reserved.topLeft.y + (std::abs(tile.y - workArea.y) < 1 ? 0 : gaps.m_top);
-    const auto right = reserved.bottomRight.x + (std::abs(tile.x + tile.w - workArea.x - workArea.w) < 1 ? 0 : gaps.m_right);
-    const auto bottom = reserved.bottomRight.y + (std::abs(tile.y + tile.h - workArea.y - workArea.h) < 1 ? 0 : gaps.m_bottom);
-    return CBox{tile.x + left, tile.y + top, tile.w - left - right, tile.h - top - bottom}.round();
+    return CBox{tile.pos() + reserved.topLeft, tile.size() - reserved.topLeft - reserved.bottomRight}.round();
 }
 
 static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool tiled, const WorkspaceCard& card,
-                                                  const PHLMONITOR& source, const Hyprutils::Math::Vector2D& cursor,
-                                                  const Vector2D& anchor) {
-    const auto workspace = workspaceById(card.id);
-    const auto monitor = workspace ? workspace->m_monitor.lock() : source;
+                                                  const PHLWORKSPACE& workspace, const PHLMONITOR& monitor,
+                                                  const Hyprutils::Math::Vector2D& cursor, const Vector2D& anchor) {
     if (!monitor || card.preview.w <= 0 || card.preview.h <= 0 || window->grouping().group() ||
         Fullscreen::controller()->isFullscreen(window))
         return std::nullopt;
 
-    const bool maximizedDestination = workspace && Fullscreen::controller()->hasFullscreen(workspace);
-    if (maximizedDestination) {
-        // Following a tiled drop exits a lone maximized window in this focus mode.
+    const auto fullscreen = workspace ? Fullscreen::controller()->getFullscreenWindow(workspace) : nullptr;
+    if (tiled && fullscreen) {
         static auto focusUnderFullscreen = CConfigValue<::Config::INTEGER>("misc:on_focus_under_fullscreen");
-        const auto mode = Fullscreen::controller()->getFullscreenModes(workspace).internal;
-        if (!tiled || mode != Fullscreen::FSMODE_MAXIMIZED || *focusUnderFullscreen != 2 || workspace->getWindowCount() != 1)
+        if (*focusUnderFullscreen != 2 || fullscreen->isFloating() || fullscreen->grouping().group())
             return std::nullopt;
     }
 
@@ -95,7 +114,7 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
         const auto area = monitor->logicalBoxMinusReserved();
         box.x = std::clamp(point.x - box.w * anchor.x, area.x, area.x + std::max(0., area.w - box.w));
         box.y = std::clamp(point.y - box.h * anchor.y, area.y, area.y + std::max(0., area.h - box.h));
-        return DropPlacement{card.id, point, box.round(), true, {}, {}};
+        return DropPlacement{card.id, point, box.round(), true, {}, {}, {}};
     }
 
     static auto layout = CConfigValue<::Config::STRING>("general:layout");
@@ -104,7 +123,7 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
     const auto space = workspace ? workspace->space() : nullptr;
     auto* dwindle = space ? dynamic_cast<Layout::Tiled::CDwindleAlgorithm*>(space->algorithm()->tiledAlgo().get()) : nullptr;
     // shortcut: Special layouts and window rules retain native placement until they expose drop geometry.
-    if ((space ? !dwindle : *layout != "dwindle") || *smartSplit || *precise || window->layoutTarget()->isPseudo())
+    if ((space ? !dwindle : *layout != "dwindle") || *smartSplit || *precise)
         return std::nullopt;
 
     std::optional<CBox> nearestTile;
@@ -124,6 +143,8 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
                 nearestTile = rect;
                 neighbor = candidate;
                 distance = nearest;
+                if (distance == 0.)
+                    break;
             }
         }
     }
@@ -132,19 +153,24 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
         (maximum->x < available.x || maximum->y < available.y))
         return std::nullopt;
 
-    static auto gapsOut = CConfigValue<::Config::IComplexConfigValue>("general:gaps_out");
+    CBox workArea;
+    if (space) {
+        workArea = space->workArea();
+    } else {
+        static auto gapsOut = CConfigValue<::Config::IComplexConfigValue>("general:gaps_out");
+        const auto& outer = *static_cast<::Config::CCssGapData*>(gapsOut.ptr());
+        const auto usable = monitor->logicalBoxMinusReserved();
+        workArea = {usable.x + outer.m_left, usable.y + outer.m_top,
+                    usable.w - outer.m_left - outer.m_right, usable.h - outer.m_top - outer.m_bottom};
+    }
     static auto gapsIn = CConfigValue<::Config::IComplexConfigValue>("general:gaps_in");
-    const auto& outer = *static_cast<::Config::CCssGapData*>(gapsOut.ptr());
-    const auto usable = monitor->logicalBoxMinusReserved();
-    const auto workArea = space ? space->workArea() : CBox{usable.x + outer.m_left, usable.y + outer.m_top,
-                                                          usable.w - outer.m_left - outer.m_right, usable.h - outer.m_top - outer.m_bottom};
     const auto rules = workspace ? ::Config::workspaceRuleMgr()->getWorkspaceRuleFor(workspace) : std::nullopt;
     const auto& inner = rules && rules->m_gapsIn ? *rules->m_gapsIn : *static_cast<::Config::CCssGapData*>(gapsIn.ptr());
 
     if (!nearestTile) {
-        if (maximizedDestination)
+        if (fullscreen)
             return std::nullopt;
-        return DropPlacement{card.id, point, contentBox(workArea, workArea, inner, window), false, {}, {}};
+        return DropPlacement{card.id, point, contentBox(workArea, workArea, inner, window), false, {}, {}, {}};
     }
 
     const auto& tile = *nearestTile;
@@ -157,10 +183,10 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
     const bool sideBySide = tile.w > tile.h * *multiplier;
     const bool first = sideBySide ? focalPoint.x < tile.middle().x : focalPoint.y < tile.middle().y;
     const bool vertical = *preserveSplit ? !sideBySide : tile.h * *multiplier > tile.w;
-    double ratioForFirst = std::clamp(*ratio, .1f, 1.9f) / 2;
+    float splitRatio = std::clamp(*ratio, .1f, 1.9f);
     if (*bias && first)
-        ratioForFirst = 1 - ratioForFirst;
-    const auto firstSize = (vertical ? tile.h : tile.w) * ratioForFirst;
+        splitRatio = 2.f - splitRatio;
+    const float firstSize = (vertical ? tile.h : tile.w) / 2. * splitRatio;
 
     auto a = tile;
     auto b = tile;
@@ -174,7 +200,7 @@ static std::optional<DropPlacement> dropPlacement(const PHLWINDOW& window, bool 
         b.w -= firstSize;
     }
     return DropPlacement{card.id, focalPoint, contentBox(first ? a : b, workArea, inner, window), false,
-                         neighbor, contentBox(first ? b : a, workArea, inner, neighbor), maximizedDestination};
+                         neighbor, contentBox(first ? b : a, workArea, inner, neighbor), fullscreen};
 }
 
 class HyprlandCompositorDelegate : public ICompositorDelegate {
@@ -187,14 +213,15 @@ public:
         m_origDragEnd = fn;
     }
 
-    void capturePreReleaseWindow(void* thisptr, uint64_t /*windowToken*/) override {
+    void capturePreReleaseWindow(void* thisptr, uint64_t windowToken) override {
+        m_capturedWindowRef.reset();
         if (!thisptr) return;
         auto pController = static_cast<Layout::Supplementary::CDragStateController*>(thisptr);
         if (pController) {
             auto spTarget = pController->target();
             if (spTarget) {
                 auto pWindow = spTarget->window();
-                if (pWindow) {
+                if (pWindow && pWindow->mapped() && reinterpret_cast<uint64_t>(pWindow.get()) == windowToken) {
                     m_capturedWindowRef = pWindow;
                 }
             }
@@ -208,13 +235,14 @@ public:
         return false;
     }
 
-    bool isWindowValid(uint64_t /*windowToken*/) const override {
-        return !m_capturedWindowRef.expired();
+    bool isWindowValid(uint64_t windowToken) const override {
+        const auto window = m_capturedWindowRef.lock();
+        return window && window->mapped() && reinterpret_cast<uint64_t>(window.get()) == windowToken;
     }
 
     bool moveWindowToWorkspace(uint64_t /*windowToken*/, int targetWorkspaceId, bool follow) override {
         auto pWindow = m_capturedWindowRef.lock();
-        if (!pWindow || targetWorkspaceId <= 0) {
+        if (!pWindow || !pWindow->mapped() || targetWorkspaceId <= 0) {
             return false;
         }
 
@@ -230,9 +258,9 @@ public:
         }
 
         if (pTargetWs && pWindow->m_workspace != pTargetWs) {
-            if (placement && placement->workspaceId == targetWorkspaceId && placement->clearMaximizedDestination) {
-                if (const auto maximized = Fullscreen::controller()->getFullscreenWindow(pTargetWs))
-                    Fullscreen::controller()->setFullscreenMode(maximized, Fullscreen::FSMODE_NONE);
+            if (placement && placement->workspaceId == targetWorkspaceId) {
+                if (const auto fullscreen = placement->leaveFullscreen.lock())
+                    Fullscreen::controller()->setFullscreenMode(fullscreen, Fullscreen::FSMODE_NONE);
             }
             Desktop::globalWindowController()->moveWindowToWorkspace(pWindow, pTargetWs);
             const auto target = pWindow->layoutTarget();
@@ -280,31 +308,38 @@ static CHyprSignalListener g_mouseButtonListener;
 static SP<CEventLoopTimer> g_edgeTimer;
 static std::optional<Hyprutils::Math::Vector2D> g_grabPoint;
 static std::optional<Vector2D> g_grabAnchor;
+static bool g_releasePending = false;
 using BeginRender = bool (*)(Render::IHyprRenderer*, PHLMONITOR, CRegion&, Render::eRenderMode, SP<IHLBuffer>, SP<Render::IFramebuffer>,
                              bool, const Render::SRenderOptions&, std::optional<Monitor::CDamageRing::CTransaction>*);
 using RenderWorkspace = void (*)(Render::IHyprRenderer*, Render::CRenderContext&, PHLWORKSPACE, const Time::steady_tp&, Render::eSceneMode);
 using RenderLayer = void (*)(Render::IHyprRenderer*, Render::CRenderContext&, PHLLS, PHLMONITOR, const Time::steady_tp&, bool, bool, bool);
-using RenderWindow = void (*)(Render::IHyprRenderer*, Render::CRenderContext&, PHLWINDOW, PHLMONITOR,
-                             const Render::SWindowRenderPresentation&, const Time::steady_tp&, bool, Render::eRenderPassMode, bool, bool);
 static BeginRender g_beginRender = nullptr;
 static RenderWorkspace g_renderWorkspace = nullptr;
 static CFunctionHook* g_layerHook = nullptr;
-static CFunctionHook* g_windowHook = nullptr;
+static CFunctionHook* g_previewDecorationHook = nullptr;
+static CFunctionHook* g_previewSurfaceHook = nullptr;
 static CHyprSignalListener g_renderListener;
 
 struct ProjectedDrop {
     PHLWINDOW window;
     DropPlacement placement;
 };
-static const ProjectedDrop* g_projection = nullptr;
 static SP<Render::IFramebuffer> g_projectedFrame;
-static int g_projectedWorkspace = -1;
+struct ProjectedFrameGeometry {
+    DropPlacement placement;
+    CBox output;
+};
+static std::optional<ProjectedFrameGeometry> g_projectedGeometry;
 
-static std::unordered_map<int, SP<Render::IFramebuffer>> g_cardFrames;
+struct PreviewFrame {
+    SP<Render::IFramebuffer> framebuffer;
+    bool ready = false;
+};
+static std::unordered_map<int, PreviewFrame> g_cardFrames;
 static SP<Render::CSceneResources> g_sceneResources;
 static PHLMONITORREF g_stripMonitor;
 static SP<CEventLoopTimer> g_previewTimer;
-static constexpr auto PREVIEW_INTERVAL = std::chrono::milliseconds(7);
+static constexpr auto PREVIEW_INTERVAL = std::chrono::milliseconds(16);
 static size_t g_nextPreviewCard = 0;
 static unsigned g_backgroundSlots = 0;
 
@@ -312,60 +347,179 @@ struct PreviewRequest {
     WorkspaceCard card;
     PHLWORKSPACEREF workspace;
 };
-static std::optional<PreviewRequest> g_pendingPreview;
+static std::array<std::optional<PreviewRequest>, 2> g_pendingPreviews;
+static std::vector<PHLWINDOWREF> g_previewClients;
 
 static CBox previewBox(const WorkspaceCard& card) {
     return {card.preview.x, card.preview.y, card.preview.w, card.preview.h};
 }
 
-static void stopPreview() {
+static void hidePreview() {
     if (g_previewTimer)
         g_previewTimer->updateTimeout(std::nullopt);
-    g_pendingPreview.reset();
+    g_pendingPreviews = {};
+    for (const auto& ref : g_previewClients) {
+        if (const auto window = ref.lock(); window && window->mapped())
+            window->setSuspended(window->isHidden() || !window->m_workspace || !window->m_workspace->visible());
+    }
+    g_previewClients.clear();
     g_nextPreviewCard = 0;
     g_backgroundSlots = 0;
-    g_projectedWorkspace = -1;
-    g_projectedFrame.reset();
+    g_projectedGeometry.reset();
     g_stripMonitor.reset();
+    for (auto& entry : g_cardFrames)
+        entry.second.ready = false;
+}
+
+static void stopPreview() {
+    hidePreview();
+    g_projectedFrame.reset();
     g_cardFrames.clear();
 }
 
-static void drawProjectedWindow(Render::IHyprRenderer* renderer, Render::CRenderContext& ctx, const PHLMONITOR& monitor,
-                                const PHLWINDOW& window, const CBox& box) {
-    if (!window || box.empty() || !ctx.shouldRenderContent(window->m_ruleApplicator->noScreenShare().valueOrDefault()))
-        return;
+static std::array<std::pair<const Desktop::View::CWindow*, CBox>, 3> g_previewGeometry;
 
-    const auto surface = window->wlSurface()->resource();
-    if (!surface || surface->m_current.size.x < 1 || surface->m_current.size.y < 1)
-        return;
-
-    const auto scale = box.size() / surface->m_current.size;
-    const auto clip = box.copy().translate(-monitor->m_position).scale(monitor->m_scale).round();
-    surface->breadthfirst([&](SP<CWLSurfaceResource> part, const Hyprutils::Math::Vector2D& offset, void*) {
-        if (!part->m_current.texture || part->m_current.size.x < 1 || part->m_current.size.y < 1)
-            return;
-        auto region = CBox{box.pos() - monitor->m_position + offset * scale, part->m_current.size * scale};
-        region.scale(monitor->m_scale).round();
-        renderer->addPassElement(ctx, makeUnique<CTexPassElement>(
-            CTexPassElement::SRenderData{.tex = part->m_current.texture, .box = region, .clipBox = clip}));
-    }, nullptr);
-}
-
-static void renderProjectedSplit(Render::IHyprRenderer* renderer, Render::CRenderContext& ctx, PHLWINDOW window, PHLMONITOR monitor,
-                                 const Render::SWindowRenderPresentation& presentation, const Time::steady_tp& now,
-                                 bool decorate, Render::eRenderPassMode mode, bool ignorePosition, bool standalone) {
-    if (g_projection && ctx.m_renderingCapture && window == g_projection->placement.neighbor) {
-        if (mode != Render::RENDER_PASS_POPUP) {
-            drawProjectedWindow(renderer, ctx, monitor, window, g_projection->placement.neighborBox);
-            drawProjectedWindow(renderer, ctx, monitor, g_projection->window, g_projection->placement.box);
-        }
-        return;
+static const CBox* projectedBox(const PHLWINDOW& window) {
+    if (!g_previewGeometry.front().first || !window)
+        return nullptr;
+    const auto* candidate = window.get();
+    for (const auto& [owner, box] : g_previewGeometry) {
+        if (owner == candidate)
+            return &box;
     }
-    reinterpret_cast<RenderWindow>(g_windowHook->m_original)(renderer, ctx, window, monitor, presentation, now, decorate, mode, ignorePosition, standalone);
+    return nullptr;
 }
 
-static bool renderCard(const PHLWORKSPACE& workspace, SP<Render::IFramebuffer>& framebuffer, const ProjectedDrop* projection = nullptr) {
-    const auto monitor = workspace->m_monitor.lock();
+static CBox previewDecorationBox(CDecorationPositioner* positioner, PHLWINDOW window) {
+    using Original = CBox (*)(CDecorationPositioner*, PHLWINDOW);
+    const auto original = reinterpret_cast<Original>(g_previewDecorationHook->m_original);
+    auto result = original(positioner, window);
+    if (const auto box = projectedBox(window)) {
+        auto limit = *box;
+        limit.addExtents(window->getFullWindowReservedArea());
+        limit.expand(window->presentation().borderSize());
+        result = result.intersection(limit);
+    }
+    return result;
+}
+
+static void previewSurfaceUV(Render::IElementRenderer* renderer, Render::CRenderContext& ctx, PHLWINDOW window,
+                             SP<CWLSurfaceResource> surface, PHLMONITOR monitor, bool main,
+                             const Hyprutils::Math::Vector2D& physicalSize, const Hyprutils::Math::Vector2D& logicalSize,
+                             bool fractionalCorrection) {
+    using Original = void (*)(Render::IElementRenderer*, Render::CRenderContext&, PHLWINDOW, SP<CWLSurfaceResource>, PHLMONITOR,
+                              bool, const Hyprutils::Math::Vector2D&, const Hyprutils::Math::Vector2D&, bool);
+    const auto original = reinterpret_cast<Original>(g_previewSurfaceHook->m_original);
+    if (main && surface && projectedBox(window)) {
+        // Preserve the entire committed client buffer while the native scene uses the projected window bounds.
+        auto size = surface->m_current.size;
+        const auto& viewport = surface->m_current.viewport;
+        if (viewport.hasDestination)
+            size = viewport.destination;
+        else if (viewport.hasSource)
+            size = viewport.source.size();
+        if (size.x > 0 && size.y > 0) {
+            original(renderer, ctx, window, surface, monitor, main, (size * monitor->m_scale).round(), size, false);
+            return;
+        }
+    }
+    original(renderer, ctx, window, surface, monitor, main, physicalSize, logicalSize, fractionalCorrection);
+}
+
+static void updatePreviewDecorations(const PHLWINDOW& window) {
+    // The shadow pass can cache positioning for every decoration on this window.
+    g_pDecorationPositioner->onWindowUpdate(window);
+    for (const auto& decoration : window->presentation().decorations()) {
+        if (decoration->getDecorationType() == DECORATION_SHADOW) {
+            decoration->updateWindow(window);
+            return;
+        }
+    }
+}
+
+class PreviewWindowGeometry {
+public:
+    PreviewWindowGeometry(const PHLWINDOW& window, const CBox& box)
+        : m_window(window), m_box(window->positionAnimation()->value(), window->sizeAnimation()->value()) {
+        // Update the renderer's current values without scheduling animations or configuring clients.
+        window->positionAnimation()->value() = box.pos();
+        window->sizeAnimation()->value() = box.size();
+        updatePreviewDecorations(window);
+    }
+
+    PreviewWindowGeometry(const PreviewWindowGeometry&) = delete;
+    PreviewWindowGeometry& operator=(const PreviewWindowGeometry&) = delete;
+
+    ~PreviewWindowGeometry() {
+        m_window->positionAnimation()->value() = m_box.pos();
+        m_window->sizeAnimation()->value() = m_box.size();
+        updatePreviewDecorations(m_window);
+    }
+
+private:
+    PHLWINDOW m_window;
+    CBox m_box;
+};
+
+// The plugin ABI check pins this layout to Hyprland's installed fullscreen handler.
+struct FullscreenStates {
+    using Map = std::unordered_map<WP<Layout::ITarget>, Fullscreen::SFullscreenMode>;
+    using Member = Map Fullscreen::IFullscreenHandler::*;
+    friend Member fullscreenStatesMember(FullscreenStates);
+};
+
+template <FullscreenStates::Member Member>
+struct FullscreenStateAccess {
+    friend FullscreenStates::Member fullscreenStatesMember(FullscreenStates) { return Member; }
+};
+template struct FullscreenStateAccess<&Fullscreen::IFullscreenHandler::m_fsTargets>;
+
+class PreviewFullscreen {
+public:
+    PreviewFullscreen(const PHLWORKSPACE& workspace, const PHLWINDOW& fullscreen) {
+        if (!fullscreen)
+            return;
+        const auto& tiled = workspace->space()->algorithm()->tiledAlgo();
+        m_handler = Fullscreen::controller()->layoutManagedFS(fullscreen) ? tiled->getFSHandler()
+                                                                        : tiled->IModeAlgorithm::getFSHandler();
+        if (!m_handler)
+            return;
+        auto& modes = m_handler.get()->*fullscreenStatesMember(FullscreenStates{});
+        const auto mode = modes.find(fullscreen->windowTarget());
+        if (mode == modes.end())
+            return;
+
+        // Collect changed alpha values before editing the native scene.
+        for (const auto& window : Desktop::windowState()->windows()) {
+            if (window->m_workspace != workspace || !window->mapped() || window->isHidden())
+                continue;
+            const float alpha = window->presentation().alpha(Desktop::View::WINDOW_ALPHA_FULLSCREEN)->value();
+            if (alpha != 1.f)
+                m_savedAlpha.emplace_back(window, alpha);
+        }
+        m_state = modes.extract(mode);
+        for (const auto& entry : m_savedAlpha)
+            entry.first->presentation().alpha(Desktop::View::WINDOW_ALPHA_FULLSCREEN)->value() = 1.f;
+    }
+
+    PreviewFullscreen(const PreviewFullscreen&) = delete;
+    PreviewFullscreen& operator=(const PreviewFullscreen&) = delete;
+
+    ~PreviewFullscreen() {
+        for (const auto& [window, saved] : m_savedAlpha)
+            window->presentation().alpha(Desktop::View::WINDOW_ALPHA_FULLSCREEN)->value() = saved;
+        if (!m_state.empty())
+            (m_handler.get()->*fullscreenStatesMember(FullscreenStates{})).insert(std::move(m_state));
+    }
+
+private:
+    WP<Fullscreen::IFullscreenHandler> m_handler;
+    FullscreenStates::Map::node_type m_state;
+    std::vector<std::pair<PHLWINDOW, float>> m_savedAlpha;
+};
+
+static bool renderCard(const PHLWORKSPACE& workspace, const PHLMONITOR& monitor,
+                       SP<Render::IFramebuffer>& framebuffer, const ProjectedDrop* projection = nullptr) {
     if (!monitor || !monitor->m_output)
         return false;
     if (!framebuffer)
@@ -391,15 +545,56 @@ static bool renderCard(const PHLWORKSPACE& workspace, SP<Render::IFramebuffer>& 
     renderer->draw(ctx, CClearPassElement::SClearData{{0, 0, 0, 0}}, damage);
     renderer->startRenderPass(ctx);
 
-    // Draw the proposed split only in this offscreen pass. Live window geometry is never changed.
-    {
-        const auto reset = Hyprutils::Utils::CScopeGuard([] { g_projection = nullptr; });
-        if (projection && projection->placement.neighbor)
-            g_projection = projection;
-        g_renderWorkspace(renderer, ctx, workspace, Time::steadyNow(), Render::eSceneMode::WORKSPACE_WITH_SHELL);
+    const auto fullscreen = projection ? projection->placement.leaveFullscreen.lock() : nullptr;
+    const PreviewFullscreen fullscreenPreview(workspace, fullscreen);
+    std::optional<PreviewWindowGeometry> draggedGeometry;
+    std::optional<PreviewWindowGeometry> neighborGeometry;
+    std::optional<PreviewWindowGeometry> fullscreenGeometry;
+    const auto dragged = projection ? projection->window : nullptr;
+    const auto target = dragged ? dragged->windowTarget() : nullptr;
+    const auto originalWorkspace = dragged ? dragged->m_workspace : nullptr;
+    const auto originalMonitor = dragged ? dragged->m_monitor : PHLMONITORREF{};
+    const bool originalFloating = target && target->floating();
+    const bool originallyOverFullscreen = dragged && dragged->fullscreenPolicy().allowedOverFullscreen();
+    const auto restore = Hyprutils::Utils::CScopeGuard([&] {
+        g_previewGeometry = {};
+        if (dragged) {
+            dragged->m_workspace = originalWorkspace;
+            dragged->m_monitor = originalMonitor;
+            target->setFloatingInitial(originalFloating);
+            dragged->fullscreenPolicy().setAllowedOverFullscreen(originallyOverFullscreen);
+        }
+    });
+
+    if (dragged) {
+        // Selection and z-order belong to the native workspace renderer, including popups and panels.
+        dragged->m_workspace = workspace;
+        dragged->m_monitor = monitor;
+        target->setFloatingInitial(projection->placement.floating);
+        if (projection->placement.floating)
+            dragged->fullscreenPolicy().setAllowedOverFullscreen(true);
+        g_previewGeometry[0] = {dragged.get(), projection->placement.box};
+        draggedGeometry.emplace(dragged, projection->placement.box);
+        const auto neighbor = projection->placement.neighbor.lock();
+        if (neighbor) {
+            g_previewGeometry[1] = {neighbor.get(), projection->placement.neighborBox};
+            neighborGeometry.emplace(neighbor, projection->placement.neighborBox);
+        }
+        if (fullscreen && fullscreen != neighbor) {
+            const auto& space = workspace->space();
+            auto* dwindle = static_cast<Layout::Tiled::CDwindleAlgorithm*>(space->algorithm()->tiledAlgo().get());
+            static auto gapsIn = CConfigValue<::Config::IComplexConfigValue>("general:gaps_in");
+            const auto rules = ::Config::workspaceRuleMgr()->getWorkspaceRuleFor(workspace);
+            const auto& gaps = rules && rules->m_gapsIn ? *rules->m_gapsIn : *static_cast<::Config::CCssGapData*>(gapsIn.ptr());
+            if (const auto node = dwindle->getNodeFromWindow(fullscreen)) {
+                const auto box = contentBox(node->box, space->workArea(), gaps, fullscreen);
+                g_previewGeometry[2] = {fullscreen.get(), box};
+                fullscreenGeometry.emplace(fullscreen, box);
+            }
+        }
     }
-    if (projection && !projection->placement.neighbor)
-        drawProjectedWindow(renderer, ctx, monitor, projection->window, projection->placement.box);
+
+    g_renderWorkspace(renderer, ctx, workspace, Time::steadyNow(), Render::eSceneMode::WORKSPACE_WITH_SHELL);
     renderer->endRender();
     return true;
 }
@@ -410,61 +605,57 @@ static void schedulePreview(SP<CEventLoopTimer> timer, void*) {
         return;
 
     timer->updateTimeout(PREVIEW_INTERVAL);
-    if (g_pendingPreview)
+    if (g_pendingPreviews[0])
         return;
 
-    const auto cards = g_pAdapter->getWorkspaceCards();
-    const int hovered = g_pAdapter->getTargetWorkspaceId();
-    const auto queue = [&](const WorkspaceCard& card) {
+    static WorkspacePreviewState snapshot;
+    g_pAdapter->copyPreviewState(snapshot);
+    const auto& cards = snapshot.cards;
+    const int hovered = snapshot.targetWorkspaceId;
+    const auto output = monitor->logicalBox();
+    const auto queue = [&](const WorkspaceCard& card, size_t slot) {
         const auto box = previewBox(card);
-        if (box.empty() || !monitor->logicalBox().containsPoint(box.middle()))
+        if (box.empty() || !output.containsPoint(box.middle()))
             return false;
         const auto workspace = workspaceById(card.id);
         if (!workspace)
             return false;
-        g_pendingPreview = PreviewRequest{card, workspace};
+        g_pendingPreviews[slot] = PreviewRequest{card, workspace};
         g_pHyprRenderer->damageBox(box);
         return true;
     };
 
-    // Give the destination every third turn. Distribute the other turns across the remaining cards.
-    const auto priority = std::ranges::find(cards, hovered, &WorkspaceCard::id);
-    if (priority != cards.end() && g_backgroundSlots == 0 && queue(*priority)) {
-        g_backgroundSlots = 2;
+    const auto priority = std::ranges::find_if(cards, [&](const auto& card) {
+        return card.id == hovered && output.containsPoint(previewBox(card).middle());
+    });
+    // Refresh the destination on every tick and share every second tick with the other cards.
+    const bool queuedDestination = priority != cards.end() && queue(*priority, 0);
+    if (queuedDestination && ++g_backgroundSlots % 2 != 0)
         return;
-    }
     for (size_t i = 0; i < cards.size(); ++i) {
         const auto& card = cards[g_nextPreviewCard++ % cards.size()];
-        if (card.id != hovered && queue(card)) {
-            if (g_backgroundSlots)
-                --g_backgroundSlots;
+        if (card.id != hovered && queue(card, queuedDestination ? 1 : 0))
             return;
-        }
     }
-    if (priority != cards.end())
-        queue(*priority);
 }
 
-static void renderPreview(const Event::SRenderStageEvent& event) {
-    // Capture before beginning the normal output pass so this frame can use the new thumbnail.
-    if (event.stage != RENDER_PRE || g_stripMonitor != event.monitor || g_pSessionLockManager->isSessionLocked() ||
-        !g_pendingPreview)
-        return;
-
-    const auto request = std::exchange(g_pendingPreview, std::nullopt);
-    const auto workspace = request->workspace.lock();
+static void renderPreviewRequest(const PreviewRequest& request, int hovered) {
+    const auto workspace = request.workspace.lock();
     if (!workspace)
         return;
 
-    const auto& card = request->card;
+    const auto owner = workspace->m_monitor.lock();
+    const auto& card = request.card;
     std::optional<ProjectedDrop> projection;
-    if (g_windowHook && card.id == g_pAdapter->getTargetWorkspaceId()) {
+    if (card.id == hovered) {
         const auto& controller = g_layoutManager->dragController();
         const auto target = controller->target();
         const auto window = target ? target->window() : nullptr;
         const auto pointer = g_pInputManager->getMouseCoordsInternal();
-        if (window && window->m_workspace != workspace && CBox{card.x, card.y, card.w, card.h}.containsPoint(pointer)) {
-            const auto placement = dropPlacement(window, controller->draggingTiled(), card, event.monitor, pointer,
+        if (window && window->windowTarget() && window->m_workspace != workspace &&
+            CBox{card.x, card.y, card.w, card.h}.containsPoint(pointer)) {
+            const bool tiled = controller->draggingTiled();
+            const auto placement = dropPlacement(window, tiled, card, workspace, owner, pointer,
                                                  g_grabAnchor.value_or(Vector2D{0.5, 0.5}));
             if (placement && !placement->box.empty())
                 projection = ProjectedDrop{window, *placement};
@@ -472,22 +663,47 @@ static void renderPreview(const Event::SRenderStageEvent& event) {
     }
 
     if (projection) {
-        g_projectedWorkspace = renderCard(workspace, g_projectedFrame, &*projection) ? card.id : -1;
+        if (renderCard(workspace, owner, g_projectedFrame, &*projection))
+            g_projectedGeometry = ProjectedFrameGeometry{projection->placement, owner->logicalBox()};
+        else
+            g_projectedGeometry.reset();
     } else {
-        if (g_projectedWorkspace == card.id)
-            g_projectedWorkspace = -1;
+        if (g_projectedGeometry && g_projectedGeometry->placement.workspaceId == card.id)
+            g_projectedGeometry.reset();
         auto [entry, inserted] = g_cardFrames.try_emplace(card.id);
-        if (!renderCard(workspace, entry->second)) {
+        auto& frame = entry->second;
+        if (!renderCard(workspace, owner, frame.framebuffer)) {
             if (inserted)
                 g_cardFrames.erase(entry);
             return;
         }
+        frame.ready = true;
     }
 
-    // Hidden Wayland clients still need frame callbacks to produce the next preview frame.
-    if (!workspace->visible()) {
-        if (const auto owner = workspace->m_monitor.lock())
-            g_pHyprRenderer->sendFrameEventsToWorkspace(owner, workspace, Time::steadyNow());
+    if (workspace->visible())
+        return;
+
+    // Inactive xdg-toplevels can stop rendering while suspended, even when sent frame callbacks.
+    for (const auto& window : Desktop::windowState()->windows()) {
+        if (window->m_workspace != workspace || !window->mapped() || window->isHidden())
+            continue;
+        window->setSuspended(false);
+        if (!std::ranges::contains(g_previewClients, window))
+            g_previewClients.emplace_back(window);
+    }
+    if (owner)
+        g_pHyprRenderer->sendFrameEventsToWorkspace(owner, workspace, Time::steadyNow());
+}
+
+static void renderPreview(const Event::SRenderStageEvent& event) {
+    if (event.stage != RENDER_PRE || !g_pendingPreviews[0] || g_stripMonitor != event.monitor ||
+        g_pSessionLockManager->isSessionLocked())
+        return;
+    const auto requests = std::exchange(g_pendingPreviews, {});
+    const int hovered = g_pAdapter->getTargetWorkspaceId();
+    for (const auto& request : requests) {
+        if (request)
+            renderPreviewRequest(*request, hovered);
     }
 }
 
@@ -503,21 +719,43 @@ static void renderStripLayer(Render::IHyprRenderer* renderer, Render::CRenderCon
         g_pSessionLockManager->isSessionLocked())
         return;
 
-    const int hovered = g_pAdapter->getTargetWorkspaceId();
-    for (const auto& card : g_pAdapter->getWorkspaceCards()) {
+    static WorkspacePreviewState snapshot;
+    g_pAdapter->copyPreviewState(snapshot);
+    const int hovered = snapshot.targetWorkspaceId;
+    const auto output = monitor->logicalBox();
+    for (const auto& card : snapshot.cards) {
+        const bool projected = card.id == hovered && g_projectedGeometry && g_projectedGeometry->placement.workspaceId == hovered;
         SP<Render::IFramebuffer> frame;
-        if (card.id == hovered && hovered == g_projectedWorkspace)
+        if (projected)
             frame = g_projectedFrame;
-        else if (const auto it = g_cardFrames.find(card.id); it != g_cardFrames.end())
-            frame = it->second;
+        else if (const auto it = g_cardFrames.find(card.id); it != g_cardFrames.end() && it->second.ready)
+            frame = it->second.framebuffer;
         if (!frame)
             continue;
-        auto box = previewBox(card);
-        if (!monitor->logicalBox().containsPoint(box.middle()))
+        const auto box = previewBox(card);
+        if (!output.containsPoint(box.middle()))
             continue;
-        box.translate(-monitor->m_position).scale(monitor->m_scale).round();
-        renderer->addPassElement(ctx, makeUnique<CTexPassElement>(
-            CTexPassElement::SRenderData{.tex = frame->getTexture(), .box = box, .round = static_cast<int>(5 * monitor->m_scale)}));
+        CTexPassElement::SRenderData data;
+        data.tex = frame->getTexture();
+        data.box = box.copy().translate(-monitor->m_position).scale(monitor->m_scale).round();
+        data.round = static_cast<int>(5. * monitor->m_scale);
+        renderer->addPassElement(ctx, makeUnique<CTexPassElement>(data));
+        if (projected) {
+            const auto& geometry = *g_projectedGeometry;
+            const auto& source = geometry.output;
+            auto outline = geometry.placement.box.intersection(source).translate(-source.pos())
+                               .scale({data.box.w / source.w, data.box.h / source.h}).translate(data.box.pos()).round();
+            outline = outline.intersection(data.box.copy().expand(-std::ceil(monitor->m_scale)));
+            if (!outline.empty()) {
+                // A native window border can fall between samples when the live scene is shrunk.
+                static auto accent = CConfigValue<::Config::IComplexConfigValue>("general:col.active_border");
+                CBorderPassElement::SBorderData border;
+                border.box = outline;
+                border.grad1 = *static_cast<::Config::CGradientValueData*>(accent.ptr());
+                border.round = static_cast<int>(2. * monitor->m_scale);
+                renderer->addPassElement(ctx, makeUnique<CBorderPassElement>(border));
+            }
+        }
     }
 }
 
@@ -535,21 +773,34 @@ static inline uint64_t currentTimestampMs() noexcept {
 }
 
 static void updatePointer(const Hyprutils::Math::Vector2D& coords, uint64_t now) {
+    const auto target = g_layoutManager->dragController()->target();
+    const auto window = target ? target->window() : nullptr;
+    if (g_pSessionLockManager->isSessionLocked() || !window || !window->mapped() ||
+        reinterpret_cast<uint64_t>(window.get()) != g_pAdapter->getWindowToken()) {
+        stopPreview();
+        g_pAdapter->onCancel(CancelReason::DragSuperseded);
+        return;
+    }
     for (const auto& monitor : ::State::monitorState()->monitors()) {
         if (monitor && monitor->logicalBox().containsPoint(coords)) {
             const auto box = monitor->logicalBox();
             const auto topInset = std::max(0., monitor->logicalBoxMinusReserved().y - box.y);
             g_pAdapter->onPointerMotion({coords.x, coords.y}, {box.x, box.y, box.w, box.h, topInset}, now);
+            const int hovered = g_pAdapter->getTargetWorkspaceId();
+            if (g_projectedGeometry && g_projectedGeometry->placement.workspaceId != hovered)
+                g_projectedGeometry.reset();
             const auto state = g_pAdapter->getState();
             if (state == State::StripOpen || state == State::HoverTarget) {
                 if (g_stripMonitor != monitor) {
-                    stopPreview();
+                    hidePreview();
                     g_stripMonitor = monitor;
                     if (g_previewTimer)
                         g_previewTimer->updateTimeout(PREVIEW_INTERVAL);
                 }
-            } else if (g_stripMonitor)
-                stopPreview();
+            } else if (g_stripMonitor) {
+                // Keep the allocations for this drag. A reopened strip starts with fresh captures.
+                hidePreview();
+            }
             return;
         }
     }
@@ -557,17 +808,22 @@ static void updatePointer(const Hyprutils::Math::Vector2D& coords, uint64_t now)
     g_pAdapter->onCancel(CancelReason::MonitorRemoved);
 }
 
-static void onEdgeDwell(SP<CEventLoopTimer>, void*) {
-    if (g_pAdapter->getState() == State::EdgeArmed)
+static void onEdgeDwell(SP<CEventLoopTimer> timer, void*) {
+    if (g_pAdapter->getState() != State::Idle) {
         updatePointer(g_pInputManager->getMouseCoordsInternal(), currentTimestampMs());
+        if (g_pAdapter->getState() != State::Idle)
+            timer->updateTimeout(std::chrono::milliseconds(16));
+    }
 }
 
 static void onMouseButton(const IPointer::SButtonEvent& event, Event::SCallbackInfo&) {
     if (event.button != BTN_LEFT)
         return;
-    if (event.state == WL_POINTER_BUTTON_STATE_PRESSED)
+    if (event.state == WL_POINTER_BUTTON_STATE_PRESSED) {
+        g_releasePending = false;
         g_grabPoint = g_pInputManager->getMouseCoordsInternal();
-    else {
+    } else {
+        g_releasePending = true;
         g_grabPoint.reset();
         return;
     }
@@ -594,7 +850,7 @@ static bool hkDragEnd(void* thisptr) noexcept {
     const auto state = g_pAdapter->getState();
     if (g_pSessionLockManager->isSessionLocked())
         g_pAdapter->onCancel(CancelReason::SessionLock);
-    else if (g_grabPoint)
+    else if (!std::exchange(g_releasePending, false))
         // Hyprland notifies the button release before ending a mouse drag.
         g_pAdapter->onCancel(CancelReason::DragSuperseded);
     else if (draggedWindow && (state == State::StripOpen || state == State::HoverTarget)) {
@@ -606,9 +862,16 @@ static bool hkDragEnd(void* thisptr) noexcept {
             const auto card = std::ranges::find_if(cards, [destination, &pointer](const auto& item) {
                 return item.id == destination && CBox{item.x, item.y, item.w, item.h}.containsPoint(pointer);
             });
-            if (card != cards.end())
-                g_pDelegate->placement = dropPlacement(draggedWindow, controller->draggingTiled(), *card, g_stripMonitor.lock(), pointer,
-                                                       g_grabAnchor.value_or(Vector2D{0.5, 0.5}));
+            if (card != cards.end()) {
+                const auto workspace = workspaceById(destination);
+                const auto monitor = workspace ? workspace->m_monitor.lock() : g_stripMonitor.lock();
+                const bool tiled = controller->draggingTiled();
+                if (g_projectedGeometry && g_projectedGeometry->placement.workspaceId == destination)
+                    g_pDelegate->placement = g_projectedGeometry->placement;
+                else
+                    g_pDelegate->placement = dropPlacement(draggedWindow, tiled, *card, workspace, monitor,
+                                                           pointer, g_grabAnchor.value_or(Vector2D{0.5, 0.5}));
+            }
         }
     }
     const bool ended = g_pAdapter->onDragEnd(thisptr, token, sourceWs, now);
@@ -626,12 +889,10 @@ static bool hkDragEnd(void* thisptr) noexcept {
     return ended;
 }
 
-static void onMouseMove(const Hyprutils::Math::Vector2D& coords, Event::SCallbackInfo& info) noexcept {
-    // Pointer grab inviolability: never consume or cancel event
-    info.cancelled = false;
-
+static void onMouseMove() noexcept {
     if (!g_pAdapter || !g_pStateMachine) return;
 
+    const auto coords = g_pInputManager->getMouseCoordsInternal();
     const uint64_t now = currentTimestampMs();
 
     if (g_pAdapter->getState() == State::Idle) {
@@ -648,18 +909,15 @@ static void onMouseMove(const Hyprutils::Math::Vector2D& coords, Event::SCallbac
         if (!controller->dragThresholdReached())
             return;
         const auto window = target->window();
+        g_releasePending = false;
         const uint64_t token = reinterpret_cast<uint64_t>(window.get());
         const int sourceWs = window->m_workspace ? static_cast<int>(window->m_workspace->numberedID().value_or(0)) : -1;
         g_pAdapter->onDragBegin(token, DragMode::Move, true, sourceWs, now, g_grabAnchor.value_or(Vector2D{0.5, 0.5}));
     }
 
     updatePointer(coords, now);
-    if (g_pAdapter->getState() == State::EdgeArmed) {
-        if (!g_edgeTimer->armed())
-            g_edgeTimer->updateTimeout(std::chrono::milliseconds(g_pStateMachine->getConfig().dwellTimeMs + 1));
-    } else if (g_edgeTimer->armed()) {
-        g_edgeTimer->updateTimeout(std::nullopt);
-    }
+    if (g_pAdapter->getState() != State::Idle && !g_edgeTimer->armed())
+        g_edgeTimer->updateTimeout(std::chrono::milliseconds(16));
 }
 
 } // namespace Cod29
@@ -681,7 +939,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     // Initialize IPC Server
     Cod29::g_pIpcServer = std::make_unique<Cod29::IpcServer>();
-    Cod29::g_pIpcServer->start();
 
     // Initialize Drag Hook Adapter
     Cod29::g_pAdapter = std::make_unique<Cod29::DragHookAdapter>(
@@ -689,6 +946,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         *Cod29::g_pIpcServer,
         Cod29::g_pDelegate.get()
     );
+    if (!Cod29::g_pIpcServer->start())
+        throw std::runtime_error("COD-29 IPC socket could not start");
 
     // Resolve CDragStateController::dragEnd symbol
     void* targetFunc = nullptr;
@@ -700,8 +959,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         }
     }
     if (!targetFunc) {
-        auto pMethod = &Layout::Supplementary::CDragStateController::dragEnd;
-        std::memcpy(&targetFunc, &pMethod, sizeof(void*));
+        Cod29::g_pIpcServer->stop();
+        throw std::runtime_error("COD-29 dragEnd symbol unavailable");
     }
 
     Cod29::g_edgeTimer = makeShared<CEventLoopTimer>(std::nullopt, Cod29::onEdgeDwell, nullptr);
@@ -709,33 +968,46 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     // Register function hook
     Cod29::g_pDragEndHook = HyprlandAPI::createFunctionHook(handle, targetFunc, reinterpret_cast<void*>(&Cod29::hkDragEnd));
-    if (Cod29::g_pDragEndHook) {
-        Cod29::g_pDragEndHook->hook();
+    if (Cod29::g_pDragEndHook && Cod29::g_pDragEndHook->hook()) {
         Cod29::g_pDelegate->setOrigDragEnd(
             reinterpret_cast<Cod29::HyprlandCompositorDelegate::origDragEnd_t>(Cod29::g_pDragEndHook->m_original)
         );
+    } else {
+        Cod29::g_pIpcServer->stop();
+        g_pEventLoopManager->removeTimer(Cod29::g_edgeTimer);
+        Cod29::g_edgeTimer.reset();
+        throw std::runtime_error("COD-29 dragEnd hook failed");
     }
 
     // Register mouse move signal listener
-    Cod29::g_mouseMoveListener = Event::bus()->m_events.input.mouse.move.listen(Cod29::onMouseMove);
+    Cod29::g_mouseMoveListener = g_layoutManager->dragController()->m_events.motion.listen(Cod29::onMouseMove);
     Cod29::g_mouseButtonListener = Event::bus()->m_events.input.mouse.button.listen(Cod29::onMouseButton);
 
     Cod29::g_beginRender = reinterpret_cast<Cod29::BeginRender>(Cod29::renderFunction("beginRender", "Render::IHyprRenderer::beginRender("));
     Cod29::g_renderWorkspace = reinterpret_cast<Cod29::RenderWorkspace>(
         Cod29::renderFunction("renderWorkspace", "Render::eSceneMode)"));
     if (Cod29::g_beginRender && Cod29::g_renderWorkspace) {
-        if (auto* address = Cod29::renderFunction("renderLayer", "Render::IHyprRenderer::renderLayer(")) {
-            Cod29::g_layerHook = HyprlandAPI::createFunctionHook(handle, address, reinterpret_cast<void*>(&Cod29::renderStripLayer));
-            if (Cod29::g_layerHook && Cod29::g_layerHook->hook()) {
-                if (auto* renderWindow = Cod29::renderFunction("renderWindow", "Render::IHyprRenderer::renderWindow(")) {
-                    auto* hook = HyprlandAPI::createFunctionHook(handle, renderWindow, reinterpret_cast<void*>(&Cod29::renderProjectedSplit));
-                    if (hook && hook->hook())
-                        Cod29::g_windowHook = hook;
-                }
-                Cod29::g_previewTimer = makeShared<CEventLoopTimer>(std::nullopt, Cod29::schedulePreview, nullptr);
-                g_pEventLoopManager->addTimer(Cod29::g_previewTimer);
-                Cod29::g_renderListener = Event::bus()->m_events.render.stage.listen(Cod29::renderPreview);
-            }
+        const auto hookRenderer = [&](const char* symbol, const char* signature, void* callback) -> CFunctionHook* {
+            const auto address = Cod29::renderFunction(symbol, signature);
+            if (!address)
+                return nullptr;
+            const auto hook = HyprlandAPI::createFunctionHook(handle, address, callback);
+            if (hook && hook->hook())
+                return hook;
+            if (hook)
+                HyprlandAPI::removeFunctionHook(handle, hook);
+            return nullptr;
+        };
+        Cod29::g_layerHook = hookRenderer("renderLayer", "Render::IHyprRenderer::renderLayer(",
+                                          reinterpret_cast<void*>(&Cod29::renderStripLayer));
+        Cod29::g_previewDecorationHook = hookRenderer("getBoxWithIncludedDecos", "CDecorationPositioner::getBoxWithIncludedDecos(",
+                                                      reinterpret_cast<void*>(&Cod29::previewDecorationBox));
+        Cod29::g_previewSurfaceHook = hookRenderer("calculateUVForSurface", "Render::IElementRenderer::calculateUVForSurface(",
+                                                   reinterpret_cast<void*>(&Cod29::previewSurfaceUV));
+        if (Cod29::g_layerHook && Cod29::g_previewDecorationHook && Cod29::g_previewSurfaceHook) {
+            Cod29::g_previewTimer = makeShared<CEventLoopTimer>(std::nullopt, Cod29::schedulePreview, nullptr);
+            g_pEventLoopManager->addTimer(Cod29::g_previewTimer);
+            Cod29::g_renderListener = Event::bus()->m_events.render.stage.listen(Cod29::renderPreview);
         }
     }
 
@@ -743,7 +1015,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         .name = "cod29_top_edge_drag",
         .description = "COD-29 Top-edge Workspace Drag for Rice Shell",
         .author = "Teamwork Engineering",
-        .version = "0.1.0"
+        .version = "0.1.5"
     };
 }
 
@@ -751,10 +1023,10 @@ APICALL EXPORT void PLUGIN_EXIT() {
     Cod29::g_mouseMoveListener.reset();
     Cod29::g_mouseButtonListener.reset();
     Cod29::g_renderListener.reset();
-    if (Cod29::g_windowHook) {
-        HyprlandAPI::removeFunctionHook(Cod29::g_pPluginHandle, Cod29::g_windowHook);
-        Cod29::g_windowHook = nullptr;
-    }
+    if (Cod29::g_previewSurfaceHook)
+        HyprlandAPI::removeFunctionHook(Cod29::g_pPluginHandle, Cod29::g_previewSurfaceHook);
+    if (Cod29::g_previewDecorationHook)
+        HyprlandAPI::removeFunctionHook(Cod29::g_pPluginHandle, Cod29::g_previewDecorationHook);
     if (Cod29::g_layerHook)
         HyprlandAPI::removeFunctionHook(Cod29::g_pPluginHandle, Cod29::g_layerHook);
     Cod29::stopPreview();

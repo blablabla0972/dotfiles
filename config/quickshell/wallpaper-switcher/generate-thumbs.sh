@@ -3,8 +3,8 @@
 set -euo pipefail
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/wallpaper-switcher-thumbs-v3"
 WALL_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Wallpaper"
-if [[ ! -d "$WALL_DIR" && -d "$HOME/Ảnh/Wallpaper" ]]; then
-    WALL_DIR="$HOME/Ảnh/Wallpaper"
+if [[ ! -d "$WALL_DIR" && -d "$HOME/Pictures/Wallpaper" ]]; then
+    WALL_DIR="$HOME/Pictures/Wallpaper"
 fi
 
 install -d -m 700 "$CACHE_DIR"

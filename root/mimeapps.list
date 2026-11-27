@@ -33,3 +33,4 @@ x-scheme-handler/discord=vesktop.desktop
 x-scheme-handler/mailto=brave-origin.desktop
 text/x-c++src=org.gnome.TextEditor.desktop
 application/pdf=brave-origin.desktop
+x-scheme-handler/t3code=com.t3tools.T3Code.desktop

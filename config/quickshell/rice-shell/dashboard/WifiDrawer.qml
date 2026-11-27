@@ -10,10 +10,15 @@ import "../theme"
 Item {
     id: root
     property bool settingsPage: false
+    property bool compactMenu: false
+    property bool otherNetworksExpanded: false
+    readonly property bool canBrowseNetworks: !!root.wifiDevice && Networking.wifiEnabled
+        && Networking.wifiHardwareEnabled && !root.hotspotBlocksSelectedWifi
 
-    anchors.fill: settingsPage ? undefined : parent
+    anchors.fill: settingsPage || compactMenu ? undefined : parent
     implicitWidth: 360
-    implicitHeight: settingsPage ? pageContent.implicitHeight : 480
+    implicitHeight: compactMenu ? Math.min(480, pageContent.implicitHeight)
+        : settingsPage ? pageContent.implicitHeight : 480
     focus: visible && !settingsPage
     activeFocusOnTab: settingsPage
     property bool drawerOpen: true
@@ -22,6 +27,7 @@ Item {
     Accessible.name: "Wi-Fi"
 
     signal closeRequested()
+    signal requestSettings(string route)
     signal hotspotPageRequested()
 
     readonly property var wifiDevices: {
@@ -85,10 +91,8 @@ Item {
         && root.hotspotWifiDevice === null
     readonly property bool radioOffBlocked: root.hotspotActive || root.accessPointActive
 
-    readonly property var networkSnapshot: {
-        if (!root.wifiDevice) return { all: [], connected: null, known: [], nearby: [] };
-
-        var source = root.wifiDevice.networks.values;
+    function classifyNetworks(values) {
+        var source = values || [];
         var decorated = [];
         for (var i = 0; i < source.length; i++) {
             var network = source[i];
@@ -128,6 +132,9 @@ Item {
         }
         return { all: all, connected: connected, known: known, nearby: nearby };
     }
+    readonly property var networkSnapshot: root.wifiDevice
+        ? root.classifyNetworks(root.wifiDevice.networks.values)
+        : { all: [], connected: null, known: [], nearby: [] }
     readonly property var networks: root.networkSnapshot.all
     readonly property var connectedNetwork: root.networkSnapshot.connected
     readonly property var knownNetworks: root.networkSnapshot.known
@@ -180,9 +187,12 @@ Item {
         if (!root.wifiDevice) {
             root.cancelPassword();
             root.statusMessage = "Wi-Fi adapter unavailable";
-        } else if (root.visible && root.drawerOpen) {
-            root.reconcilePendingOperation();
-            root.scheduleScan();
+        } else {
+            if (root.statusMessage === "Wi-Fi adapter unavailable") root.statusMessage = "";
+            if (root.visible && root.drawerOpen) {
+                root.reconcilePendingOperation();
+                root.scheduleScan();
+            }
         }
     }
 
@@ -209,9 +219,11 @@ Item {
 
     onDrawerOpenChanged: {
         if (root.drawerOpen && root.visible) {
+            if (root.compactMenu) root.otherNetworksExpanded = false;
             root.reconcilePendingOperation();
             root.scheduleScan();
         } else {
+            if (root.compactMenu) root.otherNetworksExpanded = false;
             root.stopScan();
         }
     }
@@ -655,38 +667,76 @@ Item {
 
     ColumnLayout {
         id: pageContent
-        anchors.fill: parent
-        spacing: root.settingsPage ? 17 : 10
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: root.settingsPage ? undefined : parent.bottom
+        spacing: root.compactMenu ? 6 : root.settingsPage ? 17 : 10
 
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: root.settingsPage ? Math.max(68, radioControls.implicitHeight + 20)
+            implicitHeight: root.compactMenu ? Math.max(50, radioControls.implicitHeight + 12)
+                : root.settingsPage ? Math.max(68, radioControls.implicitHeight + 20)
                 : Math.max(38, radioControls.implicitHeight)
-            radius: 10
-            color: root.settingsPage ? Tokens.surface_low : "transparent"
+            radius: root.compactMenu ? 11 : 10
+            color: root.compactMenu ? Qt.tint(Tokens.menuSurface, Qt.alpha(Tokens.menuAccent, 0.06))
+                : root.settingsPage ? Tokens.surface_low : "transparent"
             border.width: root.settingsPage ? 1 : 0
             border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
 
             RowLayout {
                 id: radioControls
                 anchors.fill: parent
-                anchors.leftMargin: root.settingsPage ? 14 : 0
+                anchors.leftMargin: root.compactMenu ? 8 : root.settingsPage ? 12 : 0
                 anchors.rightMargin: anchors.leftMargin
-                spacing: 10
+                spacing: root.compactMenu ? 8 : 10
+
+                Rectangle {
+                    Layout.preferredWidth: 30
+                    Layout.preferredHeight: 30
+                    visible: root.compactMenu
+                    radius: 9
+                    color: Networking.wifiEnabled ? Tokens.menuSelected : Tokens.menuSurface
+                    Accessible.ignored: true
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: Networking.wifiEnabled ? "󰤨" : "󰤭"
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 17
+                        color: Networking.wifiEnabled ? Tokens.menuAccent : Tokens.menuMuted
+                    }
+                }
 
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
+                    Layout.preferredWidth: -1
                     spacing: 3
                     Text {
-                        visible: root.settingsPage
-                        text: qsTr("Wi-Fi radio")
-                        font.pixelSize: 15
+                        objectName: root.compactMenu ? "wifiCompactTitle" : ""
+                        visible: root.settingsPage || root.compactMenu
+                        text: root.compactMenu ? qsTr("Wi-Fi") : qsTr("Wi-Fi radio")
+                        font.pixelSize: root.compactMenu ? 15 : 15
                         font.weight: Font.DemiBold
-                        color: Tokens.text_primary
+                        color: root.compactMenu ? Tokens.menuText : Tokens.text_primary
+                    }
+                    Text {
+                        objectName: root.compactMenu ? "wifiCompactSubtitle" : ""
+                        Layout.fillWidth: true
+                        visible: root.compactMenu
+                        elide: Text.ElideRight
+                        text: !root.wifiDevice || !Networking.wifiHardwareEnabled ? qsTr("Unavailable")
+                            : root.hotspotBlocksSelectedWifi ? qsTr("Unavailable while Hotspot is active")
+                            : Networking.wifiEnabled
+                                ? (root.connectedNetwork ? qsTr("Connected") : qsTr("On · not connected"))
+                                : qsTr("Off")
+                        font.pixelSize: 12
+                        color: Tokens.menuMuted
                     }
                     Text {
                         Layout.fillWidth: true
+                        visible: !root.compactMenu
                         text: !root.wifiDevice ? "Adapter unavailable"
                             : root.hotspotBlocksSelectedWifi ? root.hotspotStatusMessage()
                             : !Networking.wifiHardwareEnabled ? "Blocked by hardware switch"
@@ -705,8 +755,8 @@ Item {
                 }
 
                 Item {
-                    Layout.preferredWidth: root.settingsPage ? (refreshButton.visible ? 153 : 44) : 84
-                    Layout.preferredHeight: 30
+                    Layout.preferredWidth: root.compactMenu ? 44 : root.settingsPage ? (refreshButton.visible ? 153 : 44) : 84
+                    Layout.preferredHeight: root.compactMenu ? 28 : 30
                     Layout.alignment: Qt.AlignVCenter
 
                     Row {
@@ -715,10 +765,11 @@ Item {
 
                         Switch {
                             id: wifiSwitch
-                            width: 44
-                            height: 24
-                            implicitWidth: 44
-                            implicitHeight: 24
+                            objectName: root.compactMenu ? "wifiCompactSwitch" : ""
+                            width: root.compactMenu ? 38 : 44
+                            height: root.compactMenu ? 22 : 24
+                            implicitWidth: width
+                            implicitHeight: height
                             anchors.verticalCenter: parent.verticalCenter
                             checked: Networking.wifiEnabled
                             enabled: root.wifiDevice !== null
@@ -729,25 +780,25 @@ Item {
                             onClicked: root.setWifiEnabled(checked)
 
                             indicator: Rectangle {
-                                implicitWidth: 44
-                                implicitHeight: 24
-                                width: 44
-                                height: 24
-                                radius: 12
+                                implicitWidth: root.compactMenu ? 38 : 44
+                                implicitHeight: root.compactMenu ? 22 : 24
+                                width: implicitWidth
+                                height: implicitHeight
+                                radius: height / 2
                                 color: wifiSwitch.checked
-                                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.85)
-                                    : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
-                                border.color: wifiSwitch.activeFocus ? Tokens.accent : "transparent"
+                                    ? (root.compactMenu ? Tokens.menuSwitch : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.85))
+                                    : (root.compactMenu ? Tokens.menuLine : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35))
+                                border.color: wifiSwitch.activeFocus ? (root.compactMenu ? Tokens.menuAccent : Tokens.accent) : "transparent"
                                 border.width: 1
                                 Behavior on color { ColorAnimation { duration: 160 } }
 
                                 Rectangle {
-                                    width: 18
-                                    height: 18
-                                    radius: 9
-                                    y: 3
+                                    width: root.compactMenu ? 16 : 18
+                                    height: width
+                                    radius: width / 2
+                                    y: (parent.height - height) / 2
                                     x: wifiSwitch.checked ? parent.width - width - 3 : 3
-                                    color: wifiSwitch.checked ? Tokens.on_accent : Tokens.text_secondary
+                                    color: wifiSwitch.checked ? Tokens.on_accent : (root.compactMenu ? Tokens.menuMuted : Tokens.text_secondary)
                                     Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                                 }
                             }
@@ -756,7 +807,7 @@ Item {
 
                         Rectangle {
                             id: refreshButton
-                            visible: !root.settingsPage || Networking.wifiEnabled
+                            visible: !root.compactMenu && (!root.settingsPage || Networking.wifiEnabled)
                             width: root.settingsPage ? 99 : 30
                             height: 30
                             radius: root.settingsPage ? 8 : 14
@@ -805,7 +856,7 @@ Item {
         ComboBox {
             id: adapterSelector
             Layout.fillWidth: true
-            visible: root.wifiDevices.length > 1
+            visible: !root.compactMenu && root.wifiDevices.length > 1
             model: root.wifiDevices.map(function(device) { return device.name; })
             currentIndex: Math.max(0, root.wifiDevices.indexOf(root.wifiDevice))
             Accessible.name: "Wi-Fi adapter"
@@ -850,7 +901,14 @@ Item {
 
         Rectangle {
             Layout.fillWidth: true
-            visible: root.hotspotBlocksSelectedWifi
+            visible: root.compactMenu && root.canBrowseNetworks
+            implicitHeight: 1
+            color: Tokens.menuLine
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.hotspotBlocksSelectedWifi && !root.compactMenu
             implicitHeight: hotspotNotice.implicitHeight + 20
             radius: 11
             color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.1)
@@ -889,16 +947,18 @@ Item {
 
         Text {
             Layout.fillWidth: true
+            Layout.leftMargin: root.compactMenu ? 12 : 0
+            Layout.rightMargin: root.compactMenu ? 12 : 0
             visible: root.statusMessage.length > 0
             text: root.statusMessage
             font.pixelSize: 11
-            color: Tokens.accent
+            color: root.compactMenu ? Tokens.menuAccent : Tokens.accent
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
         }
 
         Rectangle {
-            visible: !root.settingsPage
+            visible: !root.settingsPage && !root.compactMenu
             Layout.fillWidth: true
             implicitHeight: 42
             radius: 12
@@ -946,8 +1006,11 @@ Item {
             id: pageFlick
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            visible: !root.compactMenu || root.canBrowseNetworks
             contentWidth: width
-            Layout.preferredHeight: root.settingsPage ? contentHeight : -1
+            Layout.preferredHeight: root.compactMenu ? Math.min(contentHeight, 300)
+                : root.settingsPage ? contentHeight : -1
             interactive: !root.settingsPage
             contentHeight: contentColumn.implicitHeight
             clip: true
@@ -957,25 +1020,28 @@ Item {
             ColumnLayout {
                 id: contentColumn
                 width: pageFlick.width
-                spacing: 12
+                spacing: root.compactMenu ? 2 : 12
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.leftMargin: root.compactMenu ? 8 : 0
+                    Layout.rightMargin: root.compactMenu ? 8 : 0
                     visible: root.connectedNetwork !== null
 
                     Text {
-                        text: "Current connection"
-                        font.capitalization: root.settingsPage ? Font.MixedCase : Font.AllUppercase
-                        font.letterSpacing: root.settingsPage ? 0 : 1.1
-                        font.pixelSize: root.settingsPage ? 15 : 10
-                        font.bold: true
-                        color: root.settingsPage ? Tokens.text_primary : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.75)
+                        text: root.compactMenu ? qsTr("Current Network") : "Current connection"
+                        font.capitalization: root.settingsPage || root.compactMenu ? Font.MixedCase : Font.AllUppercase
+                        font.letterSpacing: root.settingsPage || root.compactMenu ? 0 : 1.1
+                        font.pixelSize: root.settingsPage ? 15 : root.compactMenu ? 12 : 10
+                        font.weight: root.compactMenu ? Font.Medium : Font.DemiBold
+                        color: root.compactMenu ? Tokens.menuMuted : root.settingsPage ? Tokens.text_primary
+                            : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.75)
                     }
 
                     Item { Layout.fillWidth: true }
 
                     Text {
-                        visible: !root.settingsPage
+                        visible: !root.settingsPage && !root.compactMenu
                         text: root.wifiDevice ? root.wifiDevice.name : ""
                         font.pixelSize: 10
                         color: Tokens.text_secondary
@@ -990,7 +1056,9 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: !root.settingsPage && !root.connectedNetwork && !!root.wifiDevice && Networking.wifiEnabled
+                    Layout.leftMargin: root.compactMenu ? 8 : 0
+                    Layout.rightMargin: root.compactMenu ? 8 : 0
+                    visible: !root.compactMenu && !root.settingsPage && !root.connectedNetwork && !!root.wifiDevice && Networking.wifiEnabled
                         && Networking.wifiHardwareEnabled && !root.hotspotBlocksSelectedWifi
                     text: "Not connected to a Wi-Fi network."
                     font.pixelSize: 12
@@ -1001,13 +1069,16 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.settingsPage ? qsTr("Saved networks") : "Saved & in range"
+                    Layout.leftMargin: root.compactMenu ? 8 : 0
+                    Layout.topMargin: root.compactMenu && root.connectedNetwork ? 5 : 0
+                    text: root.compactMenu ? qsTr("Known Networks")
+                        : root.settingsPage ? qsTr("Saved networks") : "Saved & in range"
                     visible: root.knownNetworks.length > 0
-                    font.capitalization: root.settingsPage ? Font.MixedCase : Font.AllUppercase
-                    font.letterSpacing: root.settingsPage ? 0 : 1.1
-                    font.pixelSize: root.settingsPage ? 15 : 10
+                    font.capitalization: root.settingsPage || root.compactMenu ? Font.MixedCase : Font.AllUppercase
+                    font.letterSpacing: root.settingsPage || root.compactMenu ? 0 : 1.1
+                    font.pixelSize: root.settingsPage ? 15 : root.compactMenu ? 12 : 10
                     font.bold: true
-                    color: root.settingsPage ? Tokens.text_primary : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.65)
+                    color: root.compactMenu ? Tokens.menuMuted : root.settingsPage ? Tokens.text_primary : Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.65)
                 }
 
                 Repeater {
@@ -1015,9 +1086,58 @@ Item {
                     delegate: networkRowDelegate
                 }
 
+                ItemDelegate {
+                    id: otherNetworksToggle
+                    objectName: root.compactMenu ? "wifiCompactOtherNetworks" : ""
+                    Layout.fillWidth: true
+                    visible: root.compactMenu && root.canBrowseNetworks
+                    Layout.topMargin: root.connectedNetwork || root.knownNetworks.length > 0 ? 3 : 0
+                    implicitHeight: 31
+                    leftPadding: 8
+                    rightPadding: 8
+                    Accessible.name: root.otherNetworksExpanded ? qsTr("Hide other networks") : qsTr("Show other networks")
+                    Accessible.expandable: true
+                    Accessible.expanded: root.otherNetworksExpanded
+                    onClicked: {
+                        if (root.otherNetworksExpanded && root.selectedNetwork
+                                && root.nearbyNetworks.includes(root.selectedNetwork)) root.cancelPassword();
+                        root.otherNetworksExpanded = !root.otherNetworksExpanded;
+                    }
+                    Keys.onReturnPressed: otherNetworksToggle.clicked()
+                    contentItem: RowLayout {
+                        Text {
+                            Layout.fillWidth: true
+                            text: qsTr("Other Networks")
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: otherNetworksToggle.hovered || otherNetworksToggle.visualFocus
+                                ? Tokens.menuAccent : Tokens.menuText
+                        }
+                        Text {
+                            visible: root.nearbyNetworks.length > 0
+                            text: String(root.nearbyNetworks.length)
+                            font.pixelSize: 11
+                            color: Tokens.menuMuted
+                            Accessible.ignored: true
+                        }
+                        Text {
+                            text: root.otherNetworksExpanded ? "⌄" : "›"
+                            font.pixelSize: 15
+                            color: Tokens.menuMuted
+                        }
+                    }
+                    background: Rectangle {
+                        radius: 10
+                        color: otherNetworksToggle.hovered ? Tokens.menuHover : "transparent"
+                        border.color: otherNetworksToggle.visualFocus ? Tokens.menuAccent : "transparent"
+                        border.width: otherNetworksToggle.visualFocus ? 2 : 0
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+                }
+
                 Text {
                     Layout.fillWidth: true
-                    visible: !root.settingsPage && Networking.wifiEnabled && root.wifiDevice
+                    visible: !root.compactMenu && !root.settingsPage && Networking.wifiEnabled && root.wifiDevice
                         && root.knownNetworks.length === 0 && root.nearbyNetworks.length === 0
                         && !root.isScanning && !root.hotspotBlocksSelectedWifi
                     text: "No saved networks are currently in range."
@@ -1028,7 +1148,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: root.nearbyNetworks.length > 0
+                    visible: !root.compactMenu && root.nearbyNetworks.length > 0
                     text: "Nearby networks"
                     font.capitalization: root.settingsPage ? Font.MixedCase : Font.AllUppercase
                     font.letterSpacing: root.settingsPage ? 0 : 1.1
@@ -1038,26 +1158,32 @@ Item {
                 }
 
                 Repeater {
-                    model: root.nearbyNetworks
+                    model: !root.compactMenu || root.otherNetworksExpanded ? root.nearbyNetworks : []
                     delegate: networkRowDelegate
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.leftMargin: root.compactMenu ? 12 : 0
+                    Layout.rightMargin: root.compactMenu ? 12 : 0
                     visible: root.wifiDevice !== null && Networking.wifiEnabled
                         && !root.hotspotBlocksSelectedWifi && root.isScanning
+                        && (!root.compactMenu || root.otherNetworksExpanded)
                     spacing: 8
 
                     BusyIndicator {
-                        running: true
+                        objectName: root.compactMenu ? "wifiCompactScanIndicator" : ""
+                        visible: !root.compactMenu
+                        running: visible
                         implicitWidth: 20
                         implicitHeight: 20
                     }
 
                     Text {
+                        objectName: root.compactMenu ? "wifiCompactScanningText" : ""
                         text: "Scanning nearby networks…"
                         font.pixelSize: 11
-                        color: Tokens.text_secondary
+                        color: root.compactMenu ? Tokens.menuMuted : Tokens.text_secondary
                     }
                 }
 
@@ -1072,7 +1198,70 @@ Item {
                     wrapMode: Text.Wrap
                 }
 
-                Item { Layout.fillWidth: true; implicitHeight: 4 }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 8
+                    visible: root.compactMenu && root.otherNetworksExpanded && !root.isScanning && root.nearbyNetworks.length === 0
+                    text: qsTr("No nearby networks found")
+                    color: Tokens.menuMuted
+                    font.pixelSize: 12
+                }
+
+                Item { Layout.fillWidth: true; implicitHeight: 2 }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.compactMenu
+            implicitHeight: 1
+            color: Tokens.menuLine
+        }
+
+        ItemDelegate {
+            id: wifiSettingsLink
+            objectName: root.compactMenu ? "wifiCompactSettings" : ""
+            Layout.fillWidth: true
+            visible: root.compactMenu
+            implicitHeight: 33
+            leftPadding: 8
+            rightPadding: 8
+            Accessible.name: qsTr("Open Wi-Fi Settings")
+            Keys.onReturnPressed: wifiSettingsLink.clicked()
+            onClicked: root.requestSettings("network#wifi")
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            contentItem: RowLayout {
+                spacing: 9
+                Text {
+                    text: "󰒓"
+                    font.family: "JetBrainsMono Nerd Font"
+                    font.pixelSize: 13
+                    color: Tokens.menuMuted
+                    Accessible.ignored: true
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("Wi-Fi Settings")
+                    font.pixelSize: 13
+                    color: wifiSettingsLink.hovered || wifiSettingsLink.visualFocus
+                        ? Tokens.menuAccent : Tokens.menuText
+                    verticalAlignment: Text.AlignVCenter
+                }
+                Text {
+                    objectName: root.compactMenu ? "wifiCompactFooterArrow" : ""
+                    text: "›"
+                    font.pixelSize: 15
+                    color: Tokens.menuMuted
+                    Accessible.ignored: true
+                }
+            }
+            background: Rectangle {
+                radius: 10
+                color: wifiSettingsLink.hovered
+                        ? Tokens.menuHover : "transparent"
+                border.color: wifiSettingsLink.visualFocus ? Tokens.menuAccent : "transparent"
+                border.width: wifiSettingsLink.visualFocus ? 2 : 0
+                Behavior on color { ColorAnimation { duration: 120 } }
             }
         }
     }
@@ -1082,6 +1271,7 @@ Item {
 
         Rectangle {
             id: networkRow
+            objectName: root.compactMenu ? "wifiCompactNetworkRow" : ""
             required property var modelData
 
             property var network: modelData
@@ -1092,31 +1282,71 @@ Item {
             readonly property bool ownOperation: root.operationPending && root.pendingNetwork === network
 
             Layout.fillWidth: true
-            implicitHeight: rowContents.implicitHeight + (root.settingsPage ? 26 : 14)
-            radius: root.settingsPage ? 9 : 12
-            color: root.settingsPage ? (rowHover.hovered ? Tokens.surface : Tokens.surface_low) : isCurrent
+            implicitHeight: root.compactMenu ? Math.max(networkRow.isCurrent ? 41 : 34, rowContents.implicitHeight + 8)
+                : rowContents.implicitHeight + (root.settingsPage ? 26 : 14)
+            radius: root.compactMenu ? 8 : root.settingsPage ? 9 : 12
+            color: root.compactMenu ? (networkRow.isCurrent
+                ? Tokens.menuSelected
+                : rowHover.hovered
+                    ? Tokens.menuHover
+                    : "transparent")
+                : root.settingsPage ? (rowHover.hovered ? Tokens.surface : Tokens.surface_low) : isCurrent
                 ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.10)
                 : (rowHover.hovered
                     ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.45)
                     : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.22))
-            border.color: root.settingsPage && !networkRow.activeFocus
+            border.color: root.compactMenu ? (networkRow.activeFocus ? Tokens.menuAccent : "transparent") : root.settingsPage && !networkRow.activeFocus
                 ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5) : isCurrent
                 ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.35)
                 : (networkRow.activeFocus ? Tokens.accent
                     : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.20))
-            border.width: networkRow.activeFocus ? 2 : 1
+            border.width: networkRow.activeFocus ? 2 : root.compactMenu ? 0 : 1
             Behavior on color { ColorAnimation { duration: 120 } }
             Behavior on border.color { ColorAnimation { duration: 120 } }
 
-            HoverHandler { id: rowHover }
+            HoverHandler { id: rowHover; cursorShape: root.compactMenu ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            Accessible.role: root.compactMenu ? Accessible.Button : Accessible.ListItem
+            Accessible.name: (network.name || "Hidden network")
+                + (network.connected ? ", connected" : "")
+                + (network.security !== WifiSecurityType.Open && network.security !== WifiSecurityType.None
+                    ? ", secured" : "")
+            activeFocusOnTab: root.compactMenu
+            Accessible.onPressAction: networkRow.activateCompact()
+            Keys.onPressed: (event) => {
+                if (root.compactMenu && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                        || event.key === Qt.Key_Space) && !networkRow.passwordPrompt) {
+                    networkRow.activateCompact();
+                    event.accepted = true;
+                }
+            }
+
+            function activateCompact(): void {
+                if (!root.compactMenu || passwordPrompt) return;
+                if (ownOperation && root.pendingAction === "connect") root.cancelConnection(network);
+                else root.connectNetwork(network, false);
+            }
+
+            MouseArea {
+                enabled: root.compactMenu && !networkRow.passwordPrompt
+                    && (root.canOperate() || (networkRow.ownOperation && root.pendingAction === "connect"))
+                visible: root.compactMenu
+                x: rowContents.x + networkHeader.x
+                y: rowContents.y + networkHeader.y
+                width: compactWifiDetails.visible ? compactWifiDetails.x : networkHeader.width
+                height: networkHeader.height
+                cursorShape: Qt.PointingHandCursor
+                z: 1
+                onClicked: networkRow.activateCompact()
+            }
 
             ColumnLayout {
                 id: rowContents
                 anchors.fill: parent
-                anchors.margins: root.settingsPage ? 13 : 10
-                spacing: 8
+                anchors.margins: root.compactMenu ? 4 : root.settingsPage ? 13 : 10
+                spacing: root.compactMenu ? 5 : 8
 
                 RowLayout {
+                    id: networkHeader
                     Layout.fillWidth: true
                     spacing: 10
 
@@ -1125,7 +1355,7 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
 
                         Text {
-                            visible: !root.settingsPage && networkRow.network.security !== WifiSecurityType.Open
+                            visible: !root.compactMenu && !root.settingsPage && networkRow.network.security !== WifiSecurityType.Open
                                 && networkRow.network.security !== WifiSecurityType.None
                             text: "󰌾"
                             font.pixelSize: 11
@@ -1134,12 +1364,29 @@ Item {
                         }
 
                         Text {
+                            visible: !root.compactMenu
                             text: root.signalGlyph(networkRow.network)
-                            font.family: root.settingsPage ? "JetBrainsMono Nerd Font" : ""
+                            font.family: root.settingsPage || root.compactMenu ? "JetBrainsMono Nerd Font" : ""
                             font.pixelSize: root.settingsPage ? 22 : 18
                             color: networkRow.isCurrent ? Tokens.accent : Tokens.text_secondary
                             anchors.verticalCenter: parent.verticalCenter
                             Accessible.ignored: true
+                        }
+
+                        Rectangle {
+                            visible: root.compactMenu
+                            width: 24
+                            height: 24
+                            radius: 12
+                            color: networkRow.isCurrent ? Tokens.menuAccent : Tokens.menuHover
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.signalGlyph(networkRow.network)
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 14
+                                color: networkRow.isCurrent ? Tokens.on_accent : Tokens.menuMuted
+                                Accessible.ignored: true
+                            }
                         }
                     }
 
@@ -1150,27 +1397,82 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: networkRow.network.name || "Hidden network"
-                            font.pixelSize: root.settingsPage ? 14 : 13
+                            font.pixelSize: root.compactMenu ? 13 : root.settingsPage ? 14 : 13
                             font.weight: root.settingsPage || networkRow.isCurrent ? Font.DemiBold : Font.Normal
-                            color: Tokens.text_primary
+                            color: root.compactMenu ? Tokens.menuText : Tokens.text_primary
                             elide: Text.ElideRight
                             textFormat: Text.PlainText
                         }
 
                         Text {
                             Layout.fillWidth: true
-                            text: root.securityLabel(networkRow.network)
-                                + (!root.settingsPage && networkRow.network.known ? " · Saved" : "")
-                                + (networkRow.isCurrent ? " · Connected" : "")
+                            visible: !root.compactMenu || networkRow.isCurrent || networkRow.ownOperation
+                            text: root.compactMenu
+                                ? (networkRow.ownOperation && root.pendingAction === "connect"
+                                    ? qsTr("Connecting… · Click to cancel")
+                                    : qsTr("%1% signal").arg(root.signalPercent(networkRow.network)))
+                                : root.securityLabel(networkRow.network)
+                                    + (!root.settingsPage && networkRow.network.known ? " · Saved" : "")
+                                    + (networkRow.isCurrent ? " · Connected" : "")
                             font.pixelSize: root.settingsPage ? 12 : 10
-                            color: !root.settingsPage && networkRow.isCurrent ? Tokens.accent : Tokens.text_secondary
+                            color: root.compactMenu ? (networkRow.isCurrent ? Tokens.menuAccent : Tokens.menuMuted) : !root.settingsPage && networkRow.isCurrent ? Tokens.accent : Tokens.text_secondary
                             elide: Text.ElideRight
                             textFormat: Text.PlainText
                         }
                     }
 
+                    Text {
+                        visible: root.compactMenu && networkRow.network.security !== WifiSecurityType.Open
+                            && networkRow.network.security !== WifiSecurityType.None
+                            && !networkRow.isCurrent
+                        text: "󰌾"
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 14
+                        color: Tokens.menuMuted
+                        Accessible.name: "Secured network"
+                    }
+
+                    Text {
+                        objectName: root.compactMenu ? "wifiCompactSelectionMark" : ""
+                        visible: root.compactMenu && networkRow.isCurrent
+                        text: "✓"
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        color: Tokens.menuAccent
+                        Accessible.name: qsTr("Connected")
+                    }
+
+                    ToolButton {
+                        id: compactWifiDetails
+                        visible: root.compactMenu && networkRow.isCurrent
+                        implicitWidth: 28
+                        implicitHeight: 28
+                        Accessible.name: (networkRow.showingDetails ? qsTr("Hide details for %1")
+                            : qsTr("Show details for %1")).arg(networkRow.network.name || qsTr("Wi-Fi network"))
+                        Accessible.expandable: true
+                        Accessible.expanded: networkRow.showingDetails
+                        onClicked: root.toggleDetails(networkRow.network)
+                        Keys.onReturnPressed: compactWifiDetails.clicked()
+                        Keys.onEnterPressed: compactWifiDetails.clicked()
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        contentItem: Text {
+                            text: networkRow.showingDetails ? "−" : "⋯"
+                            color: compactWifiDetails.hovered ? Tokens.menuAccent : Tokens.menuMuted
+                            font.pixelSize: 16
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 7
+                            color: compactWifiDetails.hovered ? Tokens.menuHover : "transparent"
+                            border.width: compactWifiDetails.visualFocus ? 2 : 0
+                            border.color: Tokens.menuAccent
+                        }
+                    }
+
                     RoundedButton {
                         id: connectBtn
+                        visible: !root.compactMenu
                         Layout.minimumWidth: 68
                         implicitHeight: root.settingsPage ? 34 : 28
                         text: networkRow.isCurrent ? "Disconnect"
@@ -1220,6 +1522,7 @@ Item {
 
                     ToolButton {
                         id: rowMoreBtn
+                        visible: !root.compactMenu
                         implicitWidth: 28
                         implicitHeight: 28
                         text: "⋯"
@@ -1227,7 +1530,7 @@ Item {
                         onClicked: rowMenu.requestOpen()
                         contentItem: Text {
                             text: "⋯"
-                            font.pixelSize: 13
+                            font.pixelSize: 12
                             color: rowMoreBtn.hovered ? Tokens.text_primary : Tokens.text_secondary
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter

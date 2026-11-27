@@ -33,6 +33,7 @@ PanelWindow {
         var runtime = Quickshell.env("XDG_RUNTIME_DIR") || "/run/user/1000";
         var sig = Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE");
         if (sig) return runtime + "/hypr/" + sig + "/cod29.sock";
+        if (Quickshell.env("XDG_RUNTIME_DIR")) return runtime + "/hypr-cod29.sock";
         return "/tmp/hypr-cod29.sock";
     }
 
@@ -45,6 +46,14 @@ PanelWindow {
     readonly property var activeWorkspace: targetMonitor ? targetMonitor.activeWorkspace : null
     readonly property int focusedWsId: activeWorkspace ? activeWorkspace.id : 0
     onTopInsetChanged: syncBoundsTimer.restart()
+    onWidthChanged: syncBoundsTimer.restart()
+    onWorkspaceListChanged: syncBoundsTimer.restart()
+
+    Connections {
+        target: stripWindow.targetMonitor
+        function onXChanged(): void { syncBoundsTimer.restart(); }
+        function onYChanged(): void { syncBoundsTimer.restart(); }
+    }
 
     // Dynamic list of workspaces ensuring 1..5 exist plus any active ones
     readonly property var workspaceList: {
@@ -104,7 +113,7 @@ PanelWindow {
         var list = stripWindow.workspaceList;
         for (var i = 0; i < cardsRepeater.count && i < list.length; i++) {
             var item = cardsRepeater.itemAt(i);
-            if (item) {
+            if (item && item.width > 0 && item.height > 0) {
                 var point = item.mapToItem(null, 0, 0);
                 var viewport = item.preview.viewport;
                 var offset = item.preview.mapToItem(null, viewport.x, viewport.y);
@@ -135,15 +144,20 @@ PanelWindow {
             }
         }
 
-        onConnectionStateChanged: {
+        onConnectedChanged: {
             if (connected) {
                 console.log("[COD-29 Strip] Connected to IPC socket: " + stripWindow.socketPath);
                 write("STRIP_READY\n");
                 syncBoundsTimer.restart();
+                retryTimer.stop();
+            } else {
+                stripWindow.handleIpcMessage("RESET");
+                retryTimer.restart();
             }
         }
 
         onError: error => {
+            stripWindow.handleIpcMessage("RESET");
             retryTimer.restart();
         }
     }
@@ -175,7 +189,7 @@ PanelWindow {
         height: stripWindow.stripHeight - 16
         y: stripWindow.topInset + 8
         radius: 20
-        color: Tokens.surface
+        color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, Math.max(0.92, Tokens.panelOpacity))
         border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.35)
         border.width: 1
         clip: true
@@ -198,6 +212,8 @@ PanelWindow {
                     readonly property bool isTarget: stripWindow.highlightedWorkspaceId === wsId
                     readonly property bool isCurrent: stripWindow.focusedWsId === wsId
                     readonly property var workspace: modelData.workspace
+                    onWidthChanged: syncBoundsTimer.restart()
+                    onHeightChanged: syncBoundsTimer.restart()
 
                     Layout.preferredWidth: Math.min(370, (containerBox.parent.width - 64 - (cardsRepeater.count - 1) * cardsLayout.spacing) / cardsRepeater.count)
                     Layout.preferredHeight: containerBox.height - 16
@@ -229,6 +245,7 @@ PanelWindow {
                             Layout.fillHeight: true
                             workspace: cardItem.workspace
                             strip: stripWindow
+                            onViewportChanged: syncBoundsTimer.restart()
                         }
 
                         Text {

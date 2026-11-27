@@ -96,7 +96,7 @@ bool StateMachine::isAtTopEdge(const Vector2D& pointer, const OutputRect& output
     if (output.w <= 0.0 || output.h <= 0.0) {
         return false;
     }
-    const bool withinX = (pointer.x >= output.x) && (pointer.x <= (output.x + output.w));
+    const bool withinX = (pointer.x >= output.x) && (pointer.x < (output.x + output.w));
     const bool withinY = (pointer.y >= (output.y - 1.0)) && (pointer.y <= (output.y + m_config.edgeTolerance));
     return withinX && withinY;
 }
@@ -135,6 +135,16 @@ Action StateMachine::onPointerMotion(
         return Action{Action::Type::None, -1, 0};
     }
 
+    if ((m_state == State::EdgeArmed || m_state == State::StripOpen || m_state == State::HoverTarget) &&
+        (output.x != m_edgeOutput.x || output.y != m_edgeOutput.y ||
+         output.w != m_edgeOutput.w || output.h != m_edgeOutput.h)) {
+        const bool open = m_state != State::EdgeArmed;
+        m_state = State::Dragging;
+        m_targetWorkspaceId = -1;
+        m_edgeArmedTimeMs = 0;
+        return Action{open ? Action::Type::HideStrip : Action::Type::DisarmEdge, -1, m_windowToken};
+    }
+
     switch (m_state) {
         case State::Idle:
             return Action{Action::Type::None, -1, 0};
@@ -143,6 +153,7 @@ Action StateMachine::onPointerMotion(
             if (isAtTopEdge(pointer, output)) {
                 m_state = State::EdgeArmed;
                 m_edgeArmedTimeMs = timestampMs;
+                m_edgeOutput = output;
                 return Action{Action::Type::ArmEdge, -1, m_windowToken};
             }
             return Action{Action::Type::None, -1, m_windowToken};
@@ -171,8 +182,8 @@ Action StateMachine::onPointerMotion(
             // Strip closes below the visible strip and its hysteresis margin
             // or moves outside monitor horizontal bounds
             const double exitY = output.y + output.topInset + m_config.stripHeight + m_config.exitHysteresis;
-            const bool outsideX = (pointer.x < output.x) || (pointer.x > (output.x + output.w));
-            const bool outsideY = (pointer.y > exitY);
+            const bool outsideX = (pointer.x < output.x) || (pointer.x >= (output.x + output.w));
+            const bool outsideY = (pointer.y < output.y) || (pointer.y > exitY);
 
             if (outsideX || outsideY) {
                 m_state = State::Dragging;
@@ -182,11 +193,11 @@ Action StateMachine::onPointerMotion(
             }
 
             // Inside strip bounds: check geometric hit-testing if workspace cards are registered
-            if (!m_workspaceCards.empty()) {
+            {
                 int foundCardId = -1;
                 for (const auto& card : m_workspaceCards) {
-                    if (pointer.x >= card.x && pointer.x <= (card.x + card.w) &&
-                        pointer.y >= card.y && pointer.y <= (card.y + card.h)) {
+                    if (pointer.x >= card.x && pointer.x < (card.x + card.w) &&
+                        pointer.y >= card.y && pointer.y < (card.y + card.h)) {
                         foundCardId = card.id;
                         break;
                     }
@@ -250,7 +261,7 @@ Action StateMachine::onWorkspaceCardLeave() noexcept {
     return Action{Action::Type::None, -1, 0};
 }
 
-Action StateMachine::onNativeRelease(uint64_t timestampMs) noexcept {
+Action StateMachine::onNativeRelease(uint64_t timestampMs, int currentWorkspaceId) noexcept {
     (void)timestampMs;
 
     if (!m_config.enabled || m_state == State::Idle) {
@@ -261,7 +272,7 @@ Action StateMachine::onNativeRelease(uint64_t timestampMs) noexcept {
 
     switch (m_state) {
         case State::HoverTarget: {
-            if (m_targetWorkspaceId != -1 && m_targetWorkspaceId != m_sourceWorkspaceId) {
+            if (m_targetWorkspaceId > 0 && m_targetWorkspaceId != (currentWorkspaceId > 0 ? currentWorkspaceId : m_sourceWorkspaceId)) {
                 // Different workspace: commit drop intent!
                 m_state = State::DropIntent;
                 return Action{Action::Type::PrepareDrop, m_targetWorkspaceId, token};

@@ -1,24 +1,24 @@
 "$schema" = 'https://starship.rs/config-schema.json'
 
-# Layout 2 dòng, kế thừa màu sắc động (ANSI colors) từ terminal
+# Two-line prompt with wallpaper-aware ANSI color capsules.
 format = """
-[╭─](bright-black)\
+[╭─](bright-black)[](cyan)\
 $os\
+$username\
+[](cyan) [](blue)\
 $directory\
-$git_branch\
-$git_status\
+[](blue) \
 $nodejs\
 $bun\
 $rust\
 $golang\
 $python\
 $docker_context\
-$fill\
-$cmd_duration\
-$time\
 $line_break\
 [╰─](bright-black)\
 $character"""
+
+right_format = "([](purple)$git_branch$git_status[](purple) )$status$cmd_duration$time"
 
 # Giữ trống một dòng giữa các lệnh để thoáng mắt
 add_newline = true
@@ -33,12 +33,12 @@ vimcmd_symbol = "[❮](bold cyan)"
 
 [os]
 disabled = false
-style = "bold blue"
-format = "[$symbol]($style) "
+style = "bold fg:black bg:cyan"
+format = "[$symbol]($style)"
 
 [os.symbols]
 Arch = "󰣇 "
-CachyOS = "󰣇 "
+CachyOS = " "
 Ubuntu = "󰕈 "
 Debian = "󰣚 "
 Fedora = "󰣛 "
@@ -47,12 +47,12 @@ Macos = "󰀵 "
 Windows = "󰍲 "
 
 [directory]
-style = "bold cyan"
-format = "[$path]($style)[$read_only]($read_only_style) "
-truncation_length = 3
+style = "bold fg:black bg:blue"
+format = "[ 󰉋 $path]($style)[$read_only]($read_only_style)[ ]($style)"
+truncation_length = 2
 truncation_symbol = "…/"
 read_only = " 󰌾"
-read_only_style = "bold red"
+read_only_style = "bold fg:black bg:blue"
 
 [directory.substitutions]
 "Documents" = "󰈙 Documents"
@@ -63,14 +63,16 @@ read_only_style = "bold red"
 "Videos" = " Videos"
 
 [git_branch]
-symbol = ""
-style = "bold magenta"
-format = "[$symbol $branch]($style) "
+truncation_length = 16
+truncation_symbol = "…"
+symbol = "  "
+style = "bold fg:black bg:purple"
+format = "[$symbol$branch]($style)"
 
 [git_status]
-style = "bold yellow"
-format = "[$all_status$ahead_behind]($style) "
-conflicted = " 🏳"
+style = "bold fg:black bg:purple"
+format = "[$all_status$ahead_behind ]($style)"
+conflicted = " !"
 ahead = " ⇡${count}"
 behind = " ⇣${count}"
 diverged = " ⇕⇡${ahead_count}⇣${behind_count}"
@@ -113,11 +115,22 @@ format = "[$symbol $context]($style) "
 
 [cmd_duration]
 min_time = 2_000
-style = "bold yellow"
-format = "[took $duration]($style) "
+style = "yellow"
+format = "[󱎫 $duration]($style) "
 
 [time]
 disabled = false
 time_format = "%R"
-style = "bright-black"
+style = "bright-white"
 format = "[ $time]($style)"
+
+[status]
+disabled = false
+style = "bold red"
+format = "[󰅚 $status]($style) "
+
+[username]
+show_always = true
+style_user = "bold fg:black bg:cyan"
+style_root = "bold fg:red bg:cyan"
+format = "[$user ]($style)"

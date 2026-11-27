@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import "../island" as Island
 import "../services"
 import "../theme"
 
@@ -45,61 +46,29 @@ Item {
 
             Item { Layout.fillWidth: true }
 
-            Rectangle {
+            Island.IslandButton {
+                objectName: "notifications-dnd"
                 Layout.preferredWidth: 82
                 Layout.preferredHeight: 30
-                radius: 15
-                color: root.dndActive
-                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
-                    : Tokens.surface
-                border.width: 1
-                border.color: root.dndActive ? Tokens.accent : Tokens.outline
-
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 5
-                    Text {
-                        text: "󰂛"
-                        font.pixelSize: 12
-                        color: root.dndActive ? Tokens.accent : Tokens.text_secondary
-                    }
-                    Text {
-                        text: root.dndActive ? "DND on" : "DND off"
-                        font.pixelSize: 10
-                        font.weight: Font.Medium
-                        color: root.dndActive ? Tokens.accent : Tokens.text_primary
-                    }
-                }
-
-                HoverHandler { id: dndHover }
-                TapHandler {
-                    onTapped: DesktopControls.doNotDisturb = !DesktopControls.doNotDisturb
-                }
+                text: qsTr("Do Not Disturb")
+                glyph: root.dndActive ? qsTr("DND on") : qsTr("DND off")
+                font.pixelSize: 10
+                checkable: true
+                checked: root.dndActive
+                highlighted: root.dndActive
+                onClicked: DesktopControls.doNotDisturb = !DesktopControls.doNotDisturb
             }
 
-            Rectangle {
+            Island.IslandButton {
+                objectName: "notifications-clear"
                 Layout.preferredWidth: 76
                 Layout.preferredHeight: 30
-                radius: 15
-                color: clearHover.hovered ? Tokens.surface_high : Tokens.surface
-                border.width: 1
-                border.color: Tokens.outline
-                opacity: root.hasNotifications ? 1 : 0.45
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "Clear all"
-                    font.pixelSize: 10
-                    color: Tokens.text_primary
-                }
-
-                HoverHandler { id: clearHover }
-                TapHandler {
-                    enabled: root.hasNotifications
-                    onTapped: {
-                        root.expandedNotificationId = null;
-                        DesktopControls.clearNotificationHistory();
-                    }
+                text: qsTr("Clear all")
+                font.pixelSize: 10
+                enabled: root.hasNotifications
+                onClicked: {
+                    root.expandedNotificationId = null;
+                    DesktopControls.clearNotificationHistory();
                 }
             }
         }
@@ -187,6 +156,18 @@ Item {
                                     font.pixelSize: 10
                                     color: Tokens.text_secondary
                                 }
+
+                                Island.IslandButton {
+                                    objectName: "notification-dismiss-" + entry.modelData.id
+                                    text: qsTr("Dismiss notification")
+                                    Accessible.description: entry.modelData.summary || ""
+                                    glyph: "󰅖"
+                                    implicitHeight: 26
+                                    onClicked: {
+                                        if (entry.expanded) root.expandedNotificationId = null;
+                                        DesktopControls.dismissNotification(entry.modelData.id);
+                                    }
+                                }
                             }
 
                             Text {
@@ -214,17 +195,14 @@ Item {
                                 elide: Text.ElideRight
                             }
 
-                            Text {
+                            Island.IslandButton {
                                 visible: bodyPreview.truncated || entry.expanded
                                 text: entry.expanded ? "Show less" : "Show details"
                                 font.pixelSize: 10
-                                color: Tokens.accent
-
-                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                TapHandler {
-                                    onTapped: root.expandedNotificationId =
-                                        entry.expanded ? null : entry.modelData.id
-                                }
+                                implicitHeight: 24
+                                highlighted: true
+                                onClicked: root.expandedNotificationId =
+                                    entry.expanded ? null : entry.modelData.id
                             }
 
                             RowLayout {
@@ -234,31 +212,15 @@ Item {
 
                                 Repeater {
                                     model: entry.modelData.actions || []
-                                    delegate: Rectangle {
+                                    delegate: Island.IslandButton {
                                         required property var modelData
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 26
-                                        radius: 8
-                                        color: actionHover.hovered ? Tokens.surface_high : Tokens.surface
-                                        border.width: 1
-                                        border.color: Tokens.outline
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: modelData.text
-                                            font.pixelSize: 10
-                                            color: Tokens.text_primary
-                                            elide: Text.ElideRight
-                                        }
-
-                                        HoverHandler {
-                                            id: actionHover
-                                            cursorShape: Qt.PointingHandCursor
-                                        }
-                                        TapHandler {
-                                            onTapped: DesktopControls.requestNotificationAction(
-                                                entry.modelData.id, modelData.id)
-                                        }
+                                        text: modelData.text
+                                        font.pixelSize: 10
+                                        highlighted: true
+                                        onClicked: DesktopControls.requestNotificationAction(
+                                            entry.modelData.id, modelData.id)
                                     }
                                 }
                             }

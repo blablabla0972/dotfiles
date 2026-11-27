@@ -17,6 +17,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 # Find PkgConfig and Hyprland dependency
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(HYPRLAND REQUIRED hyprland)
+pkg_check_modules(JSONC REQUIRED IMPORTED_TARGET json-c)
 
 # Common include directories
 include_directories(
@@ -101,6 +102,7 @@ target_link_directories(cod29_top_edge_drag PRIVATE
 
 target_link_libraries(cod29_top_edge_drag PRIVATE
     top_edge_drag_logic
+    PkgConfig::JSONC
     ${HYPRLAND_LIBRARIES}
 )
 
@@ -147,5 +149,6 @@ target_compile_options(cod29_integration_test PRIVATE
 
 target_link_libraries(cod29_integration_test PRIVATE
     top_edge_drag_logic
+    PkgConfig::JSONC
     pthread
 )

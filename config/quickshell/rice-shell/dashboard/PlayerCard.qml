@@ -6,6 +6,7 @@ import QtQuick.Window
 import QtQuick.Effects
 import "../theme"
 import "../services"
+import "../island" as Island
 
 Rectangle {
     id: root
@@ -240,6 +241,20 @@ Rectangle {
 
             Item {
                 id: seekHitArea
+                objectName: "player-seek"
+                activeFocusOnTab: playerSeekArea.enabled
+                Accessible.role: Accessible.Slider
+                Accessible.name: qsTr("Playback position")
+                Accessible.description: Media.formatTime(root.displayedPosition)
+                Keys.onPressed: event => {
+                    if (!playerSeekArea.enabled) return;
+                    if (event.key === Qt.Key_Left) Media.setPosition(Math.max(0, Media.position - 5));
+                    else if (event.key === Qt.Key_Right) Media.setPosition(Math.min(Media.length, Media.position + 5));
+                    else if (event.key === Qt.Key_Home) Media.setPosition(0);
+                    else if (event.key === Qt.Key_End) Media.setPosition(Media.length);
+                    else return;
+                    event.accepted = true;
+                }
                 Layout.fillWidth: true
                 Layout.preferredHeight: 20
 
@@ -247,7 +262,7 @@ Rectangle {
                     id: seekTrack
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.width
-                    height: 5
+                    height: seekHitArea.activeFocus ? 7 : 5
                     radius: 3
                     color: Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.9)
                     opacity: Media.activePlayer && Media.activePlayer.canSeek && Media.length > 0 ? 1 : 0.55
@@ -289,89 +304,38 @@ Rectangle {
             Layout.bottomMargin: 2
             spacing: 24
 
-            Rectangle {
+            Island.IslandButton {
+                objectName: "player-previous"
                 Layout.preferredWidth: 40
                 Layout.preferredHeight: 40
-                radius: 20
-                color: prevHover.hovered
-                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
-                    : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.72)
-                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
-                border.width: 1
-                opacity: Media.canPrev ? 1 : 0.45
-                Accessible.name: qsTr("Previous track")
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "󰒮"
-                    font.pixelSize: 17
-                    color: prevHover.hovered ? Tokens.accent : Tokens.text_primary
-                }
-                HoverHandler {
-                    id: prevHover
-                    enabled: Media.hasPlayer && Media.canPrev
-                    cursorShape: Qt.PointingHandCursor
-                }
-                TapHandler {
-                    enabled: Media.hasPlayer && Media.canPrev
-                    onTapped: Media.previous()
-                }
+                text: qsTr("Previous track")
+                glyph: "󰒮"
+                font.pixelSize: 17
+                enabled: Media.hasPlayer && Media.canPrev
+                onClicked: Media.previous()
             }
 
-            Rectangle {
+            Island.IslandButton {
+                objectName: "player-toggle"
                 Layout.preferredWidth: 48
                 Layout.preferredHeight: 48
-                radius: 24
-                color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, playHover.hovered ? 0.32 : 0.2)
-                border.color: Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.8)
-                border.width: 1
-                opacity: Media.canToggle ? 1 : 0.45
-                Accessible.name: Media.isPlaying ? qsTr("Pause") : qsTr("Play")
-
-                Text {
-                    anchors.centerIn: parent
-                    text: Media.isPlaying ? "󰏤" : "󰐊"
-                    font.pixelSize: 21
-                    color: Tokens.text_primary
-                }
-                HoverHandler {
-                    id: playHover
-                    enabled: Media.hasPlayer && Media.canToggle
-                    cursorShape: Qt.PointingHandCursor
-                }
-                TapHandler {
-                    enabled: Media.hasPlayer && Media.canToggle
-                    onTapped: Media.togglePlaying()
-                }
+                text: Media.isPlaying ? qsTr("Pause") : qsTr("Play")
+                glyph: Media.isPlaying ? "󰏤" : "󰐊"
+                font.pixelSize: 21
+                highlighted: true
+                enabled: Media.hasPlayer && Media.canToggle
+                onClicked: Media.togglePlaying()
             }
 
-            Rectangle {
+            Island.IslandButton {
+                objectName: "player-next"
                 Layout.preferredWidth: 40
                 Layout.preferredHeight: 40
-                radius: 20
-                color: nextHover.hovered
-                    ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.18)
-                    : Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.72)
-                border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.25)
-                border.width: 1
-                opacity: Media.canNext ? 1 : 0.45
-                Accessible.name: qsTr("Next track")
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "󰒭"
-                    font.pixelSize: 17
-                    color: nextHover.hovered ? Tokens.accent : Tokens.text_primary
-                }
-                HoverHandler {
-                    id: nextHover
-                    enabled: Media.hasPlayer && Media.canNext
-                    cursorShape: Qt.PointingHandCursor
-                }
-                TapHandler {
-                    enabled: Media.hasPlayer && Media.canNext
-                    onTapped: Media.next()
-                }
+                text: qsTr("Next track")
+                glyph: "󰒭"
+                font.pixelSize: 17
+                enabled: Media.hasPlayer && Media.canNext
+                onClicked: Media.next()
             }
         }
 

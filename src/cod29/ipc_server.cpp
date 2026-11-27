@@ -11,7 +11,10 @@
 #include <cstring>
 #include <algorithm>
 #include <sstream>
-#include <regex>
+#include <json-c/json.h>
+#include <cmath>
+#include <limits>
+#include <memory>
 #include <format>
 #include <iostream>
 #include <unordered_map>
@@ -41,10 +44,28 @@ IpcServer::~IpcServer() noexcept {
 bool IpcServer::start() noexcept {
     if (m_running.load()) return true;
 
-    // Unlink any preexisting socket file
-    unlink(m_socketPath.c_str());
+    struct stat existing{};
+    if (lstat(m_socketPath.c_str(), &existing) == 0) {
+        if (!S_ISSOCK(existing.st_mode) || existing.st_uid != geteuid())
+            return false;
+        sockaddr_un probeAddress{};
+        probeAddress.sun_family = AF_UNIX;
+        if (m_socketPath.size() >= sizeof(probeAddress.sun_path))
+            return false;
+        std::strcpy(probeAddress.sun_path, m_socketPath.c_str());
+        const int probe = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+        if (probe < 0)
+            return false;
+        const int connected = connect(probe, reinterpret_cast<sockaddr*>(&probeAddress), sizeof(probeAddress));
+        const int error = errno;
+        close(probe);
+        if (connected == 0 || (error != ECONNREFUSED && error != ENOENT))
+            return false;
+        if (unlink(m_socketPath.c_str()) < 0 && errno != ENOENT)
+            return false;
+    }
 
-    m_serverFd = socket(AF_UNIX, SOCK_STREAM, 0);
+    m_serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (m_serverFd < 0) {
         return false;
     }
@@ -70,7 +91,7 @@ bool IpcServer::start() noexcept {
         return false;
     }
 
-    if (listen(m_serverFd, 5) < 0) {
+    if (chmod(m_socketPath.c_str(), 0600) < 0 || listen(m_serverFd, 5) < 0) {
         close(m_serverFd);
         m_serverFd = -1;
         unlink(m_socketPath.c_str());
@@ -98,6 +119,7 @@ void IpcServer::stop() noexcept {
         }
     }
     m_clientFds.clear();
+    m_clientCards.clear();
 
     if (m_serverFd >= 0) {
         ::close(m_serverFd);
@@ -132,122 +154,107 @@ void IpcServer::broadcastTargetChanged(int targetWorkspaceId) noexcept {
     sendToAllClients("TARGET_CHANGED " + std::to_string(targetWorkspaceId) + "\n");
 }
 
-void IpcServer::broadcastPointer(const Vector2D& pointer, const Vector2D& grabAnchor) noexcept {
-    sendToAllClients(std::format("DRAG_POINTER {:.2f} {:.2f} {:.4f} {:.4f}\n", pointer.x, pointer.y, grabAnchor.x, grabAnchor.y));
-}
-
 void IpcServer::broadcastReset() noexcept {
     sendToAllClients("RESET\n");
 }
 
 void IpcServer::sendToAllClients(const std::string& line) noexcept {
     std::lock_guard<std::mutex> lock(m_clientsMutex);
-    std::vector<int> deadFds;
+    if (line.starts_with("SHOW_STRIP ") || line == "HIDE_STRIP\n" || line == "RESET\n")
+        m_stripMessage = line;
 
     for (int fd : m_clientFds) {
         if (fd < 0) continue;
         ssize_t sent = ::send(fd, line.c_str(), line.length(), MSG_NOSIGNAL);
-        if (sent < 0) {
-            if (errno == EPIPE || errno == ECONNRESET || errno == EBADF) {
-                deadFds.push_back(fd);
-            }
-        }
-    }
-
-    for (int deadFd : deadFds) {
-        auto it = std::find(m_clientFds.begin(), m_clientFds.end(), deadFd);
-        if (it != m_clientFds.end()) {
-            m_clientFds.erase(it);
-            ::close(deadFd);
-        }
+        // A truncated command cannot be recovered; let the socket thread retire this client.
+        if (sent != static_cast<ssize_t>(line.size()))
+            ::shutdown(fd, SHUT_RDWR);
     }
 }
 
 void IpcServer::cleanupClient(int clientFd) noexcept {
     if (clientFd < 0) return;
 
-    std::lock_guard<std::mutex> lock(m_clientsMutex);
-    auto it = std::find(m_clientFds.begin(), m_clientFds.end(), clientFd);
-    if (it != m_clientFds.end()) {
-        m_clientFds.erase(it);
-        ::close(clientFd);
+    {
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        auto it = std::find(m_clientFds.begin(), m_clientFds.end(), clientFd);
+        if (it != m_clientFds.end()) {
+            m_clientFds.erase(it);
+            ::close(clientFd);
+        }
     }
+    if (m_clientCards.erase(clientFd))
+        publishCards();
+}
+
+void IpcServer::publishCards() noexcept {
+    std::vector<WorkspaceCard> cards;
+    for (const auto& [fd, bounds] : m_clientCards)
+        cards.insert(cards.end(), bounds.begin(), bounds.end());
+    if (m_onSetCards)
+        m_onSetCards(cards);
 }
 
 std::vector<WorkspaceCard> IpcServer::parseBoundsJson(const std::string& json) noexcept {
+    if (json.size() > 65536)
+        return {};
+    std::unique_ptr<json_tokener, decltype(&json_tokener_free)> parser(json_tokener_new(), json_tokener_free);
+    if (!parser)
+        return {};
+    json_tokener_set_flags(parser.get(), JSON_TOKENER_STRICT);
+    std::unique_ptr<json_object, decltype(&json_object_put)> root(
+        json_tokener_parse_ex(parser.get(), json.data(), json.size()), json_object_put);
+    if (json_tokener_get_error(parser.get()) != json_tokener_success ||
+        json_tokener_get_parse_end(parser.get()) != json.size() || !json_object_is_type(root.get(), json_type_array) ||
+        json_object_array_length(root.get()) > 256)
+        return {};
+
+    const auto number = [](json_object* value, double& result) {
+        if (!value || (!json_object_is_type(value, json_type_int) && !json_object_is_type(value, json_type_double)))
+            return false;
+        result = json_object_get_double(value);
+        return std::isfinite(result) && std::abs(result) <= 1000000;
+    };
     std::vector<WorkspaceCard> cards;
-    try {
-        // Find each { ... } block
-        size_t start = 0;
-        while ((start = json.find('{', start)) != std::string::npos) {
-            size_t end = json.find('}', start);
-            if (end == std::string::npos) break;
-
-            std::string obj = json.substr(start, end - start + 1);
-            start = end + 1;
-
-            WorkspaceCard card{};
-            bool hasId = false;
-
-            // Extract id
-            std::regex idRegex(R"("id"\s*:\s*(-?\d+))");
-            std::smatch match;
-            if (std::regex_search(obj, match, idRegex)) {
-                card.id = std::stoi(match[1]);
-                hasId = true;
-            }
-
-            // Extract x
-            std::regex xRegex(R"("x"\s*:\s*(-?[\d.]+))");
-            if (std::regex_search(obj, match, xRegex)) {
-                card.x = std::stod(match[1]);
-            }
-
-            // Extract y
-            std::regex yRegex(R"("y"\s*:\s*(-?[\d.]+))");
-            if (std::regex_search(obj, match, yRegex)) {
-                card.y = std::stod(match[1]);
-            }
-
-            // Extract w
-            std::regex wRegex(R"("w"\s*:\s*(-?[\d.]+))");
-            if (std::regex_search(obj, match, wRegex)) {
-                card.w = std::stod(match[1]);
-            }
-
-            // Extract h
-            std::regex hRegex(R"("h"\s*:\s*(-?[\d.]+))");
-            if (std::regex_search(obj, match, hRegex)) {
-                card.h = std::stod(match[1]);
-            }
-
-            static const std::regex previewRegex(R"("preview"\s*:\s*\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\])");
-            if (std::regex_search(obj, match, previewRegex))
-                card.preview = {std::stod(match[1]), std::stod(match[2]), std::stod(match[3]), std::stod(match[4])};
-            if (hasId) {
-                cards.push_back(card);
-            }
+    for (size_t i = 0; i < json_object_array_length(root.get()); ++i) {
+        auto* item = json_object_array_get_idx(root.get(), i);
+        if (!json_object_is_type(item, json_type_object))
+            return {};
+        auto* id = json_object_object_get(item, "id");
+        if (!json_object_is_type(id, json_type_int) || json_object_get_int64(id) <= 0 ||
+            json_object_get_int64(id) > std::numeric_limits<int>::max())
+            return {};
+        WorkspaceCard card{.id = json_object_get_int(id)};
+        if (!number(json_object_object_get(item, "x"), card.x) || !number(json_object_object_get(item, "y"), card.y) ||
+            !number(json_object_object_get(item, "w"), card.w) || !number(json_object_object_get(item, "h"), card.h) ||
+            card.w <= 0 || card.h <= 0)
+            return {};
+        if (auto* preview = json_object_object_get(item, "preview")) {
+            if (!json_object_is_type(preview, json_type_array) || json_object_array_length(preview) != 4 ||
+                !number(json_object_array_get_idx(preview, 0), card.preview.x) ||
+                !number(json_object_array_get_idx(preview, 1), card.preview.y) ||
+                !number(json_object_array_get_idx(preview, 2), card.preview.w) ||
+                !number(json_object_array_get_idx(preview, 3), card.preview.h) || card.preview.w <= 0 || card.preview.h <= 0)
+                return {};
         }
-    } catch (...) {
-        // Return whatever was successfully parsed
+        cards.push_back(card);
     }
     return cards;
 }
 
-void IpcServer::handleClientMessage(int /*clientFd*/, const std::string& line) noexcept {
+void IpcServer::handleClientMessage(int clientFd, const std::string& line) noexcept {
     if (line.empty()) return;
 
     if (line == "STRIP_READY") {
-        // Client handshake
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        if (::send(clientFd, m_stripMessage.data(), m_stripMessage.size(), MSG_NOSIGNAL) != static_cast<ssize_t>(m_stripMessage.size()))
+            ::shutdown(clientFd, SHUT_RDWR);
         return;
     }
 
     if (line.rfind("REGISTER_BOUNDS ", 0) == 0) {
-        std::string json = line.substr(16);
-        std::vector<WorkspaceCard> cards = parseBoundsJson(json);
-        if (m_onSetCards && !cards.empty()) {
-            m_onSetCards(cards);
-        }
+        m_clientCards[clientFd] = parseBoundsJson(line.substr(16));
+        publishCards();
         return;
     }
 
@@ -390,7 +397,7 @@ void IpcServer::serverLoop() noexcept {
         if (pfds[0].revents & POLLIN) {
             struct sockaddr_un clientAddr{};
             socklen_t clientLen = sizeof(clientAddr);
-            int clientFd = accept(m_serverFd, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientLen);
+            int clientFd = accept4(m_serverFd, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientLen, SOCK_NONBLOCK | SOCK_CLOEXEC);
             if (clientFd >= 0) {
                 int flags = fcntl(clientFd, F_GETFL, 0);
                 if (flags >= 0) {

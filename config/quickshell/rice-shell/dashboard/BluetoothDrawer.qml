@@ -11,10 +11,13 @@ import "../theme"
 Item {
     id: root
     property bool settingsPage: false
+    property bool compactMenu: false
 
-    anchors.fill: settingsPage ? undefined : parent
+    anchors.fill: settingsPage || compactMenu ? undefined : parent
     implicitWidth: 360
-    implicitHeight: settingsPage ? pageContent.implicitHeight : 420
+    implicitHeight: settingsPage ? pageContent.implicitHeight
+        : compactMenu ? Math.max(pageContent.implicitHeight, deviceDialog.visible ? dialogCard.height + 24 : 0)
+        : 420
     clip: true
     focus: !settingsPage
     activeFocusOnTab: settingsPage
@@ -23,6 +26,7 @@ Item {
     objectName: "bluetoothDrawerPage"
 
     signal closeRequested()
+    signal requestSettings(string route)
 
     // The adapter override is a deterministic seam for isolated tests.
     property var adapterOverride: null
@@ -154,17 +158,29 @@ Item {
         var source = values || [];
         for (var i = 0; i < source.length; i++) {
             var device = source[i];
-            if (!device || !device.address) continue;
+            if (!device) continue;
             if (device.adapter && device.adapter !== root.btAdapter) continue;
+            var address = String(device.address || "").trim().toUpperCase();
+            var normalizedAddress = address.replace(/[:-]/g, "");
+            var path = String(device.dbusPath || "");
+            var key = normalizedAddress ? "address:" + normalizedAddress : path ? "path:" + path : "object:" + i;
+            var existing = -1;
+            for (var j = 0; j < listed.length; j++) {
+                if (listed[j].identity === key || (!address && !path && listed[j].deviceRef === device)) {
+                    existing = j;
+                    break;
+                }
+            }
             var hasBattery = device.batteryAvailable === true;
             var batteryPercent = null;
             if (hasBattery && device.battery === device.battery) {
                 batteryPercent = Math.max(0, Math.min(100, Math.round(device.battery * 100)));
             }
-            listed.push({
-                key: device.dbusPath || device.address,
-                mac: String(device.address).trim(),
-                name: device.name || device.deviceName || device.address,
+            var projected = {
+                identity: key,
+                key: path || address || key,
+                mac: String(device.address || "").trim(),
+                name: device.name || device.deviceName || device.address || "Bluetooth device",
                 iconName: device.icon || "",
                 paired: !!device.paired,
                 connected: !!device.connected,
@@ -174,7 +190,25 @@ Item {
                 batteryPercent: batteryPercent,
                 deviceRef: device,
                 adapterRef: device.adapter || root.btAdapter
-            });
+            };
+            if (existing < 0) {
+                listed.push(projected);
+            } else {
+                var prior = listed[existing];
+                projected.connected = prior.connected || projected.connected;
+                projected.paired = prior.paired || projected.paired;
+                projected.trusted = prior.trusted || projected.trusted;
+                projected.blocked = prior.blocked || projected.blocked;
+                if (prior.connected || (!projected.connected && prior.paired)) {
+                    projected.deviceRef = prior.deviceRef;
+                    projected.adapterRef = prior.adapterRef;
+                }
+                if (!projected.batteryAvailable && prior.batteryAvailable) {
+                    projected.batteryAvailable = true;
+                    projected.batteryPercent = prior.batteryPercent;
+                }
+                listed[existing] = projected;
+            }
         }
         return listed;
     }
@@ -189,6 +223,20 @@ Item {
             else sections.available.push(device);
         }
         return sections;
+    }
+
+    function compactStatusText(): string {
+        if (!root.btAdapter) return "Adapter unavailable";
+        if (root.isAdapterBlocked) return "Blocked";
+        if (root.isPowerPending || root.isAdapterTransitioning)
+            return root.powerTargetOn ? "Turning on…" : "Turning off…";
+        if (!root.isPowered) return "Off";
+        if (root.isScanning) return "Scanning…";
+        return String(root.deviceSections.connected.length) + " connected";
+    }
+
+    function compactEmptyStateVisible(): bool {
+        return !root.btAdapter || (root.isPowered && root.devices.length === 0);
     }
 
     function isValidMac(mac): bool {
@@ -686,8 +734,12 @@ Item {
         root.closeRequested();
     }
 
-    function getDeviceIcon(name): string {
+    function getDeviceIcon(name, iconName): string {
         var lower = String(name || "").toLowerCase();
+        var icon = String(iconName || "").toLowerCase();
+        if (lower.indexOf("tv") >= 0 || lower.indexOf("television") >= 0 || lower.indexOf("monitor") >= 0
+                || lower.indexOf("display") >= 0 || lower.indexOf("webos") >= 0
+                || icon.indexOf("video") >= 0 || icon.indexOf("display") >= 0 || icon.indexOf("tv") >= 0) return "󰔂";
         if (lower.indexOf("head") >= 0 || lower.indexOf("bud") >= 0 || lower.indexOf("airpod") >= 0 || lower.indexOf("wh-") >= 0) return "󰋋";
         if (lower.indexOf("speaker") >= 0 || lower.indexOf("sound") >= 0) return "󰓃";
         if (lower.indexOf("keyboard") >= 0 || lower.indexOf("key") >= 0) return "󰌌";
@@ -800,6 +852,7 @@ Item {
 
     component ActionButton: Rectangle {
         id: actionButton
+        objectName: root.compactMenu && isSwitch ? "bluetoothPowerSwitch" : ""
 
         property string text: ""
         property string accessibleLabel: text
@@ -810,11 +863,15 @@ Item {
         property bool checked: false
         signal activated()
 
-        readonly property bool showAsSwitch: root.settingsPage && isSwitch
-        implicitWidth: showAsSwitch ? 44 : Math.max(64, actionText.implicitWidth + 24)
-        implicitHeight: showAsSwitch ? 24 : 34
+        enabled: actionable
+        activeFocusOnTab: true
+        readonly property bool showAsSwitch: (root.settingsPage || root.compactMenu) && isSwitch
+        implicitWidth: showAsSwitch ? (root.compactMenu ? 38 : 44) : Math.max(64, actionText.implicitWidth + 24)
+        implicitHeight: showAsSwitch ? (root.compactMenu ? 22 : 24) : 34
         radius: root.settingsPage && !showAsSwitch ? 8 : height / 2
-        color: showAsSwitch ? (checked ? Tokens.accent : Tokens.surface_high)
+        color: showAsSwitch ? (root.compactMenu
+            ? (checked ? Tokens.menuSwitch : Tokens.menuSurface)
+            : (checked ? Tokens.accent : Tokens.surface_high))
             : root.settingsPage && !danger ? (buttonHover.hovered ? Tokens.surface_high : Tokens.surface)
             : !actionButton.actionable
             ? Qt.rgba(Tokens.surface.r, Tokens.surface.g, Tokens.surface.b, 0.35)
@@ -840,7 +897,6 @@ Item {
         Accessible.checked: actionButton.checked
         Accessible.onPressAction: if (actionButton.actionable) actionButton.activated()
         Accessible.onToggleAction: if (actionButton.actionable) actionButton.activated()
-        activeFocusOnTab: actionButton.actionable
 
         HoverHandler {
             id: buttonHover
@@ -867,12 +923,15 @@ Item {
 
         Rectangle {
             visible: actionButton.showAsSwitch
-            width: 18
+            objectName: root.compactMenu ? "bluetoothPowerSwitchThumb" : ""
+            width: root.compactMenu ? 16 : 18
             height: width
             x: actionButton.checked ? parent.width - width - 3 : 3
             anchors.verticalCenter: parent.verticalCenter
             radius: width / 2
-            color: actionButton.checked ? Tokens.on_accent : Tokens.text_secondary
+            color: actionButton.checked ? Tokens.on_accent
+                : root.compactMenu ? Tokens.menuMuted : Tokens.text_secondary
+            Behavior on x { NumberAnimation { duration: root.compactMenu ? 160 : 0; easing.type: Easing.OutCubic } }
         }
 
         Text {
@@ -898,23 +957,41 @@ Item {
     ColumnLayout {
         id: pageContent
         anchors.fill: parent
-        spacing: root.settingsPage ? 17 : 8
+        spacing: root.settingsPage ? 17 : (root.compactMenu ? 6 : 8)
 
         Rectangle {
             Layout.fillWidth: true
             implicitHeight: root.settingsPage ? Math.max(68, radioControls.implicitHeight + 20)
-                : Math.max(0, radioControls.implicitHeight)
-            radius: 10
-            color: root.settingsPage ? Tokens.surface_low : "transparent"
+                : root.compactMenu ? Math.max(50, radioControls.implicitHeight + 12) : Math.max(0, radioControls.implicitHeight)
+            radius: root.compactMenu ? 11 : 10
+            color: root.compactMenu ? Qt.tint(Tokens.menuSurface, Qt.alpha(Tokens.menuAccent, 0.06))
+                : root.settingsPage ? Tokens.surface_low : "transparent"
             border.width: root.settingsPage ? 1 : 0
             border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
 
             RowLayout {
                 id: radioControls
                 anchors.fill: parent
-                anchors.leftMargin: root.settingsPage ? 14 : 0
+                anchors.leftMargin: root.settingsPage ? 14 : root.compactMenu ? 8 : 0
                 anchors.rightMargin: anchors.leftMargin
                 spacing: 8
+
+                Rectangle {
+                    Layout.preferredWidth: 30
+                    Layout.preferredHeight: 30
+                    visible: root.compactMenu
+                    radius: 9
+                    color: root.isPowered ? Tokens.menuSelected : Tokens.menuSurface
+                    Accessible.ignored: true
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.isPowered ? "󰂯" : "󰂲"
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 17
+                        color: root.isPowered ? Tokens.menuAccent : Tokens.menuMuted
+                    }
+                }
 
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -922,15 +999,16 @@ Item {
                     spacing: 3
 
                     Text {
-                        visible: root.settingsPage
-                        text: qsTr("Bluetooth radio")
-                        font.pixelSize: 15
+                        visible: root.settingsPage || root.compactMenu
+                        text: root.compactMenu ? qsTr("Bluetooth") : qsTr("Bluetooth radio")
+                        font.pixelSize: root.compactMenu ? 15 : 15
                         font.weight: Font.DemiBold
-                        color: Tokens.text_primary
+                        color: root.compactMenu ? Tokens.menuText : Tokens.text_primary
                     }
 
                     Text {
                         Layout.fillWidth: true
+                        visible: !root.compactMenu
                         text: !root.btAdapter ? "Adapter unavailable"
                             : root.isAdapterBlocked ? "Bluetooth is blocked"
                             : root.isPowerPending || root.isAdapterTransitioning
@@ -945,6 +1023,15 @@ Item {
                         wrapMode: Text.Wrap
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        visible: root.compactMenu
+                        text: root.compactStatusText()
+                        font.pixelSize: 12
+                        color: Tokens.menuMuted
+                        elide: Text.ElideRight
                     }
                 }
 
@@ -966,7 +1053,7 @@ Item {
                 }
 
                 ActionButton {
-                    visible: !root.settingsPage || root.isPowered
+                    visible: !root.compactMenu && (!root.settingsPage || root.isPowered)
                     text: root.isScanning && root.scanOwnedAdapter === root.btAdapter ? qsTr("Stop scan")
                     : root.settingsPage ? qsTr("Scan devices") : "Scan"
                     accessibleLabel: root.isScanning && root.scanOwnedAdapter === root.btAdapter
@@ -977,11 +1064,23 @@ Item {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.compactMenu && root.isPowered
+            implicitHeight: 1
+            color: Tokens.menuLine
+        }
+
         Item {
             id: pageBody
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            implicitHeight: root.settingsPage ? (deviceList.visible ? deviceList.contentHeight : bluetoothEmpty.implicitHeight + 46) : 280
+            Layout.fillHeight: !root.compactMenu || root.isPowered
+            Layout.minimumHeight: 0
+            Layout.maximumHeight: root.compactMenu ? 300 : Number.POSITIVE_INFINITY
+            implicitHeight: root.compactMenu
+                ? Math.min(300, deviceList.visible ? deviceList.contentHeight
+                    : root.isPowered && root.compactEmptyStateVisible() ? bluetoothEmpty.implicitHeight + 16 : 0)
+                : root.settingsPage ? (deviceList.visible ? deviceList.contentHeight : bluetoothEmpty.implicitHeight + 46) : 280
 
             Flickable {
                 id: deviceList
@@ -997,24 +1096,28 @@ Item {
 
                 ColumnLayout {
                     id: deviceContent
+                    x: 0
                     width: deviceList.width
-                    spacing: root.settingsPage ? 18 : 14
+                    spacing: root.compactMenu ? 8 : root.settingsPage ? 18 : 14
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 7
-                        visible: !root.settingsPage && root.devices.length > 0
+                        spacing: root.compactMenu ? 2 : 7
+                        visible: root.compactMenu ? root.deviceSections.connected.length > 0
+                            : !root.settingsPage && root.devices.length > 0
 
                         RowLayout {
                             Layout.fillWidth: true
+                            Layout.leftMargin: root.compactMenu ? 8 : 0
                             Text {
-                                text: "CONNECTED"
-                                font.pixelSize: 10
+                                text: root.compactMenu ? qsTr("Connected") : "CONNECTED"
+                                font.pixelSize: root.compactMenu ? 12 : 10
                                 font.weight: Font.DemiBold
-                                color: Tokens.text_secondary
+                                color: root.compactMenu ? Tokens.menuMuted : Tokens.text_secondary
                             }
                             Item { Layout.fillWidth: true }
                             Text {
+                                visible: !root.compactMenu
                                 text: String(root.deviceSections.connected.length)
                                 font.pixelSize: 10
                                 color: Tokens.text_secondary
@@ -1028,7 +1131,7 @@ Item {
 
                         Text {
                             Layout.fillWidth: true
-                            visible: root.deviceSections.connected.length === 0
+                            visible: !root.compactMenu && root.deviceSections.connected.length === 0
                             text: "No connected devices"
                             font.pixelSize: root.settingsPage ? 13 : 11
                             color: Tokens.text_secondary
@@ -1039,25 +1142,28 @@ Item {
                         Layout.fillWidth: true
                         height: 1
                         color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.28)
-                        visible: !root.settingsPage && root.devices.length > 0
+                        visible: !root.settingsPage && !root.compactMenu && root.devices.length > 0
                     }
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 7
-                        visible: root.devices.length > 0
+                        spacing: root.compactMenu ? 2 : 7
+                        visible: root.compactMenu ? root.deviceSections.paired.length > 0 : root.devices.length > 0
 
                         RowLayout {
                             Layout.fillWidth: true
+                            Layout.leftMargin: root.compactMenu ? 8 : 0
                             Text {
-                                text: root.settingsPage ? qsTr("Saved devices") : "PAIRED"
-                                font.pixelSize: root.settingsPage ? 15 : 10
+                                text: root.compactMenu ? qsTr("My Devices")
+                                    : root.settingsPage ? qsTr("Saved devices") : "PAIRED"
+                                font.pixelSize: root.compactMenu ? 12 : root.settingsPage ? 15 : 10
                                 font.weight: Font.DemiBold
-                                color: root.settingsPage ? Tokens.text_primary : Tokens.text_secondary
+                                color: root.compactMenu ? Tokens.menuMuted
+                                    : root.settingsPage ? Tokens.text_primary : Tokens.text_secondary
                             }
                             Item { Layout.fillWidth: true }
                             Text {
-                                visible: !root.settingsPage
+                                visible: !root.settingsPage && !root.compactMenu
                                 text: String(root.deviceSections.paired.length)
                                 font.pixelSize: 10
                                 color: Tokens.text_secondary
@@ -1072,7 +1178,7 @@ Item {
 
                         Text {
                             Layout.fillWidth: true
-                            visible: root.deviceSections.paired.length === 0
+                            visible: !root.compactMenu && root.deviceSections.paired.length === 0
                                 && (!root.settingsPage || root.deviceSections.connected.length === 0)
                             text: "No saved devices"
                             font.pixelSize: root.settingsPage ? 13 : 11
@@ -1084,25 +1190,28 @@ Item {
                         Layout.fillWidth: true
                         height: 1
                         color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.28)
-                        visible: !root.settingsPage && root.devices.length > 0
+                        visible: !root.settingsPage && !root.compactMenu && root.devices.length > 0
                     }
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 7
-                        visible: root.devices.length > 0
+                        spacing: root.compactMenu ? 2 : 7
+                        visible: root.compactMenu ? root.deviceSections.available.length > 0 : root.devices.length > 0
 
                         RowLayout {
                             Layout.fillWidth: true
+                            Layout.leftMargin: root.compactMenu ? 8 : 0
                             Text {
-                                text: root.settingsPage ? qsTr("Nearby devices") : "AVAILABLE"
-                                font.pixelSize: root.settingsPage ? 15 : 10
+                                text: root.compactMenu ? qsTr("Nearby Devices")
+                                    : root.settingsPage ? qsTr("Nearby devices") : "AVAILABLE"
+                                font.pixelSize: root.compactMenu ? 12 : root.settingsPage ? 15 : 10
                                 font.weight: Font.DemiBold
-                                color: root.settingsPage ? Tokens.text_primary : Tokens.text_secondary
+                                color: root.compactMenu ? Tokens.menuMuted
+                                    : root.settingsPage ? Tokens.text_primary : Tokens.text_secondary
                             }
                             Item { Layout.fillWidth: true }
                             Text {
-                                visible: !root.settingsPage
+                                visible: !root.settingsPage && !root.compactMenu
                                 text: String(root.deviceSections.available.length)
                                 font.pixelSize: 10
                                 color: Tokens.text_secondary
@@ -1116,7 +1225,7 @@ Item {
 
                         Text {
                             Layout.fillWidth: true
-                            visible: root.deviceSections.available.length === 0
+                            visible: !root.compactMenu && root.deviceSections.available.length === 0
                             text: root.isScanning ? "Looking for nearby devices…" : "No new devices found"
                             font.pixelSize: root.settingsPage ? 13 : 11
                             color: Tokens.text_secondary
@@ -1130,11 +1239,12 @@ Item {
                 anchors.centerIn: parent
                 width: Math.min(parent.width - 24, 300)
                 spacing: 10
-                visible: !root.btAdapter || !root.isPowered || root.devices.length === 0
+                visible: root.compactMenu ? root.compactEmptyStateVisible()
+                    : !root.btAdapter || !root.isPowered || root.devices.length === 0
 
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    visible: !root.settingsPage
+                    visible: !root.settingsPage && !root.compactMenu
                     text: "󰂯"
                     font.pixelSize: 30
                     color: Tokens.accent
@@ -1143,15 +1253,17 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: !root.settingsPage || root.isPowered
-                    text: !root.btAdapter ? "Bluetooth adapter unavailable"
+                    visible: root.compactMenu ? root.btAdapter && root.isPowered && root.devices.length === 0
+                        : !root.settingsPage || root.isPowered
+                    text: root.compactMenu ? qsTr("Put a device in pairing mode to find it here.")
+                        : !root.btAdapter ? "Bluetooth adapter unavailable"
                         : root.isAdapterBlocked ? "Bluetooth is blocked by the system"
                         : !root.isPowered ? "Bluetooth is off"
                         : root.isScanning ? "Scanning for devices…"
                         : "No Bluetooth devices found"
-                    font.pixelSize: 14
-                    font.weight: Font.Medium
-                    color: Tokens.text_primary
+                    font.pixelSize: root.compactMenu ? 12 : 14
+                    font.weight: root.compactMenu ? Font.Normal : Font.Medium
+                    color: root.compactMenu ? Tokens.menuMuted : Tokens.text_primary
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                 }
@@ -1168,7 +1280,7 @@ Item {
 
                 ActionButton {
                     Layout.alignment: Qt.AlignHCenter
-                    visible: !root.settingsPage && !!root.btAdapter && !root.isPowered
+                    visible: !root.settingsPage && !root.compactMenu && !!root.btAdapter && !root.isPowered
                     text: root.isPowerPending ? "Turning on…" : "Turn Bluetooth on"
                     accessibleLabel: text
                     emphasized: true
@@ -1178,7 +1290,7 @@ Item {
 
                 ActionButton {
                     Layout.alignment: Qt.AlignHCenter
-                    visible: !root.settingsPage && !!root.btAdapter && root.isPowered && root.devices.length === 0 && !root.isScanning
+                    visible: !root.settingsPage && !root.compactMenu && !!root.btAdapter && root.isPowered && root.devices.length === 0 && !root.isScanning
                     text: "Scan for devices"
                     accessibleLabel: text
                     emphasized: true
@@ -1188,10 +1300,80 @@ Item {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: 1
+            visible: root.compactMenu
+            color: Tokens.menuLine
+        }
+
+        Repeater {
+            model: !root.compactMenu ? [] : root.isPowered ? ["scan", "settings"] : ["settings"]
+
+            ItemDelegate {
+                id: compactAction
+                required property string modelData
+                readonly property bool opensSettings: modelData === "settings"
+                readonly property string glyph: opensSettings ? "󰒓" : "󰍉"
+                Layout.fillWidth: true
+                implicitHeight: 33
+                leftPadding: 8
+                rightPadding: 8
+                hoverEnabled: true
+                text: opensSettings ? qsTr("Bluetooth Settings")
+                    : !root.isScanning ? qsTr("Find Nearby Devices")
+                    : root.scanOwnedAdapter === root.btAdapter ? qsTr("Stop Scanning") : qsTr("Scanning…")
+                enabled: opensSettings || (!root.isAdapterBlocked && !root.isAdapterTransitioning
+                    && !root.isPowerPending && !root.isConnecting && !root.isForgetPending
+                    && (!root.isScanning || root.scanOwnedAdapter === root.btAdapter))
+                onClicked: {
+                    if (opensSettings) root.requestSettings("bluetooth");
+                    else root.toggleScan();
+                }
+                Keys.onReturnPressed: compactAction.clicked()
+                HoverHandler { cursorShape: compactAction.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+
+                contentItem: RowLayout {
+                    spacing: 9
+                    Text {
+                        text: compactAction.glyph
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 13
+                        color: Tokens.menuMuted
+                        Accessible.ignored: true
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: compactAction.text
+                        font.pixelSize: 13
+                        color: !compactAction.enabled ? Tokens.menuMuted
+                            : compactAction.hovered || compactAction.visualFocus ? Tokens.menuAccent : Tokens.menuText
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        visible: compactAction.opensSettings
+                        text: "›"
+                        font.pixelSize: 15
+                        color: Tokens.menuMuted
+                        Accessible.ignored: true
+                    }
+                }
+
+                background: Rectangle {
+                    radius: 10
+                    color: compactAction.hovered && compactAction.enabled ? Tokens.menuHover : "transparent"
+                    border.width: compactAction.visualFocus ? 2 : 0
+                    border.color: Tokens.menuAccent
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
+            }
+        }
+
         Text {
             Layout.fillWidth: true
             visible: root.actionMessage.length > 0 || (root.statusMessage.length > 0
-                && (!root.settingsPage || root.statusMessage !== "Bluetooth is off"))
+                && (!root.settingsPage || root.statusMessage !== "Bluetooth is off")
+                && (!root.compactMenu || !root.statusMessage.startsWith("Scanning for Bluetooth devices")))
             text: root.actionMessage.length > 0 ? root.actionMessage : root.statusMessage
             font.pixelSize: 11
                 color: root.isErrorMessage(root.actionMessage.length > 0 ? root.actionMessage : root.statusMessage)
@@ -1208,60 +1390,118 @@ Item {
             id: card
             required property var modelData
             property bool expanded: root.expandedDeviceKey === modelData.key
-            implicitHeight: cardContent.implicitHeight + (root.settingsPage ? 24 : 0)
+            readonly property bool working: root.isConnecting && root.activeDeviceMac === modelData.mac
+            readonly property bool canActivate: root.isPowered && !root.isConnecting && !root.isPowerPending
+                && !root.isForgetPending && !modelData.blocked
+            readonly property string actionLabel: modelData.connected ? qsTr("Disconnect")
+                : modelData.paired ? qsTr("Connect") : qsTr("Pair")
+            implicitHeight: root.compactMenu ? cardContent.implicitHeight + 4
+                : cardContent.implicitHeight + (root.settingsPage ? 24 : 0)
             Layout.fillWidth: true
             objectName: "bluetoothDevice_" + modelData.mac.replace(/:/g, "_")
             Accessible.name: modelData.name + ", " + root.deviceStatus(modelData)
+            Accessible.role: root.compactMenu ? Accessible.Button : Accessible.Pane
+            Accessible.description: root.compactMenu && card.canActivate ? card.actionLabel : ""
+            Accessible.onPressAction: card.activateCompact()
+            activeFocusOnTab: true
+            Keys.onPressed: (event) => {
+                if (root.compactMenu && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                        || event.key === Qt.Key_Space)) {
+                    card.activateCompact();
+                    event.accepted = true;
+                }
+            }
+
+            function activateCompact(): void {
+                if (root.compactMenu && canActivate) root.connectDevice(modelData);
+            }
+
+            MouseArea {
+                visible: root.compactMenu
+                enabled: card.canActivate
+                x: cardContent.x + deviceHeader.x
+                y: cardContent.y + deviceHeader.y
+                width: compactDeviceDetails.visible ? compactDeviceDetails.x : deviceHeader.width
+                height: deviceHeader.height
+                cursorShape: Qt.PointingHandCursor
+                z: 1
+                onClicked: card.activateCompact()
+            }
 
             Rectangle {
                 anchors.fill: parent
-                radius: root.settingsPage ? 9 : 12
-                color: root.settingsPage ? (rowHover.hovered ? Tokens.surface : Tokens.surface_low)
+                radius: root.compactMenu ? 8 : root.settingsPage ? 9 : 12
+                color: root.compactMenu ? (card.expanded || modelData.connected
+                    ? Tokens.menuSelected
+                    : rowHover.hovered
+                        ? Tokens.menuHover : "transparent")
+                    : root.settingsPage ? (rowHover.hovered ? Tokens.surface : Tokens.surface_low)
                     : rowHover.hovered
                     ? Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.86)
                     : Qt.rgba(Tokens.surface_high.r, Tokens.surface_high.g, Tokens.surface_high.b, 0.54)
-                border.color: root.settingsPage ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
+                border.color: root.compactMenu ? (card.activeFocus ? Tokens.menuAccent : "transparent")
+                    : root.settingsPage ? Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.5)
                     : modelData.connected
                     ? Qt.rgba(Tokens.accent.r, Tokens.accent.g, Tokens.accent.b, 0.42)
                     : Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.22)
-                border.width: root.settingsPage || modelData.connected ? 1 : 0
+                border.width: root.compactMenu ? (card.activeFocus ? 2 : 0) : root.settingsPage || modelData.connected ? 1 : 0
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on border.color { ColorAnimation { duration: 120 } }
             }
 
-            HoverHandler {
-                id: rowHover
-                cursorShape: Qt.ArrowCursor
-            }
+            HoverHandler { id: rowHover }
 
             ColumnLayout {
                 id: cardContent
                 anchors.fill: parent
-                anchors.margins: root.settingsPage ? 12 : 8
+                anchors.leftMargin: root.compactMenu ? 4 : root.settingsPage ? 12 : 8
+                anchors.rightMargin: root.compactMenu ? 4 : root.settingsPage ? 12 : 8
+                anchors.topMargin: root.compactMenu ? 2 : root.settingsPage ? 12 : 8
+                anchors.bottomMargin: root.compactMenu ? 2 : root.settingsPage ? 12 : 8
                 spacing: 4
 
                 RowLayout {
+                    id: deviceHeader
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.settingsPage ? 42 : 48
+                    Layout.preferredHeight: root.compactMenu ? 31 : root.settingsPage ? 42 : 48
                     spacing: 8
 
                     Item {
                         Layout.preferredWidth: 26
                         Layout.preferredHeight: 26
 
+                        Rectangle {
+                            objectName: root.compactMenu
+                                ? "bluetoothDeviceBadge_" + modelData.mac.replace(/:/g, "_") : ""
+                            anchors.centerIn: parent
+                            width: root.compactMenu ? 24 : parent.width
+                            height: root.compactMenu ? 24 : parent.height
+                            radius: width / 2
+                            color: modelData.connected ? Tokens.menuAccent : Tokens.menuHover
+                        }
+
                         Image {
-                            anchors.fill: parent
-                            visible: modelData.iconName.length > 0
+                            anchors.centerIn: parent
+                            visible: !root.compactMenu && modelData.iconName.length > 0
                             source: visible ? Quickshell.iconPath(modelData.iconName, "bluetooth") : ""
                             sourceSize: Qt.size(26, 26)
                             fillMode: Image.PreserveAspectFit
+                            width: 26
+                            height: 26
                             Accessible.ignored: true
                         }
 
                         Text {
+                            objectName: root.compactMenu
+                                ? "bluetoothDeviceGlyph_" + modelData.mac.replace(/:/g, "_") : ""
                             anchors.centerIn: parent
-                            visible: modelData.iconName.length === 0
-                            text: root.getDeviceIcon(modelData.name)
-                            font.pixelSize: 20
-                            color: modelData.connected ? Tokens.accent : Tokens.text_secondary
+                            visible: root.compactMenu || modelData.iconName.length === 0
+                            text: root.getDeviceIcon(modelData.name, modelData.iconName)
+                            font.family: root.compactMenu ? "JetBrainsMono Nerd Font" : ""
+                            font.pixelSize: root.compactMenu ? 14 : 20
+                            color: root.compactMenu
+                                ? modelData.connected ? Tokens.on_accent : Tokens.menuMuted
+                                : modelData.connected ? Tokens.accent : Tokens.text_secondary
                             Accessible.ignored: true
                         }
                     }
@@ -1272,26 +1512,81 @@ Item {
 
                         Text {
                             Layout.fillWidth: true
+                            Layout.maximumWidth: Number.POSITIVE_INFINITY
                             text: modelData.name
                             font.pixelSize: root.settingsPage ? 14 : 13
                             font.weight: modelData.connected ? Font.DemiBold : Font.Medium
-                            color: Tokens.text_primary
+                            color: root.compactMenu ? Tokens.menuText : Tokens.text_primary
                             elide: Text.ElideRight
+                            textFormat: Text.PlainText
                         }
 
                         Text {
                             Layout.fillWidth: true
-                            text: root.deviceStatus(modelData)
-                            font.pixelSize: root.settingsPage ? 12 : 10
+                            visible: !root.compactMenu || modelData.blocked
+                            text: root.compactMenu ? qsTr("Blocked") : root.deviceStatus(modelData)
+                            font.pixelSize: root.compactMenu ? 11 : root.settingsPage ? 12 : 10
                             color: modelData.connected ? Tokens.accent : Tokens.text_secondary
                             elide: Text.ElideRight
                         }
                     }
 
+                    RowLayout {
+                        visible: root.compactMenu && modelData.connected && modelData.batteryPercent !== null
+                            && !card.working
+                        spacing: 3
+                        Text {
+                            text: modelData.batteryPercent === null ? "" : modelData.batteryPercent + "%"
+                            font.pixelSize: 12
+                            color: root.compactMenu ? Tokens.menuMuted : Tokens.text_secondary
+                        }
+                        Text {
+                            text: "󰁹"
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 14
+                            color: root.compactMenu ? Tokens.menuMuted : Tokens.text_secondary
+                            Accessible.ignored: true
+                        }
+                    }
+
+                    Text {
+                        visible: root.compactMenu && (card.working || (!modelData.connected && !modelData.blocked))
+                        text: card.working ? qsTr("Working…") : card.actionLabel
+                        font.pixelSize: 11
+                        color: card.working || (card.canActivate && !modelData.paired) ? Tokens.menuAccent : Tokens.menuMuted
+                    }
+
+                    ToolButton {
+                        id: compactDeviceDetails
+                        visible: root.compactMenu && modelData.paired
+                        implicitWidth: 28
+                        implicitHeight: 28
+                        Accessible.name: (card.expanded ? qsTr("Hide details for %1")
+                            : qsTr("Show details for %1")).arg(card.modelData.name)
+                        Accessible.expandable: true
+                        Accessible.expanded: card.expanded
+                        onClicked: root.expandedDeviceKey = card.expanded ? "" : card.modelData.key
+                        Keys.onReturnPressed: compactDeviceDetails.clicked()
+                        Keys.onEnterPressed: compactDeviceDetails.clicked()
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        contentItem: Text {
+                            text: card.expanded ? "−" : "⋯"
+                            font.pixelSize: 16
+                            color: compactDeviceDetails.hovered ? Tokens.menuAccent : Tokens.menuMuted
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 7
+                            color: compactDeviceDetails.hovered ? Tokens.menuHover : "transparent"
+                            border.width: compactDeviceDetails.visualFocus ? 2 : 0
+                            border.color: Tokens.menuAccent
+                        }
+                    }
+
                     ActionButton {
-                        text: root.isConnecting && root.activeDeviceMac === modelData.mac
-                            ? "Working…"
-                            : (modelData.connected ? "Disconnect" : (modelData.paired ? "Connect" : "Pair"))
+                        visible: !root.compactMenu
+                        text: card.working ? "Working…" : card.actionLabel
                         accessibleLabel: modelData.connected
                             ? "Disconnect from " + modelData.name
                             : (modelData.paired ? "Connect to " : "Pair with ") + modelData.name
@@ -1302,6 +1597,7 @@ Item {
                     }
 
                     ActionButton {
+                        visible: !root.compactMenu
                         text: card.expanded ? "Hide" : "Details"
                         accessibleLabel: (card.expanded ? "Hide details for " : "Show details for ") + modelData.name
                         actionable: !root.isPowerPending && !root.isForgetPending
@@ -1316,9 +1612,10 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: (modelData.paired ? "Paired" : "Not paired")
-                            + " · " + (modelData.trusted ? "Trusted" : "Not trusted")
-                            + (modelData.blocked ? " · Blocked" : "")
+                        text: (root.compactMenu ? "" : root.deviceStatus(modelData) + " · ")
+                            + (modelData.paired ? qsTr("Paired") : qsTr("Not paired"))
+                            + " · " + (modelData.trusted ? qsTr("Trusted") : qsTr("Not trusted"))
+                            + (modelData.blocked ? " · " + qsTr("Blocked") : "")
                         font.pixelSize: 10
                         color: modelData.blocked ? Tokens.danger : Tokens.text_secondary
                         elide: Text.ElideRight
@@ -1333,12 +1630,15 @@ Item {
                             && !root.isPowerPending && !root.isForgetPending
                         onActivated: root.requestForget(modelData)
                     }
+
                 }
             }
         }
+
     }
 
     Rectangle {
+        id: deviceDialog
         anchors.fill: parent
         visible: root.forgetDialogOpen || root.pairingPromptType.length > 0
         color: Qt.rgba(0, 0, 0, 0.58)
@@ -1353,6 +1653,7 @@ Item {
         }
 
         Rectangle {
+            id: dialogCard
             anchors.centerIn: parent
             width: Math.min(parent.width - 24, 340)
             height: root.forgetDialogOpen ? 172

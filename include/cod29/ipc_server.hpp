@@ -7,6 +7,7 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <map>
 
 namespace Cod29 {
 
@@ -45,7 +46,6 @@ public:
     void broadcastShowStrip(uint64_t windowToken) noexcept;
     void broadcastHideStrip() noexcept;
     void broadcastTargetChanged(int targetWorkspaceId) noexcept;
-    void broadcastPointer(const Vector2D& pointer, const Vector2D& grabAnchor) noexcept;
     void broadcastReset() noexcept;
 
     // Upstream message callbacks
@@ -64,6 +64,7 @@ private:
     void handleClientMessage(int clientFd, const std::string& line) noexcept;
     void sendToAllClients(const std::string& line) noexcept;
     void cleanupClient(int clientFd) noexcept;
+    void publishCards() noexcept;
 
     std::string m_socketPath;
     std::atomic<bool> m_running{false};
@@ -72,6 +73,8 @@ private:
 
     mutable std::mutex m_clientsMutex;
     std::vector<int> m_clientFds;
+    std::string m_stripMessage = "HIDE_STRIP\n";
+    std::map<int, std::vector<WorkspaceCard>> m_clientCards;
 
     HoverCallback m_onHover;
     LeaveCallback m_onLeave;

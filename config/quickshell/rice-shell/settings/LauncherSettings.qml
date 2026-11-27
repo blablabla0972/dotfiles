@@ -67,6 +67,7 @@ ColumnLayout {
                         wrapMode: Text.Wrap
                     }
                     SettingsToggle {
+                        objectName: "launcher-" + option.modelData.key
                         Layout.alignment: Qt.AlignRight
                         Accessible.name: option.modelData.title
                         enabled: root.writable && option.allowed
@@ -125,6 +126,7 @@ ColumnLayout {
             }
             TextField {
                 id: filter
+                objectName: "launcher-favorites"
                 Layout.fillWidth: true
                 implicitHeight: 41
                 leftPadding: 12

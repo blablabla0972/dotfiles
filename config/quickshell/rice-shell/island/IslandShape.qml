@@ -16,13 +16,14 @@ Item {
     property bool showAntiCorners: true
 
     property bool contracting: false
+    property bool mediaBounce: false
     readonly property bool morphing: spring.running
 
     IslandSpring {
         id: spring
         target: root.targetGeometry
         contracting: root.contracting
-        openingFrequency: 18
+        mediaBounce: root.mediaBounce
     }
 
     // Budgeted radii to prevent self-intersecting arcs
@@ -31,142 +32,79 @@ Item {
     readonly property real w: root.pillWidth
     readonly property real h: root.pillHeight
 
-    width: pillWidth + (showAntiCorners ? a * 2 : 0)
+    width: pillWidth + 2 * a
     height: pillHeight
 
-    // 1. Fully rounded card mode (when showAntiCorners: false -> all corners rounded in)
     Rectangle {
         id: roundedRect
         anchors.fill: parent
         visible: !root.showAntiCorners
         radius: root.r
-        color: root.fillColor
-        border.color: Qt.rgba(root.borderColor.r, root.borderColor.g, root.borderColor.b, 0.4)
+        gradient: Gradient {
+            GradientStop { position: 0; color: Qt.tint(root.fillColor, "#0cffffff") }
+            GradientStop { position: 1; color: root.fillColor }
+        }
+        border.color: root.borderColor
+        Behavior on border.color { ColorAnimation { duration: 150 } }
         border.width: 1
     }
 
-    // 2. Anti-Corners Notch Shape (when showAntiCorners: true)
-    Shape {
-        id: surfaceShape
+    Loader {
         anchors.fill: parent
-        visible: root.showAntiCorners
-        antialiasing: true
-        preferredRendererType: Shape.CurveRenderer
+        active: root.showAntiCorners
+        sourceComponent: Shape {
+            preferredRendererType: Shape.CurveRenderer
+            antialiasing: true
 
-        // 1. Fill Path (Closed)
-        ShapePath {
-            fillColor: root.fillColor
-            strokeColor: "transparent"
-            strokeWidth: 0
-            startX: 0
-            startY: 0
+            // Fill closes the open path implicitly; the top bezel gets no stroke.
+            ShapePath {
+                fillColor: root.fillColor
+                strokeColor: root.borderColor
+                strokeWidth: 1
+                capStyle: ShapePath.RoundCap
+                joinStyle: ShapePath.RoundJoin
+                startX: 0
+                startY: 0
 
-            // Left Anti-Corner (Concave)
-            PathCubic {
-                x: root.a
-                y: root.a
-                control1X: root.a * 0.45
-                control1Y: 0
-                control2X: root.a
-                control2Y: root.a * 0.55
-            }
+                PathCubic {
+                    x: root.a
+                    y: root.a
+                    control1X: root.a * 0.45
+                    control1Y: 0
+                    control2X: root.a
+                    control2Y: root.a * 0.55
+                }
 
-            // Left vertical side
-            PathLine { x: root.a; y: root.h - root.r }
+                PathLine { x: root.a; y: root.h - root.r }
 
-            // Bottom-Left rounded corner
-            PathArc {
-                x: root.a + root.r
-                y: root.h
-                radiusX: root.r
-                radiusY: root.r
-                direction: PathArc.Counterclockwise
-            }
+                PathArc {
+                    x: root.a + root.r
+                    y: root.h
+                    radiusX: root.r
+                    radiusY: root.r
+                    direction: PathArc.Counterclockwise
+                }
 
-            // Bottom horizontal edge
-            PathLine { x: root.a + root.w - root.r; y: root.h }
+                PathLine { x: root.a + root.w - root.r; y: root.h }
 
-            // Bottom-Right rounded corner
-            PathArc {
-                x: root.a + root.w
-                y: root.h - root.r
-                radiusX: root.r
-                radiusY: root.r
-                direction: PathArc.Counterclockwise
-            }
+                PathArc {
+                    x: root.a + root.w
+                    y: root.h - root.r
+                    radiusX: root.r
+                    radiusY: root.r
+                    direction: PathArc.Counterclockwise
+                }
 
-            // Right vertical side
-            PathLine { x: root.a + root.w; y: root.a }
+                PathLine { x: root.a + root.w; y: root.a }
 
-            // Right Anti-Corner (Concave)
-            PathCubic {
-                x: root.a * 2 + root.w
-                y: 0
-                control1X: root.a + root.w
-                control1Y: root.a * 0.55
-                control2X: root.a * 1.55 + root.w
-                control2Y: 0
-            }
-
-            // Close across the top edge
-            PathLine { x: 0; y: 0 }
-        }
-
-        // 2. Continuous Outer Perimeter Stroke (Open path - NO stroke along the screen bezel!)
-        ShapePath {
-            fillColor: "transparent"
-            strokeColor: Qt.rgba(root.borderColor.r, root.borderColor.g, root.borderColor.b, 0.4)
-            strokeWidth: 1
-            capStyle: ShapePath.RoundCap
-            joinStyle: ShapePath.RoundJoin
-            startX: 0
-            startY: 0
-
-            // Left Anti-Corner
-            PathCubic {
-                x: root.a
-                y: root.a
-                control1X: root.a * 0.45
-                control1Y: 0
-                control2X: root.a
-                control2Y: root.a * 0.55
-            }
-
-            // Left vertical side
-            PathLine { x: root.a; y: root.h - root.r }
-
-            // Bottom-Left corner
-            PathArc {
-                x: root.a + root.r
-                y: root.h
-                radiusX: root.r
-                radiusY: root.r
-                direction: PathArc.Counterclockwise
-            }
-
-            // Bottom edge
-            PathLine { x: root.a + root.w - root.r; y: root.h }
-
-            // Bottom-Right corner
-            PathArc {
-                x: root.a + root.w
-                y: root.h - root.r
-                radiusX: root.r
-                radiusY: root.r
-                direction: PathArc.Counterclockwise
-            }
-
-            // Right vertical side
-            PathLine { x: root.a + root.w; y: root.a }
-
-            // Right Anti-Corner
-            PathCubic {
-                x: root.a * 2 + root.w
-                y: 0
-                control1X: root.a + root.w
-                control1Y: root.a * 0.55
-                control2X: root.a * 1.55 + root.w
-                control2Y: 0
+                PathCubic {
+                    x: root.a * 2 + root.w
+                    y: 0
+                    control1X: root.a + root.w
+                    control1Y: root.a * 0.55
+                    control2X: root.a * 1.55 + root.w
+                    control2Y: 0
+                }
             }
         }
     }

@@ -21,14 +21,14 @@ DragHookAdapter::DragHookAdapter(StateMachine& sm, IpcServer& ipc, ICompositorDe
     });
 
     m_ipcServer.setSetCardsCallback([this](const std::vector<WorkspaceCard>& cards) {
-        std::lock_guard<std::mutex> lock(m_stateMutex);
-        m_stateMachine.setWorkspaceCards(cards);
+        setWorkspaceCards(cards);
     });
 }
 
 void DragHookAdapter::dispatchAction(const Action& action) noexcept {
     switch (action.type) {
         case Action::Type::ShowStrip:
+            m_stateMachine.setWorkspaceCards({});
             m_ipcServer.broadcastShowStrip(action.windowToken);
             break;
         case Action::Type::HideStrip:
@@ -46,7 +46,7 @@ void DragHookAdapter::dispatchAction(const Action& action) noexcept {
 }
 
 void DragHookAdapter::onDragBegin(uint64_t windowToken, DragMode mode, bool thresholdReached, int sourceWorkspaceId, uint64_t timestampMs,
-                                  Vector2D grabAnchor) noexcept {
+                                  Vector2D /*grabAnchor*/) noexcept {
     std::lock_guard<std::mutex> lock(m_stateMutex);
 
     if (!m_stateMachine.getConfig().enabled) {
@@ -56,7 +56,8 @@ void DragHookAdapter::onDragBegin(uint64_t windowToken, DragMode mode, bool thre
         return;
     }
 
-    m_grabAnchor = grabAnchor;
+    if (m_stateMachine.getState() != State::Idle)
+        dispatchAction(m_stateMachine.onCancel(CancelReason::DragSuperseded));
     Action act = m_stateMachine.onNativeDragBegin(windowToken, mode, thresholdReached, sourceWorkspaceId, timestampMs);
     dispatchAction(act);
 }
@@ -73,10 +74,11 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
             return;
         }
 
+        m_pointer = pointer;
+        m_output = output;
+        m_pointerTime = timestampMs;
         Action act = m_stateMachine.onPointerMotion(pointer, output, timestampMs);
         dispatchAction(act);
-        if (m_stateMachine.getState() == State::HoverTarget)
-            m_ipcServer.broadcastPointer(pointer, m_grabAnchor);
 
     } catch (const std::exception& e) {
         // Hardening Rule H1: Exception Quarantine
@@ -104,85 +106,49 @@ void DragHookAdapter::onPointerMotion(const Vector2D& pointer, const OutputRect&
 }
 
 bool DragHookAdapter::onDragEnd(void* thisptr, uint64_t windowToken, int sourceWorkspaceId, uint64_t timestampMs) noexcept {
+    bool nativeInvoked = false;
+    bool origResult = false;
     try {
-        std::lock_guard<std::mutex> lock(m_stateMutex);
-
-        // Hardening Rule H2: Pre-Release Window Reference Capture
-        if (m_delegate) {
+        if (m_delegate)
             m_delegate->capturePreReleaseWindow(thisptr, windowToken);
-        }
 
-        // Query state machine for drop intent before grab termination
-        const Action action = m_stateMachine.onNativeRelease(timestampMs);
-
-        // Invoke original dragEnd() to release grab and update layout
-        const bool origResult = m_delegate ? m_delegate->invokeOriginalDragEnd(thisptr) : false;
-
-        // Hardening Rule H3: Aborted Release State Machine Reset
-        if (!origResult) {
-            m_stateMachine.onCancel(CancelReason::DragSuperseded);
-            m_ipcServer.broadcastHideStrip();
-            return false;
-        }
-
-        // Phase 3: Atomic Window Transfer Commit
-        if (action.type == Action::Type::PrepareDrop) {
-            // Hardening Rule H2: Check post-release validity of window
-            if (m_delegate && !m_delegate->isWindowValid(windowToken)) {
-                // Window was destroyed/unmapped during dragEnd; cleanly abort move
-                m_stateMachine.onCleanup();
-                m_ipcServer.broadcastHideStrip();
-                return origResult;
-            }
-
-            const int targetWsId = action.targetWorkspaceId;
-            if (targetWsId > 0 && targetWsId != sourceWorkspaceId) {
-                if (m_delegate) {
-                    m_delegate->moveWindowToWorkspace(windowToken, targetWsId, m_stateMachine.getConfig().dropFollow);
-                }
-            }
-        }
-
-        // Ephemeral cleanup & UI dismissal
-        m_stateMachine.onCleanup();
-        m_ipcServer.broadcastHideStrip();
-        return origResult;
-
-    } catch (const std::exception& e) {
-        // Hardening Rule H1: Exception Quarantine
-        m_quarantinedExceptions++;
-        if (m_delegate) {
-            try {
-                m_delegate->log("ERROR", std::string("Quarantined exception in onDragEnd: ") + e.what());
-            } catch (...) {}
-        }
+        Action action;
+        bool follow = false;
         {
             std::lock_guard<std::mutex> lock(m_stateMutex);
-            m_stateMachine.onCancel(CancelReason::Unknown);
+            if (windowToken != m_stateMachine.getWindowToken())
+                m_stateMachine.onCancel(CancelReason::DragSuperseded);
+            action = m_stateMachine.onNativeRelease(timestampMs, sourceWorkspaceId);
+            follow = m_stateMachine.getConfig().dropFollow;
         }
-        m_ipcServer.broadcastHideStrip();
-        if (m_delegate) {
-            try { return m_delegate->invokeOriginalDragEnd(thisptr); } catch (...) {}
+
+        // Native release can reenter callbacks; never hold the state lock across it.
+        nativeInvoked = true;
+        origResult = m_delegate ? m_delegate->invokeOriginalDragEnd(thisptr) : false;
+        bool commit = false;
+        {
+            std::lock_guard<std::mutex> lock(m_stateMutex);
+            commit = origResult && action.type == Action::Type::PrepareDrop &&
+                m_stateMachine.getState() == State::DropIntent && m_stateMachine.getWindowToken() == windowToken;
         }
-        return false;
+        if (commit && action.targetWorkspaceId > 0 && action.targetWorkspaceId != sourceWorkspaceId &&
+            m_delegate && m_delegate->isWindowValid(windowToken))
+            m_delegate->moveWindowToWorkspace(windowToken, action.targetWorkspaceId, follow);
     } catch (...) {
-        // Hardening Rule H1: Exception Quarantine
-        m_quarantinedExceptions++;
+        ++m_quarantinedExceptions;
         if (m_delegate) {
-            try {
-                m_delegate->log("ERROR", "Quarantined unknown exception in onDragEnd");
-            } catch (...) {}
+            try { m_delegate->log("ERROR", "Quarantined exception in onDragEnd"); } catch (...) {}
+            if (!nativeInvoked) {
+                try { origResult = m_delegate->invokeOriginalDragEnd(thisptr); } catch (...) {}
+            }
         }
-        {
-            std::lock_guard<std::mutex> lock(m_stateMutex);
-            m_stateMachine.onCancel(CancelReason::Unknown);
-        }
-        m_ipcServer.broadcastHideStrip();
-        if (m_delegate) {
-            try { return m_delegate->invokeOriginalDragEnd(thisptr); } catch (...) {}
-        }
-        return false;
     }
+    {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        m_stateMachine.onCleanup();
+    }
+    m_ipcServer.broadcastHideStrip();
+    return origResult;
 }
 
 void DragHookAdapter::onCancel(CancelReason reason) noexcept {
@@ -206,14 +172,28 @@ int DragHookAdapter::getSourceWorkspaceId() const noexcept {
     return m_stateMachine.getSourceWorkspaceId();
 }
 
+uint64_t DragHookAdapter::getWindowToken() const noexcept {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
+    return m_stateMachine.getWindowToken();
+}
+
 std::vector<WorkspaceCard> DragHookAdapter::getWorkspaceCards() const noexcept {
     std::lock_guard<std::mutex> lock(m_stateMutex);
     return m_stateMachine.getWorkspaceCards();
 }
 
+void DragHookAdapter::copyPreviewState(WorkspacePreviewState& snapshot) const {
+    std::lock_guard<std::mutex> lock(m_stateMutex);
+    const auto& cards = m_stateMachine.getWorkspaceCards();
+    snapshot.cards.assign(cards.begin(), cards.end());
+    snapshot.targetWorkspaceId = m_stateMachine.getTargetWorkspaceId();
+}
+
 void DragHookAdapter::setWorkspaceCards(const std::vector<WorkspaceCard>& cards) noexcept {
     std::lock_guard<std::mutex> lock(m_stateMutex);
     m_stateMachine.setWorkspaceCards(cards);
+    if (m_stateMachine.getState() == State::StripOpen || m_stateMachine.getState() == State::HoverTarget)
+        dispatchAction(m_stateMachine.onPointerMotion(m_pointer, m_output, m_pointerTime));
 }
 
 } // namespace Cod29

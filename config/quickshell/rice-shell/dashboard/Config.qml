@@ -23,7 +23,9 @@ Item {
     readonly property bool themeCommandBusy: themeCommandRunning || pendingCommandCount > 0
     readonly property bool themeCommandFailed: {
         var result = themeCommandResult.toLowerCase();
-        return result.indexOf("failed") >= 0 || result.indexOf("invalid") >= 0;
+        return result.indexOf("failed") >= 0 || result.indexOf("invalid") >= 0
+            || result.indexOf("did not start") >= 0 || result.indexOf("unconfirmed") >= 0
+            || result.indexOf("conflict") >= 0;
     }
     readonly property bool shellReloadPending: ThemeCommandQueue.reloadPending
     readonly property bool themeStatusVisible: themeCommandResult.length > 0 || themeCommandBusy
@@ -171,9 +173,17 @@ Item {
                             }
 
                             HoverHandler { id: categoryHover }
-                            MouseArea {
+                            Button {
+                                id: categoryButton
                                 anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
+                                text: categoryItem.modelData.title
+                                focusPolicy: Qt.StrongFocus
+                                contentItem: Item {}
+                                background: Rectangle {
+                                    color: "transparent"; radius: 11
+                                    border.color: Tokens.focus_ring
+                                    border.width: categoryButton.visualFocus ? 2 : 0
+                                }
                                 onClicked: root.selectedCategory = categoryItem.modelData.index
                             }
                         }
@@ -401,9 +411,17 @@ Item {
                                             HoverHandler {
                                                 id: modeHover
                                             }
-                                            MouseArea {
+                                            Button {
+                                                id: themeModeButton
                                                 anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
+                                                text: modeItem.modelData.title
+                                                focusPolicy: Qt.StrongFocus
+                                                contentItem: Item {}
+                                                background: Rectangle {
+                                                    color: "transparent"; radius: 10
+                                                    border.color: Tokens.focus_ring
+                                                    border.width: themeModeButton.visualFocus ? 2 : 0
+                                                }
                                                 onClicked: root.switchTheme(modeItem.modelData.mode)
                                             }
                                         }
@@ -474,9 +492,17 @@ Item {
                                         }
 
                                         HoverHandler { id: regenerateHover }
-                                        MouseArea {
+                                        Button {
+                                            id: regenerateButton
                                             anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
+                                            text: qsTr("Regenerate palette")
+                                            focusPolicy: Qt.StrongFocus
+                                            contentItem: Item {}
+                                            background: Rectangle {
+                                                color: "transparent"; radius: 10
+                                                border.color: Tokens.focus_ring
+                                                border.width: regenerateButton.visualFocus ? 2 : 0
+                                            }
                                             onClicked: root.regenerateTheme()
                                         }
                                     }
@@ -653,10 +679,18 @@ Item {
                                                 id: actionHover
                                                 enabled: actionRow.actionEnabled
                                             }
-                                            MouseArea {
+                                            Button {
+                                                id: runtimeButton
                                                 anchors.fill: parent
                                                 enabled: actionRow.actionEnabled
-                                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                text: actionRow.modelData.title
+                                                focusPolicy: Qt.StrongFocus
+                                                contentItem: Item {}
+                                                background: Rectangle {
+                                                    color: "transparent"; radius: 9
+                                                    border.color: Tokens.focus_ring
+                                                    border.width: runtimeButton.visualFocus ? 2 : 0
+                                                }
                                                 onClicked: root.runRuntimeAction(actionRow.modelData.id)
                                             }
                                         }

@@ -109,7 +109,7 @@ public:
     Action onPointerMotion(const Vector2D& pointer, const OutputRect& output, uint64_t timestampMs) noexcept;
     Action onWorkspaceCardHover(int workspaceId) noexcept;
     Action onWorkspaceCardLeave() noexcept;
-    Action onNativeRelease(uint64_t timestampMs) noexcept;
+    Action onNativeRelease(uint64_t timestampMs, int currentWorkspaceId = 0) noexcept;
     Action onCancel(CancelReason reason) noexcept;
     void onCleanup() noexcept;
 
@@ -127,6 +127,7 @@ private:
     int m_targetWorkspaceId = -1;
     uint64_t m_dragStartTimeMs = 0;
     uint64_t m_edgeArmedTimeMs = 0;
+    OutputRect m_edgeOutput{};
     std::vector<WorkspaceCard> m_workspaceCards;
 };
 

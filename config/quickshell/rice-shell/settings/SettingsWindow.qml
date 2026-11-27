@@ -32,11 +32,11 @@ FloatingWindow {
     readonly property bool reducedMotion: !!preferences?.reduceMotion
     readonly property bool compact: !!preferences?.compactRows
     readonly property bool wide: contentItem.width > 880
-    readonly property int sidebarWidth: 246
+    readonly property int sidebarWidth: 232
     readonly property int pageGutter: wide ? 28 : 22
-    readonly property int pageLimit: 830
+    readonly property int pageLimit: 820
     readonly property var page: Registry.pageFor(route || "appearance")
-    readonly property bool showingResults: Registry.normalize(searchField.text).length >= 2
+    readonly property bool showingResults: Registry.normalize(searchField.text).length > 0
     readonly property color ink: Registry.readable(Tokens.text_primary, Tokens.background, 4.5)
     readonly property color subdued: Registry.readable(Tokens.text_secondary, Tokens.surface_low, 4.5)
     readonly property color selection: Qt.tint(Tokens.surface_low,
@@ -114,6 +114,7 @@ FloatingWindow {
     function endSearch(): void {
         searchField.clear();
         if (beforeSearch && beforeSearch.visible) beforeSearch.forceActiveFocus();
+        else if (!wide && categories) nav.forceActiveFocus();
         else currentPage.heading.forceActiveFocus();
     }
 
@@ -130,7 +131,7 @@ FloatingWindow {
             view.contentY = Math.max(0, Math.min(
                 restore ? restore.scroll : row ? row.mapToItem(view.contentItem, 0, 0).y - 8 : 0,
                 view.contentHeight - view.height));
-            (row || currentPage.heading).forceActiveFocus();
+            (row || currentPage.heading).forceActiveFocus(Qt.TabFocusReason);
             restore = null;
         });
     }
@@ -174,41 +175,24 @@ FloatingWindow {
                 Layout.bottomMargin: 10
                 spacing: 10
 
-                RowLayout {
-                    Layout.preferredWidth: root.wide ? root.sidebarWidth + root.pageGutter - 25 : implicitWidth
-                    spacing: 8
-
-                    SettingsIcon {
-                        visible: root.wide || root.categories
-                        Layout.leftMargin: 4
-                        name: "shell"
-                        color: Registry.readable(Tokens.accent, Tokens.background, 4.5)
-                    }
-                    Label {
-                        visible: root.wide || root.categories
-                        text: root.title
-                        font.pixelSize: 17
-                        font.weight: Font.Bold
-                        color: root.ink
-                    }
-                    Choice {
-                        visible: (root.wide && root.history.length > 0 && !root.showingResults)
-                            || (!root.wide && !root.categories)
-                        symbol: "back"
-                        Accessible.name: root.wide ? qsTr("Back") : qsTr("Categories")
-                        onClicked: root.wide ? root.back() : root.showCategories()
-                    }
+                Choice {
+                    symbol: "back"
+                    opacity: enabled ? 1 : 0.35
+                    enabled: root.showingResults || root.history.length > 0 || (!root.wide && !root.categories)
+                    Accessible.name: root.wide ? qsTr("Back") : qsTr("Back to categories")
+                    onClicked: root.back()
                 }
+                Item { Layout.fillWidth: root.wide; visible: root.wide }
                 TextField {
                     id: searchField
                     objectName: "settings-search"
                     Layout.fillWidth: true
                     Layout.preferredWidth: 400
                     Layout.minimumWidth: 130
-                    Layout.maximumWidth: root.wide ? 440 : Infinity
-                    implicitHeight: 42
+                    Layout.maximumWidth: root.wide ? 620 : Infinity
+                    implicitHeight: 40
                     leftPadding: 40
-                    rightPadding: searchField.text.length ? 44 : (root.wide ? 64 : 14)
+                    rightPadding: searchField.text.length ? 44 : (root.wide ? 80 : 14)
                     placeholderText: qsTr("Search settings")
                     placeholderTextColor: root.subdued
                     Accessible.name: placeholderText
@@ -241,7 +225,7 @@ FloatingWindow {
                         Label {
                             id: shortcutHint
                             anchors.centerIn: parent
-                            text: "Ctrl K"
+                            text: "Ctrl + K"
                             font.pixelSize: 11
                             color: root.subdued
                             Accessible.ignored: true
@@ -258,20 +242,23 @@ FloatingWindow {
                         Accessible.name: qsTr("Clear search")
                         onClicked: root.endSearch()
                     }
-                    onAccepted: if (results.currentItem) root.navigate(results.currentItem.modelData.route)
+                    onAccepted: if (!inputMethodComposing && results.currentItem) root.navigate(results.currentItem.modelData.route)
                     Keys.onEscapePressed: event => {
                         if (inputMethodComposing) event.accepted = false;
                         else root.endSearch();
                     }
                     Keys.onDownPressed: event => {
                         event.accepted = root.showingResults && !inputMethodComposing && results.count > 0;
-                        if (event.accepted) {
-                            results.currentIndex = 0;
-                            results.forceActiveFocus(Qt.TabFocusReason);
-                        }
+                        if (event.accepted)
+                            results.currentIndex = Math.min(results.count - 1, results.currentIndex + 1);
+                    }
+                    Keys.onUpPressed: event => {
+                        event.accepted = root.showingResults && !inputMethodComposing && results.count > 0;
+                        if (event.accepted)
+                            results.currentIndex = Math.max(0, results.currentIndex - 1);
                     }
                 }
-                Item { Layout.fillWidth: root.wide }
+                Item { Layout.fillWidth: root.wide; visible: root.wide }
                 Choice {
                     objectName: "settings-close"
                     symbol: "close"
@@ -304,8 +291,8 @@ FloatingWindow {
                     ListView {
                         id: nav
                         anchors.fill: parent
-                        anchors.margins: 12
-                        anchors.topMargin: 12
+                        anchors.margins: 10
+                        anchors.topMargin: 14
                         spacing: 2
                         clip: true
                         keyNavigationEnabled: true
@@ -321,12 +308,12 @@ FloatingWindow {
 
                             Label {
                                 Layout.leftMargin: 12
-                                Layout.topMargin: navRow.index === 0 ? 4 : 12
+                                Layout.topMargin: navRow.index === 0 ? 3 : 15
                                 Layout.bottomMargin: 3
                                 visible: navRow.index === 0
                                     || Registry.pages[navRow.index - 1].group !== navRow.modelData.group
                                 text: navRow.modelData.group
-                                font.pixelSize: 11
+                                font.pixelSize: 12
                                 font.weight: Font.DemiBold
                                 color: root.subdued
                                 Accessible.role: Accessible.Heading
@@ -338,7 +325,7 @@ FloatingWindow {
                                 text: navRow.modelData.label
                                 symbol: navRow.modelData.icon
                                 Accessible.name: text
-                                selectedPage: navRow.modelData.id === root.page.id
+                                selectedPage: !root.showingResults && navRow.modelData.id === root.page.id
                                 highlighted: selectedPage || (nav.activeFocus && navRow.ListView.isCurrentItem)
                                 Accessible.selected: selectedPage
                                 onActiveFocusChanged: if (activeFocus) nav.currentIndex = navRow.index
@@ -363,7 +350,7 @@ FloatingWindow {
                     SettingsPage {
                         id: currentPage
                         objectName: "settings-page"
-                        x: root.pageGutter
+                        x: Math.max(root.pageGutter, (view.width - width) / 2)
                         y: root.wide ? 26 : 20
                         width: Math.max(0, Math.min(root.pageLimit, view.width - 2 * root.pageGutter))
                         page: root.page
@@ -390,43 +377,92 @@ FloatingWindow {
                     }
                 }
 
-                ListView {
-                    id: results
+                ColumnLayout {
+                    visible: root.showingResults
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.maximumWidth: root.pageLimit
                     Layout.margins: root.pageGutter
-                    visible: root.showingResults
-                    clip: true
-                    spacing: 4
-                    activeFocusOnTab: visible && count > 0
-                    model: root.showingResults ? Registry.search(searchField.text) : []
-                    keyNavigationEnabled: true
-                    Keys.onReturnPressed: if (currentItem) root.navigate(currentItem.modelData.route)
-                    Keys.onEnterPressed: if (currentItem) root.navigate(currentItem.modelData.route)
-                    Keys.onEscapePressed: root.endSearch()
-                    Keys.onUpPressed: event => {
-                        event.accepted = currentIndex === 0;
-                        if (event.accepted) searchField.forceActiveFocus();
-                    }
-                    ScrollBar.vertical: ScrollBar {}
-                    delegate: Choice {
-                        required property var modelData
-                        width: ListView.view.width
-                        text: modelData.label
-                        subtitle: modelData.page
-                        symbol: modelData.icon
-                        Accessible.description: modelData.page
-                        highlighted: activeFocus || (results.activeFocus && ListView.isCurrentItem)
-                        onClicked: root.navigate(modelData.route)
-                    }
+                    spacing: 10
+
                     Label {
-                        anchors.centerIn: parent
-                        visible: results.count === 0
-                        text: qsTr("No matching settings")
+                        Layout.fillWidth: true
+                        text: qsTr("Search results")
+                        font.pixelSize: 25
+                        font.weight: Font.DemiBold
+                        Accessible.role: Accessible.Heading
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label {
+                            Layout.fillWidth: true
+                            text: results.count === 1 ? qsTr("1 matching setting") : qsTr("%1 matching settings").arg(results.count)
+                            color: root.subdued
+                        }
+                        Label {
+                            visible: root.wide && results.count > 0
+                            text: qsTr("↑ ↓  Navigate   ·   Enter  Open")
+                            font.pixelSize: 12
+                            color: root.subdued
+                        }
+                    }
+                    ListView {
+                        id: results
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        spacing: 4
+                        activeFocusOnTab: root.showingResults && count > 0
+                        model: root.showingResults ? Registry.search(searchField.text) : []
+                        onModelChanged: currentIndex = model.length ? 0 : -1
+                        onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+                        keyNavigationEnabled: true
+                        Keys.onReturnPressed: if (currentItem) root.navigate(currentItem.modelData.route)
+                        Keys.onEnterPressed: if (currentItem) root.navigate(currentItem.modelData.route)
+                        Keys.onEscapePressed: root.endSearch()
+                        Keys.onUpPressed: event => {
+                            event.accepted = currentIndex === 0;
+                            if (event.accepted) searchField.forceActiveFocus();
+                        }
+                        ScrollBar.vertical: ScrollBar {}
+                        delegate: Choice {
+                            required property var modelData
+                            width: ListView.view.width
+                            text: modelData.label
+                            subtitle: modelData.page
+                            symbol: modelData.icon
+                            Accessible.description: modelData.page
+                            highlighted: activeFocus || ListView.isCurrentItem
+                            onClicked: root.navigate(modelData.route)
+                        }
+                        ColumnLayout {
+                            anchors.centerIn: parent
+                            width: Math.min(parent.width - 16, 300)
+                            visible: results.count === 0
+                            spacing: 10
+                            SettingsIcon {
+                                Layout.alignment: Qt.AlignHCenter
+                                name: "search"
+                                Layout.preferredWidth: 30
+                                Layout.preferredHeight: 30
+                                color: root.subdued
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                                text: qsTr("No matching settings")
+                                font.weight: Font.DemiBold
+                                font.pixelSize: 17
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
+                                text: qsTr("Try a shorter term, such as wallpaper, volume, or shortcuts.")
+                                color: root.subdued
+                            }
+                        }
                     }
                 }
-                Item { visible: root.wide && root.showingResults; Layout.fillWidth: true }
             }
         }
     }
@@ -439,7 +475,7 @@ FloatingWindow {
         readonly property color textBase: fill.color.a ? fill.color : Tokens.surface_low
         readonly property color foreground: Registry.readable(Tokens.text_primary, textBase, 4.5)
         implicitWidth: text ? contentItem.implicitWidth + leftPadding + rightPadding : 38
-        implicitHeight: subtitle ? 55 : root.compact ? 33 : 38
+        implicitHeight: subtitle ? 58 : root.compact ? 32 : 36
         leftPadding: text ? 11 : 0
         rightPadding: text ? 8 : 0
         contentItem: RowLayout {
@@ -467,7 +503,7 @@ FloatingWindow {
                     Layout.fillWidth: true
                     text: choice.text
                     elide: Text.ElideRight
-                    font.pixelSize: 14
+                    font.pixelSize: choice.subtitle ? 14 : 13
                     font.weight: choice.highlighted ? Font.DemiBold : Font.Medium
                     color: choice.foreground
                 }

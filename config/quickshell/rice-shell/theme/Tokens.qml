@@ -63,6 +63,15 @@ QtObject {
         ? parsedData.materials.panel.opacity : 0.92
 
     readonly property string mode: (isValid && parsedData.mode) ? parsedData.mode : "dark"
+    readonly property color menuSurface: surface
+    readonly property color menuSurfaceTop: surface_high
+    readonly property color menuText: text_primary
+    readonly property color menuMuted: text_secondary
+    readonly property color menuLine: Qt.tint(surface, Qt.alpha(outline, 0.55))
+    readonly property color menuHover: Qt.tint(surface_high, Qt.alpha(text_primary, 0.07))
+    readonly property color menuSelected: Qt.tint(surface, Qt.alpha(accent, 0.16))
+    readonly property color menuAccent: accent
+    readonly property color menuSwitch: accent
 
     function reloadTheme(): void {
         var raw = themeFile.text();

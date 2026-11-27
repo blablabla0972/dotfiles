@@ -11,6 +11,11 @@
 
 namespace Cod29 {
 
+struct WorkspacePreviewState {
+    std::vector<WorkspaceCard> cards;
+    int targetWorkspaceId = -1;
+};
+
 /**
  * @brief Hook adapter orchestrating interaction between Hyprland input/drag events,
  *        the pure C++ StateMachine, and the UNIX domain socket IpcServer.
@@ -47,7 +52,9 @@ public:
     State getState() const noexcept;
     int getTargetWorkspaceId() const noexcept;
     int getSourceWorkspaceId() const noexcept;
+    uint64_t getWindowToken() const noexcept;
     std::vector<WorkspaceCard> getWorkspaceCards() const noexcept;
+    void copyPreviewState(WorkspacePreviewState& snapshot) const;
     void setWorkspaceCards(const std::vector<WorkspaceCard>& cards) noexcept;
 
     StateMachine& getStateMachine() noexcept { return m_stateMachine; }
@@ -64,7 +71,9 @@ private:
     StateMachine& m_stateMachine;
     IpcServer& m_ipcServer;
     ICompositorDelegate* m_delegate = nullptr;
-    Vector2D m_grabAnchor{0.5, 0.5};
+    Vector2D m_pointer{};
+    OutputRect m_output{};
+    uint64_t m_pointerTime = 0;
 
     std::atomic<size_t> m_quarantinedExceptions{0};
     bool m_injectException = false;

@@ -2,8 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import Quickshell.Bluetooth
-import Quickshell.Networking
 import "../theme"
 import "../services"
 
@@ -17,108 +15,12 @@ Rectangle {
     border.color: Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 0.24)
     border.width: 1
 
-    readonly property var wifiDevice: {
-        var devices = Networking.devices.values;
-        for (var i = 0; i < devices.length; i++) {
-            if (devices[i].type === DeviceType.Wifi) return devices[i];
-        }
-        return null;
-    }
-    readonly property var btAdapter: Bluetooth.defaultAdapter
-    readonly property bool wifiEnabled: Networking.wifiEnabled
-    readonly property bool wifiCanToggle: wifiDevice !== null && Networking.wifiHardwareEnabled
-        && !Hotspot.active
-    readonly property bool btEnabled: btAdapter ? btAdapter.enabled : false
-    readonly property string wifiSublabel: {
-        if (!wifiDevice) return qsTr("Unavailable");
-        if (!Networking.wifiHardwareEnabled) return qsTr("Hardware blocked");
-        if (!Networking.wifiEnabled) return qsTr("Off");
-        if (Hotspot.active) return qsTr("Used by Hotspot");
-        var networks = wifiDevice.networks.values;
-        for (var i = 0; i < networks.length; i++) {
-            if (networks[i].connected) return networks[i].name || qsTr("Connected");
-        }
-        return qsTr("Not connected");
-    }
-    readonly property string btSublabel: {
-        if (!btAdapter) return qsTr("Adapter unavailable");
-        if (!btAdapter.enabled) return qsTr("Off");
-        var devices = btAdapter.devices.values;
-        var connected = [];
-        for (var i = 0; i < devices.length; i++) {
-            if (devices[i].connected) connected.push(devices[i].name || "");
-        }
-        if (connected.length === 1) return connected[0] || qsTr("1 device connected");
-        if (connected.length > 1) return qsTr("%1 devices connected").arg(connected.length);
-        return qsTr("No devices connected");
-    }
-
-    property bool wifiPending: false
-    property bool expectedWifiState: false
-    property bool bluetoothPending: false
-    property bool expectedBluetoothState: false
-    property string wifiError: ""
-    property string bluetoothError: ""
     property string sharedError: ""
 
     signal requestSideDrawer(string type)
 
     function setBrightness(value: real): void {
         DesktopControls.setBrightness(value);
-    }
-
-    function toggleWifi(): void {
-        if (!wifiCanToggle || wifiPending) return;
-        expectedWifiState = !Networking.wifiEnabled;
-        wifiPending = true;
-        wifiTimeout.restart();
-        Networking.wifiEnabled = expectedWifiState;
-    }
-
-    function toggleBluetooth(): void {
-        if (!btAdapter || bluetoothPending) return;
-        expectedBluetoothState = !btAdapter.enabled;
-        bluetoothPending = true;
-        bluetoothTimeout.restart();
-        btAdapter.enabled = expectedBluetoothState;
-    }
-
-    Timer {
-        id: wifiTimeout
-        interval: 5000
-        repeat: false
-        onTriggered: {
-            if (!root.wifiPending) return;
-            root.wifiPending = false;
-            root.wifiError = qsTr("Wi-Fi state not confirmed");
-            wifiErrorTimeout.restart();
-        }
-    }
-
-    Timer {
-        id: bluetoothTimeout
-        interval: 5000
-        repeat: false
-        onTriggered: {
-            if (!root.bluetoothPending) return;
-            root.bluetoothPending = false;
-            root.bluetoothError = qsTr("Bluetooth state not confirmed");
-            bluetoothErrorTimeout.restart();
-        }
-    }
-
-    Timer {
-        id: wifiErrorTimeout
-        interval: 4000
-        repeat: false
-        onTriggered: root.wifiError = ""
-    }
-
-    Timer {
-        id: bluetoothErrorTimeout
-        interval: 4000
-        repeat: false
-        onTriggered: root.bluetoothError = ""
     }
 
     Timer {
@@ -135,40 +37,19 @@ Rectangle {
         onTriggered: DesktopControls.refreshBrightness(false)
     }
 
-    readonly property bool wifiServiceEnabled: (typeof Networking !== "undefined") ? Networking.wifiEnabled : false
-    readonly property bool wifiServiceHardwareEnabled: (typeof Networking !== "undefined") ? Networking.wifiHardwareEnabled : false
-    onWifiServiceEnabledChanged: {
-        if (root.wifiPending && root.wifiServiceEnabled === root.expectedWifiState) {
-            root.wifiPending = false;
-            wifiTimeout.stop();
-            root.wifiError = "";
-        }
-    }
-    onWifiServiceHardwareEnabledChanged: {
-        if (!root.wifiServiceHardwareEnabled && root.wifiPending) {
-            root.wifiPending = false;
-            wifiTimeout.stop();
-            root.wifiError = qsTr("Wi-Fi hardware is blocked");
-            wifiErrorTimeout.restart();
-        }
-    }
-
-    Connections {
-        target: root.btAdapter
-        function onEnabledChanged() {
-            if (root.bluetoothPending && root.btAdapter
-                    && root.btAdapter.enabled === root.expectedBluetoothState) {
-                root.bluetoothPending = false;
-                bluetoothTimeout.stop();
-                root.bluetoothError = "";
-            }
-        }
-    }
-
     Connections {
         target: DesktopControls
         function onErrorOccurred(message) {
             root.sharedError = message;
+            sharedErrorTimeout.restart();
+        }
+    }
+
+    Connections {
+        target: Audio
+        function onErrorChanged() {
+            if (!Audio.error) return;
+            root.sharedError = Audio.error;
             sharedErrorTimeout.restart();
         }
     }
@@ -213,11 +94,12 @@ Rectangle {
                 maximum: 1.5
                 step: 0.05
                 device: Audio.sink
-                available: Audio.available
+                available: Audio.available && !Audio.changeBusy
+                commitOnRelease: true
                 valueText: !Audio.available ? qsTr("Unavailable")
                     : (Audio.muted ? qsTr("Muted") : Math.round(Audio.volume * 100) + "%")
                         + (Audio.available && !Audio.muted && Audio.volume > 1 ? qsTr(" · Boost") : "")
-                onValueRequested: (value) => Audio.setVolume(value)
+                onValueRequested: (value) => Audio.requestOutputVolume(value)
             }
 
             QuickSettingSlider {
@@ -260,36 +142,6 @@ Rectangle {
                         Layout.columnSpan: 2
                         Layout.fillWidth: true
                         Layout.preferredHeight: 48
-                        icon: "󰤨"
-                        label: qsTr("Wi-Fi")
-                        sublabel: root.wifiError || root.wifiSublabel
-                        active: root.wifiEnabled
-                        available: root.wifiCanToggle
-                        pending: root.wifiPending
-                        hasDetails: true
-                        onActivated: root.toggleWifi()
-                        onDetailsRequested: root.requestSideDrawer("wifi")
-                    }
-
-                    QuickSettingTile {
-                        Layout.columnSpan: 2
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 48
-                        icon: "󰂯"
-                        label: qsTr("Bluetooth")
-                        sublabel: root.bluetoothError || root.btSublabel
-                        active: root.btEnabled
-                        available: root.btAdapter !== null
-                        pending: root.bluetoothPending
-                        hasDetails: true
-                        onActivated: root.toggleBluetooth()
-                        onDetailsRequested: root.requestSideDrawer("bluetooth")
-                    }
-
-                    QuickSettingTile {
-                        Layout.columnSpan: 2
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 48
                         icon: "󰀃"
                         label: qsTr("Hotspot")
                         sublabel: Hotspot.tileStatus
@@ -318,8 +170,9 @@ Rectangle {
                             : Audio.muted ? qsTr("Muted") : qsTr("On")
                         active: Audio.muted
                         available: Audio.available
+                        pending: Audio.changeBusy
                         hasDetails: true
-                        onActivated: Audio.toggleMute()
+                        onActivated: Audio.requestOutputMute()
                         onDetailsRequested: root.requestSideDrawer("audio")
                     }
 

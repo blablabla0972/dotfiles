@@ -31,6 +31,7 @@ class MockCompositorDelegate : public ICompositorDelegate {
 public:
     bool origDragEndResult = true;
     bool origDragEndThrows = false;
+    std::function<void()> onNativeEnd;
     size_t dragEndCount = 0;
     std::unordered_set<uint64_t> validWindows;
     std::vector<MoveCall> moveCalls;
@@ -42,6 +43,7 @@ public:
 
     bool invokeOriginalDragEnd(void* /*thisptr*/) override {
         dragEndCount++;
+        if (onNativeEnd) onNativeEnd();
         if (origDragEndThrows) {
             throw std::runtime_error("Simulated crash in origDragEnd");
         }
@@ -214,9 +216,9 @@ bool test_IT02_e2e_drag_and_drop() {
     if (adapter.getState() != State::HoverTarget) return false;
     if (adapter.getTargetWorkspaceId() != 2) return false;
 
+    adapter.setWorkspaceCards({{2, 250, 10, 100, 100}});
     adapter.onPointerMotion({300, 60}, mon, 1130);
-    lines = client.readLines(200);
-    if (std::ranges::find(lines, "DRAG_POINTER 300.00 60.00 0.2500 0.7500") == lines.end()) return false;
+    if (adapter.getTargetWorkspaceId() != 2) return false;
 
     // Step 5: Drag End on target workspace 2
     bool ok = adapter.onDragEnd(nullptr, 0x1001, 1, 1150);
@@ -825,6 +827,116 @@ bool test_IT13_concurrent_card_updates_and_motion() {
 // Test Runner
 // ----------------------------------------------------------------------------
 
+bool test_IT14_release_once_and_matching_window() {
+    Config cfg; cfg.enabled = true;
+    StateMachine sm(cfg);
+    IpcServer server(makeTestSocketPath("it14"));
+    MockCompositorDelegate delegate;
+    DragHookAdapter adapter(sm, server, &delegate);
+    delegate.origDragEndThrows = true;
+    adapter.onDragBegin(1, DragMode::Move, true, 1, 0);
+    adapter.onDragEnd(nullptr, 1, 1, 1);
+    if (delegate.dragEndCount != 1 || adapter.getState() != State::Idle) return false;
+    delegate.origDragEndThrows = false;
+    delegate.validWindows.insert(2);
+    adapter.onDragBegin(1, DragMode::Move, true, 1, 0);
+    adapter.onPointerMotion({50, 0}, {0, 0, 1920, 1080}, 1);
+    adapter.onPointerMotion({50, 0}, {0, 0, 1920, 1080}, 100);
+    sm.onWorkspaceCardHover(2);
+    adapter.onDragEnd(nullptr, 2, 1, 101);
+    return delegate.moveCalls.empty();
+}
+
+bool test_IT15_bounds_refresh_and_disconnect() {
+    Config cfg; cfg.enabled = true;
+    StateMachine sm(cfg);
+    IpcServer server(makeTestSocketPath("it15"));
+    MockCompositorDelegate delegate;
+    DragHookAdapter adapter(sm, server, &delegate);
+    if (!server.start()) return false;
+    TestIpcClient first, second;
+    if (!first.connect(server.getSocketPath()) || !second.connect(server.getSocketPath())) return false;
+    const auto waitFor = [&](auto predicate) {
+        for (int i = 0; i < 100; ++i) {
+            if (predicate()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return false;
+    };
+    adapter.onDragBegin(1, DragMode::Move, true, 1, 0);
+    adapter.onPointerMotion({50, 0}, {0, 0, 1920, 1080}, 1);
+    adapter.onPointerMotion({50, 0}, {0, 0, 1920, 1080}, 100);
+    adapter.onPointerMotion({50, 50}, {0, 0, 1920, 1080}, 101);
+    first.sendLine("REGISTER_BOUNDS [{\"id\":2,\"x\":0,\"y\":10,\"w\":100,\"h\":100}]");
+    if (!waitFor([&] { return adapter.getTargetWorkspaceId() == 2; })) return false;
+    second.sendLine("REGISTER_BOUNDS [{\"id\":3,\"x\":1920,\"y\":10,\"w\":100,\"h\":100}]");
+    if (!waitFor([&] { return adapter.getWorkspaceCards().size() == 2; })) return false;
+    first.sendLine("REGISTER_BOUNDS []");
+    if (!waitFor([&] { return adapter.getWorkspaceCards().size() == 1 && adapter.getTargetWorkspaceId() == -1; })) return false;
+    second.disconnect();
+    const bool cleared = waitFor([&] { return adapter.getWorkspaceCards().empty(); });
+    server.stop();
+    return cleared;
+}
+
+bool test_IT16_bounds_validation() {
+    for (const auto* invalid : {
+            R"([{"id":2}])", R"([{"id":-2,"x":0,"y":0,"w":10,"h":10}])",
+            R"([{"id":2,"x":0,"y":0,"w":-10,"h":10}])",
+            R"([{"id":2,"x":0,"y":0,"w":1e999,"h":10}])",
+            R"({"id":2,"x":0,"y":0,"w":10,"h":10})",
+            R"([{"id":2,"x":0,"y":0,"w":10,"h":10}]junk)"}) {
+        if (!IpcServer::parseBoundsJson(invalid).empty()) return false;
+    }
+    const auto valid = IpcServer::parseBoundsJson(R"([{"id":2,"x":-1.2e3,"y":0,"w":10,"h":10}])");
+    return valid.size() == 1 && valid[0].x == -1200;
+}
+
+bool test_IT17_monitor_transition() {
+    Config cfg; cfg.enabled = true;
+    StateMachine sm(cfg);
+    sm.onNativeDragBegin(1, DragMode::Move, true, 1, 0);
+    sm.onPointerMotion({50, 0}, {0, 0, 1920, 1080}, 1);
+    sm.onPointerMotion({1950, 0}, {1920, 0, 1920, 1080}, 90);
+    if (sm.getState() == State::StripOpen) return false;
+    sm.onPointerMotion({1950, 0}, {1920, 0, 1920, 1080}, 100);
+    sm.onPointerMotion({1950, 0}, {1920, 0, 1920, 1080}, 200);
+    sm.onPointerMotion({50, 40}, {0, 0, 1920, 1080}, 201);
+    return sm.getState() == State::Dragging;
+}
+
+bool test_IT18_release_reentry_and_native_workspace_change() {
+    Config cfg; cfg.enabled = true;
+    StateMachine sm(cfg);
+    IpcServer server(makeTestSocketPath("it18"));
+    MockCompositorDelegate delegate;
+    DragHookAdapter adapter(sm, server, &delegate);
+    delegate.validWindows.insert(1);
+    const auto begin = [&] {
+        adapter.onDragBegin(1, DragMode::Move, true, 1, 0);
+        adapter.onPointerMotion({50, 0}, {0, 0, 1920, 1080}, 1);
+        adapter.onPointerMotion({50, 0}, {0, 0, 1920, 1080}, 100);
+        sm.onWorkspaceCardHover(1);
+    };
+    begin();
+    delegate.onNativeEnd = [&] { adapter.onCancel(CancelReason::WindowUnmapped); };
+    if (!adapter.onDragEnd(nullptr, 1, 3, 101) || !delegate.moveCalls.empty()) return false;
+    delegate.onNativeEnd = {};
+    begin();
+    adapter.onDragEnd(nullptr, 1, 3, 101);
+    return delegate.moveCalls.size() == 1 && delegate.moveCalls[0].targetWorkspaceId == 1;
+}
+
+bool test_IT19_preserve_existing_socket() {
+    const auto path = makeTestSocketPath("it19");
+    IpcServer owner(path), duplicate(path);
+    if (!owner.start() || duplicate.start()) return false;
+    TestIpcClient client;
+    const bool connected = client.connect(path);
+    owner.stop();
+    return connected;
+}
+
 int main() {
     std::cout << "====================================================================\n";
     std::cout << " COD-29 Phase D: Integration & Verification Test Suite (IT01-IT13)  \n";
@@ -849,7 +961,13 @@ int main() {
         {"IT10", "IPC Client Disconnect / Reconnect Resilience", test_IT10_client_reconnect_resilience},
         {"IT11", "Immediate Disconnect Message Retention", test_IT11_immediate_disconnect_message_retention},
         {"IT12", "Concurrent Broadcast & Disconnect Safety", test_IT12_concurrent_broadcast_disconnect_safety},
-        {"IT13", "Concurrent IPC Card Updates & Pointer Motion Thread-Safety", test_IT13_concurrent_card_updates_and_motion}
+        {"IT13", "Concurrent IPC Card Updates & Pointer Motion Thread-Safety", test_IT13_concurrent_card_updates_and_motion},
+        {"IT14", "Release runs once and window identity matches", test_IT14_release_once_and_matching_window},
+        {"IT15", "Bounds refresh, multiple outputs and disconnect", test_IT15_bounds_refresh_and_disconnect},
+        {"IT16", "Reject malformed bounds", test_IT16_bounds_validation},
+        {"IT17", "Monitor change resets dwell and hover", test_IT17_monitor_transition},
+        {"IT18", "Reentrant cancel and native cross-monitor move", test_IT18_release_reentry_and_native_workspace_change},
+        {"IT19", "Duplicate server preserves active socket", test_IT19_preserve_existing_socket}
     };
 
     int passed = 0;
@@ -883,7 +1001,7 @@ int main() {
     std::cout << "--------------------------------------------------------------------\n";
 
     if (failed == 0) {
-        std::cout << " [SUCCESS] ALL 13 INTEGRATION TESTS (IT01-IT13) PASSED DETERMINISTICALLY.\n";
+        std::cout << " [SUCCESS] ALL " << cases.size() << " INTEGRATION TESTS PASSED.\n";
         std::cout << "====================================================================\n";
         return 0;
     } else {
